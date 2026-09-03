@@ -5,6 +5,7 @@
 - **Svelte 5** — runes only (`$state`, `$derived`, `$effect`, `$props`). No Svelte 4 idioms: no `export let`, no `$:` reactive statements, no stores where a rune fits, no `on:click` (use `onclick`).
 - **SvelteKit 2** — with **remote functions** as the primary client/server data layer.
 - **Bun** — package manager, script runner, and production server runtime.
+- **Tailwind CSS v4** + **shadcn-svelte** (vendored components) + **Bits UI** (headless primitives) for UI.
 - **TypeScript** throughout.
 
 ## API selection order
@@ -112,6 +113,50 @@ Pin exact versions for both the adapter and SvelteKit — no `^` ranges on the p
 
 Bun-specific server APIs (`Bun.file`, `Bun.serve` internals, `bun:sqlite`, …) are allowed in server-only code — remote functions, `src/lib/server/`, hooks. Keep them out of anything reachable from the browser. Since dev and production share the runtime, a Bun API that works locally works in production; the remaining hazard is only the client bundle.
 
+## UI: Tailwind, shadcn-svelte, Bits UI
+
+Three layers, each with a distinct job. Know which one you are working in.
+
+| Layer             | What it is                                                                                                    | Where it lives           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **Tailwind v4**   | The styling mechanism. Utilities in markup; theme tokens in CSS.                                              | `src/routes/layout.css`  |
+| **shadcn-svelte** | Styled components, **copied into this repo**. Not a dependency — we own and edit the source.                  | `src/lib/components/ui/` |
+| **Bits UI**       | Headless primitives (behavior, focus management, ARIA). A real dependency, pulled in under shadcn components. | `node_modules`           |
+
+Config: `components.json`. Preset **vega** (the classic shadcn/ui look), Lucide icons, Inter.
+
+### Which layer to reach for
+
+Follow the same order as the API selection tiers above:
+
+1. **An existing component in `src/lib/components/ui/`** — use it.
+2. **`bunx shadcn-svelte@latest add <component>`** — check the registry before building anything from scratch. It lands as editable source in this repo.
+3. **Bits UI primitive + Tailwind** — for something the registry doesn't have. Never hand-roll a dropdown, dialog, or combobox: the accessibility and focus-trap work is the hard part and Bits UI has done it.
+4. **Plain markup + Tailwind** — only for genuinely simple, non-interactive things.
+
+### Tailwind v4
+
+Configured **in CSS**, not `tailwind.config.js` — that file does not exist and should not be created. Theme tokens are CSS variables in `src/routes/layout.css` under `:root` / `.dark`.
+
+Use the semantic tokens (`bg-background`, `text-muted-foreground`, `border-border`), not raw palette values like `bg-zinc-100`. The semantic tokens are what make dark mode and a preset swap work; raw colors silently opt out of both.
+
+`prettier-plugin-tailwindcss` sorts class lists — run `bun run format` rather than ordering by hand.
+
+### Editing vendored components
+
+`src/lib/components/ui/` is ours to edit, but `shadcn-svelte add`/`update` overwrites files. Keep local changes small and deliberate, or wrap rather than fork.
+
+ESLint disables `svelte/no-navigation-without-resolve` for that directory only — upstream's `Button` trips it. Every other rule still applies. If a new vendored component trips a different rule, add it to that same scoped override with a comment; don't disable linting for the directory.
+
+### Reference
+
+Both publish LLM-readable docs — use them rather than recalling an API:
+
+- **shadcn-svelte** — <https://www.shadcn-svelte.com/llms.txt> (component list, CLI, `components.json`)
+- **Bits UI** — <https://bits-ui.com/llms.txt> (primitives, props, composition)
+
+The `shadcn-svelte` CLI needs `--preset` for non-interactive `init`; the value is a share-code from their theme builder, not a name. The pre-configured presets are only listable through the interactive prompt.
+
 ## Testing
 
 **`bun test` is the test runner.** Not Vitest, not Jest. Native, no config, Jest-compatible API: `import { test, expect } from 'bun:test'`.
@@ -125,6 +170,7 @@ Note that `bun test` cannot compile `.svelte` files, so component rendering is o
 ## Conventions
 
 - Components: `PascalCase.svelte`. Remote modules: `<domain>.remote.ts`. Rune modules: `<name>.svelte.ts`.
+- App components go in `src/lib/components/`; `src/lib/components/ui/` is reserved for shadcn-svelte's vendored output.
 - Server-only code that is not a remote function goes in `src/lib/server/`.
 - Shared types and pure helpers go in `src/lib/`.
 
@@ -134,13 +180,14 @@ Developer docs live under `docs/devs/<topic>/`. Svelte and SvelteKit notes go in
 
 ## State
 
-Scaffolded and verified. `bun run build` succeeds, `bun test` passes, `bun run check` and `bun run lint` are clean.
+Scaffolded and verified. `bun test`, `bun run check`, `bun run lint`, and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
 
 - `src/lib/server/health.ts` — plain logic, plus `health.test.ts` covering it
 - `src/routes/status.remote.ts` — `getHealth` (`query`) and `getServiceDetail` (`query.batch`)
-- `src/routes/+page.svelte` — awaits both inside `<svelte:boundary>` with `pending`/`failed` snippets
+- `src/routes/+page.svelte` — awaits both inside `<svelte:boundary>`, rendered with Card, Table, Badge, Button, and Separator
+- `src/lib/components/ui/` — button, card, badge, table, separator
 
 This slice exists to prove the wiring end-to-end and doubles as the reference for the conventions above. The `probe()` function is a stand-in — replace it with real checks as services land.
 

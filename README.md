@@ -8,6 +8,7 @@ SvelteKit app on Bun.
 - [Remote functions](https://svelte.dev/docs/kit/remote-functions) as the data layer
 - [Bun](https://bun.com) as package manager, dev runtime, and production server
 - [Valibot](https://valibot.dev) for validation
+- [Tailwind CSS v4](https://tailwindcss.com) + [shadcn-svelte](https://shadcn-svelte.com) + [Bits UI](https://bits-ui.com) for UI
 
 ## Getting started
 
