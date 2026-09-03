@@ -28,6 +28,17 @@ When adding a dependency, say in the PR which tiers you ruled out and why. "Tier
 
 ## Architecture
 
+The general doctrine — coupling metrics, dependency direction, composability,
+behavioral encapsulation, domain boundaries, the change-time checklist — is a
+separate document, imported here so it loads with this file every session:
+
+@docs/devs/architecture-rules.md
+
+Read that for _what_ the rules are. The rest of this section is what they mean **here**:
+the concrete layering this codebase settled on, and the decisions already made.
+
+### Layers
+
 Five layers. Each one may know about the layers below it and nothing above.
 
 | Layer          | Lives in                                 | Knows about                            | Must never                                         |
@@ -261,6 +272,11 @@ Note that `bun test` cannot compile `.svelte` files, so component rendering is o
 ## Docs
 
 Developer docs live under `docs/devs/<topic>/`. Svelte and SvelteKit notes go in `docs/devs/svelte/`.
+
+`docs/devs/architecture-rules.md` is imported into this file with `@`, so it is loaded
+into context every session — no one has to remember to open it. Everything else is
+linked, not imported, and gets read when the task calls for it. Import sparingly:
+an `@` costs its full length in every session, whether or not the session touches it.
 
 ## State
 
