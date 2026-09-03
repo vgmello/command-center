@@ -1,96 +1,135 @@
 <script lang="ts">
-	import { getHealth, getServiceDetail } from './status.remote';
-	import type { ServiceStatus } from '$lib/server/health';
-	import * as Card from '$lib/components/ui/card';
-	import * as Table from '$lib/components/ui/table';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Separator } from '$lib/components/ui/separator';
-	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import CountTile from '$lib/components/overview/CountTile.svelte';
+	import DeploymentsCard from '$lib/components/overview/DeploymentsCard.svelte';
+	import DomainHealthTable from '$lib/components/overview/DomainHealthTable.svelte';
+	import HealthDistributionCard from '$lib/components/overview/HealthDistributionCard.svelte';
+	import IncidentsCard from '$lib/components/overview/IncidentsCard.svelte';
+	import InfrastructureCard from '$lib/components/overview/InfrastructureCard.svelte';
+	import MetricStrip from '$lib/components/overview/MetricStrip.svelte';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { getScope } from '$lib/scope.svelte';
+	import { getDomainPage, getOverview } from './overview.remote';
+	import type { DomainPage, DomainSortKey, HealthStatus } from '$lib/platform/types';
 
-	const statusVariant: Record<ServiceStatus, 'default' | 'secondary' | 'destructive'> = {
-		ok: 'default',
-		degraded: 'secondary',
-		down: 'destructive'
-	};
+	const scope = getScope();
+
+	let searchInput = $state('');
+	let search = $state('');
+	let status = $state<HealthStatus | 'all'>('all');
+	let sort = $state<DomainSortKey>('health-score');
+	let view = $state<'grid' | 'list'>('list');
+	let pageNumber = $state(1);
+
+	/*
+	 * Typing must not fire a request per keystroke. The raw input drives the
+	 * textbox, and only the settled value drives the query.
+	 */
+	let debounce: ReturnType<typeof setTimeout>;
+	function onSearch(value: string) {
+		searchInput = value;
+		clearTimeout(debounce);
+		debounce = setTimeout(() => {
+			search = value;
+			pageNumber = 1;
+		}, 250);
+	}
+
+	const scopeArgs = $derived({ environment: scope.environment, timeRange: scope.timeRange });
+
+	const domainArgs = $derived({
+		...scopeArgs,
+		search,
+		status,
+		sort,
+		page: pageNumber,
+		pageSize: 8
+	});
+
+	const overview = $derived(getOverview(scopeArgs));
+	const domains = $derived(getDomainPage(domainArgs));
+
+	/*
+	 * Keep the last successful page on screen while the next one is in flight.
+	 * Without this the table would collapse to a skeleton on every filter change,
+	 * which reads as the data disappearing rather than being refined.
+	 */
+	let lastDomainPage = $state<DomainPage | null>(null);
+	$effect(() => {
+		if (domains.current) lastDomainPage = domains.current;
+	});
+	const domainPage = $derived(domains.current ?? lastDomainPage);
+
+	$effect(() => {
+		if (!scope.autoRefresh) return;
+		const timer = setInterval(() => {
+			overview.refresh();
+			domains.refresh();
+		}, scope.refreshIntervalMs);
+		return () => clearInterval(timer);
+	});
 </script>
 
-<svelte:head>
-	<title>Command Center</title>
-</svelte:head>
+<svelte:head><title>Overview · Command Center</title></svelte:head>
 
-<main class="mx-auto max-w-3xl p-6">
-	<svelte:boundary>
-		{@const health = await getHealth()}
+<div class="flex gap-4 p-5">
+	<div class="min-w-0 flex-1 space-y-4">
+		<div>
+			<h1 class="text-[26px] leading-tight font-semibold tracking-tight">Overview</h1>
+			<p class="mt-0.5 text-[13px] text-muted-foreground">Platform-wide operational view</p>
+		</div>
 
-		<Card.Root>
-			<Card.Header>
-				<Card.Title class="flex items-center gap-3">
-					Command Center
-					<Badge variant={statusVariant[health.status]}>{health.status}</Badge>
-				</Card.Title>
-				<Card.Description>Running on {health.runtime}</Card.Description>
-				<Card.Action>
-					<Button variant="outline" size="sm" onclick={() => getHealth().refresh()}>
-						<RefreshCw class="size-4" />
-						Refresh
-					</Button>
-				</Card.Action>
-			</Card.Header>
+		<svelte:boundary>
+			{@const snapshot = await getOverview(scopeArgs)}
+			<div class="grid gap-3 xl:grid-cols-[repeat(4,minmax(0,1fr))_3.2fr]">
+				{#each snapshot.counts as tile (tile.id)}
+					<CountTile {tile} />
+				{/each}
+				<MetricStrip metrics={snapshot.metrics} />
+			</div>
 
-			<Separator />
+			{#snippet pending()}
+				<div class="grid gap-3 xl:grid-cols-[repeat(4,minmax(0,1fr))_3.2fr]">
+					{#each ['total', 'healthy', 'degraded', 'down', 'metrics'] as key (key)}
+						<Skeleton class="h-[104px] rounded-xl" />
+					{/each}
+				</div>
+			{/snippet}
+		</svelte:boundary>
 
-			<Card.Content>
-				<Table.Root>
-					<Table.Caption>Batched through a single `query.batch` request.</Table.Caption>
-					<Table.Header>
-						<Table.Row>
-							<Table.Head>Service</Table.Head>
-							<Table.Head>Status</Table.Head>
-							<Table.Head class="text-right">Latency</Table.Head>
-						</Table.Row>
-					</Table.Header>
-					<Table.Body>
-						{#each health.services as service (service.name)}
-							{@const detail = await getServiceDetail(service.name)}
-							<Table.Row>
-								<Table.Cell class="font-medium">{service.name}</Table.Cell>
-								<Table.Cell>
-									{#if detail}
-										<Badge variant={statusVariant[detail.status]}>{detail.status}</Badge>
-									{:else}
-										<Badge variant="outline">unknown</Badge>
-									{/if}
-								</Table.Cell>
-								<Table.Cell class="text-right text-muted-foreground tabular-nums">
-									{detail ? `${detail.latencyMs}ms` : '—'}
-								</Table.Cell>
-							</Table.Row>
-						{/each}
-					</Table.Body>
-				</Table.Root>
-			</Card.Content>
-		</Card.Root>
+		{#if domainPage}
+			<div class="transition-opacity {domains.loading ? 'opacity-60' : ''}">
+				<DomainHealthTable
+					result={domainPage}
+					search={searchInput}
+					{status}
+					{sort}
+					{view}
+					{onSearch}
+					onStatusChange={(value) => ((status = value), (pageNumber = 1))}
+					onSortChange={(value) => ((sort = value), (pageNumber = 1))}
+					onViewChange={(value) => (view = value)}
+					onPageChange={(value) => (pageNumber = value)}
+				/>
+			</div>
+		{:else}
+			<Skeleton class="h-[620px] rounded-xl" />
+		{/if}
+	</div>
 
-		{#snippet pending()}
-			<Card.Root>
-				<Card.Header>
-					<Card.Title>Command Center</Card.Title>
-					<Card.Description>Checking services…</Card.Description>
-				</Card.Header>
-			</Card.Root>
-		{/snippet}
+	<aside class="hidden w-[368px] shrink-0 space-y-4 xl:block">
+		<svelte:boundary>
+			{@const snapshot = await getOverview(scopeArgs)}
+			<HealthDistributionCard distribution={snapshot.distribution} />
+			<IncidentsCard incidents={snapshot.incidents} />
+			<DeploymentsCard deployments={snapshot.deployments} />
+			<InfrastructureCard groups={snapshot.infrastructure} />
 
-		{#snippet failed(error: unknown, reset: () => void)}
-			<Card.Root>
-				<Card.Header>
-					<Card.Title>Health check failed</Card.Title>
-					<Card.Description>{(error as Error).message}</Card.Description>
-					<Card.Action>
-						<Button variant="outline" size="sm" onclick={reset}>Retry</Button>
-					</Card.Action>
-				</Card.Header>
-			</Card.Root>
-		{/snippet}
-	</svelte:boundary>
-</main>
+			{#snippet pending()}
+				<Skeleton class="h-[196px] rounded-xl" />
+				<Skeleton class="h-[240px] rounded-xl" />
+				<Skeleton class="h-[220px] rounded-xl" />
+				<Skeleton class="h-[132px] rounded-xl" />
+			{/snippet}
+		</svelte:boundary>
+	</aside>
+</div>
