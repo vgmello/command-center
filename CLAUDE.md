@@ -33,12 +33,12 @@ Remote functions live in `*.remote.ts` files, anywhere under `src/` **except** `
 
 Four flavours from `$app/server`:
 
-| Function | Use for |
-| --- | --- |
-| `query` | Read dynamic data. Also `query.batch` (solves n+1) and `query.live` (streaming/real-time). |
-| `form` | Write data via a `<form>`. **Preferred mutation**, because it degrades gracefully without JS. |
-| `command` | Write data from anywhere (event handlers, etc.). Use only when `form` doesn't fit. Cannot be called during render. |
-| `prerender` | Data that changes at most once per deploy; resolved at build time. |
+| Function    | Use for                                                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------------------ |
+| `query`     | Read dynamic data. Also `query.batch` (solves n+1) and `query.live` (streaming/real-time).                         |
+| `form`      | Write data via a `<form>`. **Preferred mutation**, because it degrades gracefully without JS.                      |
+| `command`   | Write data from anywhere (event handlers, etc.). Use only when `form` doesn't fit. Cannot be called during render. |
+| `prerender` | Data that changes at most once per deploy; resolved at build time.                                                 |
 
 ### Rules
 
@@ -62,7 +62,12 @@ Schemas used as form preflight must live in a shared module or a `<script module
 
 ### Experimental flags
 
-Remote functions require opt-in in `svelte.config.js`: `kit.experimental.remoteFunctions: true` and `compilerOptions.experimental.async: true`. This is an experimental API and may change between SvelteKit releases — pin the SvelteKit version and read the changelog before upgrading.
+Both flags live in **`vite.config.ts`**, inside the `sveltekit()` plugin options — this SvelteKit version has no `svelte.config.js`. Older guides and the official docs still show `svelte.config.js`; translate, don't create the file.
+
+- `experimental.remoteFunctions: true` — plugin option
+- `compilerOptions.experimental.async: true` — enables `await` in deriveds, template expressions, and component top level
+
+Experimental APIs change between releases. Read the changelog before bumping SvelteKit or Svelte.
 
 Because `experimental.async` is on, `await` is usable directly in components and `{#each await ...}` in markup. Wrap awaiting UI in `<svelte:boundary>` for pending/error states.
 
@@ -70,7 +75,7 @@ Because `experimental.async` is on, `await` is usable directly in components and
 
 Before writing or reviewing any remote function, read these in order:
 
-1. **[docs/devs/svelte/remote-functions-batching-and-performance.md](docs/devs/svelte/remote-functions-batching-and-performance.md)** — this repo's working guide. Covers `query.batch`, the N+1 trap, waterfalls, single-flight mutations, when *not* to batch, retry anti-patterns, and measurement. Read this first; it encodes the decisions this repo has already made.
+1. **[docs/devs/svelte/remote-functions-batching-and-performance.md](docs/devs/svelte/remote-functions-batching-and-performance.md)** — this repo's working guide. Covers `query.batch`, the N+1 trap, waterfalls, single-flight mutations, when _not_ to batch, retry anti-patterns, and measurement. Read this first; it encodes the decisions this repo has already made.
 2. **<https://svelte.dev/docs/kit/remote-functions/llms.txt>** — the official, always-current remote functions reference in LLM-readable form. Fetch it when the repo doc doesn't cover the case, when an API signature needs verifying, or when the SvelteKit version has moved. The official docs win any conflict with the repo doc — when they disagree, fix the repo doc.
 
 Remote functions are experimental and the API moves. Never answer a remote-functions question from memory; check one of the two sources above.
@@ -95,9 +100,13 @@ Verify rather than assume — `process.versions.bun` is defined only under Bun. 
 
 ### Adapter
 
-**`@sveltejs/adapter-bun`** — the official SvelteKit Bun adapter. Not the community `svelte-adapter-bun`; if you find that name in a search result or an older guide, it is the wrong package for this repo.
+**`svelte-adapter-bun`**, pinned to `1.0.1`.
 
-Currently a prerelease (`1.0.0-next.1` as of 2026-09). Accepted deliberately: this repo is already on experimental remote functions, and the official adapter tracks SvelteKit API changes directly where a third-party one lags. **Pin the exact version** — no `^` range — and read the changelog before bumping.
+This is deliberately _not_ the official `@sveltejs/adapter-bun`. That package exists, but `1.0.0-next.1` declares `peerDependencies: { "@sveltejs/kit": "^3.0.0-next.0" }` — it targets SvelteKit **3**, which is still a prerelease. On SvelteKit 2 it crashes during `adapt()` with `TypeError: undefined is not an object (evaluating 'builder.config.paths.base')`, because the `builder.config` shape differs between majors. Verified here, not assumed.
+
+**Migration trigger:** when SvelteKit 3 goes stable and this project upgrades, switch to `@sveltejs/adapter-bun` — it is maintained by the SvelteKit team and will track API changes that a third-party adapter lags on. Until then `svelte-adapter-bun` is the only working option.
+
+Pin exact versions for both the adapter and SvelteKit — no `^` ranges on the pieces holding this together.
 
 ### Bun APIs
 
@@ -125,4 +134,14 @@ Developer docs live under `docs/devs/<topic>/`. Svelte and SvelteKit notes go in
 
 ## State
 
-Repo is a skeleton: `LICENSE` (MIT) and `README.md` only. Nothing is scaffolded yet.
+Scaffolded and verified. `bun run build` succeeds, `bun test` passes, `bun run check` and `bun run lint` are clean.
+
+What exists:
+
+- `src/lib/server/health.ts` — plain logic, plus `health.test.ts` covering it
+- `src/routes/status.remote.ts` — `getHealth` (`query`) and `getServiceDetail` (`query.batch`)
+- `src/routes/+page.svelte` — awaits both inside `<svelte:boundary>` with `pending`/`failed` snippets
+
+This slice exists to prove the wiring end-to-end and doubles as the reference for the conventions above. The `probe()` function is a stand-in — replace it with real checks as services land.
+
+**Known behaviour:** with an async `<svelte:boundary>`, SSR renders the `pending` snippet and the awaited content resolves on the client. Expect "Checking services…" in view-source rather than the table. If a route needs its data present in the initial HTML for SEO or first paint, that route is a case for a `load` function.

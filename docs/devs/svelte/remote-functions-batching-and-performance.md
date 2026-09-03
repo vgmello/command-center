@@ -60,7 +60,7 @@ export const getUserSettings = query(v.string(), async (userId) => {
 
 Three functions, three endpoints, three round-trips. On a 200ms-latency mobile link that is 600ms of pure network before any rendering settles.
 
-> **Note:** these three run *concurrently*, not sequentially — they don't depend on each other. The cost is connection/request overhead and head-of-line contention, not serialization. Genuine serialization is the waterfall case in §3.
+> **Note:** these three run _concurrently_, not sequentially — they don't depend on each other. The cost is connection/request overhead and head-of-line contention, not serialization. Genuine serialization is the waterfall case in §3.
 
 ### The fix
 
@@ -111,7 +111,7 @@ export const getDashboard = query.batch(v.string(), async (userIds) => {
 Two distinct wins are stacked here, and it's worth separating them:
 
 - **Collapsing three functions into one** removes two round-trips. That is composition, not batching — it would work with plain `query` too.
-- **`query.batch`** is what makes the *same* function called with *different* arguments collapse into one request. That's §2.
+- **`query.batch`** is what makes the _same_ function called with _different_ arguments collapse into one request. That's §2.
 
 Use `query.batch` for the shape in §2. Use plain composition when one screen needs several unrelated things about **one** subject.
 
@@ -258,32 +258,35 @@ export const getPosts = query(v.object({ filter: v.string() }), async ({ filter 
 	/* ... */
 });
 
-export const createPost = form(v.object({ title: v.string(), content: v.string() }), async (data) => {
-	const slug = await insertPost(data);
+export const createPost = form(
+	v.object({ title: v.string(), content: v.string() }),
+	async (data) => {
+		const slug = await insertPost(data);
 
-	// server knows this instance — refresh it in the same flight
-	void getPosts({ filter: 'all' }).refresh();
+		// server knows this instance — refresh it in the same flight
+		void getPosts({ filter: 'all' }).refresh();
 
-	// accept client-requested refreshes for instances the server can't know,
-	// bounded by an explicit limit
-	await requested(getPosts, 5).refreshAll();
+		// accept client-requested refreshes for instances the server can't know,
+		// bounded by an explicit limit
+		await requested(getPosts, 5).refreshAll();
 
-	redirect(303, `/blog/${slug}`);
-});
+		redirect(303, `/blog/${slug}`);
+	}
+);
 ```
 
 From the client, name the instances to refresh — optionally with an optimistic override so the UI updates before the response lands:
 
 ```ts
-await createPost.submit().updates(
-	getPosts({ filter: 'author:me' }).withOverride((posts) => [draft, ...posts])
-);
+await createPost
+	.submit()
+	.updates(getPosts({ filter: 'author:me' }).withOverride((posts) => [draft, ...posts]));
 ```
 
 Two hard rules:
 
 - **`requested(fn, limit)` must have a finite limit.** The refresh list is client-supplied; each entry costs a validation and usually a re-fetch. An unbounded list is a denial-of-service vector. `Infinity` requires a written justification.
-- **Refresh, don't invalidate everything.** A bare `form` submission invalidates *all* queries and load functions by default, emulating a full page reload. That is almost always more work than the mutation actually required.
+- **Refresh, don't invalidate everything.** A bare `form` submission invalidates _all_ queries and load functions by default, emulating a full page reload. That is almost always more work than the mutation actually required.
 
 Where the server already holds the new value, skip the refetch entirely with `.set()`:
 
@@ -296,14 +299,14 @@ getPost(post.id).set(updated); // no second query
 
 ## 5. Choosing the right flavour
 
-| Data | Use | Why |
-| --- | --- | --- |
-| Changes at most once per deploy | `prerender` | Resolved at build time; served from CDN, cached in the browser `Cache` API across reloads. |
-| Dynamic reads | `query` | Request-scoped dedupe on the server, instance sharing on the client. |
-| Same function, many arguments, one tick | `query.batch` | One request, one round-trip to the datastore. |
-| Real-time | `query.live` | One shared connection per instance; self-updating, so no `refresh()`. |
-| Writes from a `<form>` | `form` | Works without JS; progressively enhanced. |
-| Writes from anywhere else | `command` | Only when `form` genuinely doesn't fit. |
+| Data                                    | Use           | Why                                                                                        |
+| --------------------------------------- | ------------- | ------------------------------------------------------------------------------------------ |
+| Changes at most once per deploy         | `prerender`   | Resolved at build time; served from CDN, cached in the browser `Cache` API across reloads. |
+| Dynamic reads                           | `query`       | Request-scoped dedupe on the server, instance sharing on the client.                       |
+| Same function, many arguments, one tick | `query.batch` | One request, one round-trip to the datastore.                                              |
+| Real-time                               | `query.live`  | One shared connection per instance; self-updating, so no `refresh()`.                      |
+| Writes from a `<form>`                  | `form`        | Works without JS; progressively enhanced.                                                  |
+| Writes from anywhere else               | `command`     | Only when `form` genuinely doesn't fit.                                                    |
 
 `prerender` is the most under-used of these. Partial prerendering — a `prerender` function on an otherwise dynamic page — moves that data onto the CDN and makes navigation to it effectively free. Reach for it before optimizing a `query` that didn't need to be dynamic.
 
@@ -311,7 +314,7 @@ By default `prerender` functions are excluded from the server bundle, so they ca
 
 ---
 
-## 6. Where remote functions do *not* belong
+## 6. Where remote functions do _not_ belong
 
 Remote functions are the default data layer in this repo, but not the whole of it.
 
@@ -349,7 +352,7 @@ export async function load() {
 
 ---
 
-## 7. When *not* to batch
+## 7. When _not_ to batch
 
 Batching couples calls together. Do not batch across:
 
@@ -404,13 +407,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 What's actually worth watching:
 
-| Metric | Signal |
-| --- | --- |
-| Requests per page view | The headline number. Batching should move it; if it doesn't, batching isn't engaging. |
-| Batch size distribution | Batch sizes stuck at 1 mean calls are landing in different macrotasks. |
-| Query cache hit rate | Rises as arguments are normalized — remember object keys are sorted for cache keys, so `{a,b}` and `{b,a}` already share one. |
-| P95 handler duration | Separates slow datastore work from network overhead. |
-| Refresh count per mutation | Rising count means single-flight is over-refreshing. |
+| Metric                     | Signal                                                                                                                        |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Requests per page view     | The headline number. Batching should move it; if it doesn't, batching isn't engaging.                                         |
+| Batch size distribution    | Batch sizes stuck at 1 mean calls are landing in different macrotasks.                                                        |
+| Query cache hit rate       | Rises as arguments are normalized — remember object keys are sorted for cache keys, so `{a,b}` and `{b,a}` already share one. |
+| P95 handler duration       | Separates slow datastore work from network overhead.                                                                          |
+| Refresh count per mutation | Rising count means single-flight is over-refreshing.                                                                          |
 
 Measure before optimizing. Fan-out over a fast local network can be entirely invisible in development and dominant on mobile.
 
@@ -420,18 +423,18 @@ Measure before optimizing. Fan-out over a fast local network can be entirely inv
 
 Recorded so nobody reintroduces these by copying the original:
 
-| Original | Correction |
-| --- | --- |
-| `query.batch(async (ids) => …)` — no schema | Every remote function taking an argument **must** validate it with a Valibot schema. These are public HTTP endpoints. |
-| `export let posts = []` | Svelte 4. This repo is runes-only: `let { posts } = $props()`. |
-| Batch example presented as batching | It merges three functions into one — composition. `query.batch` batches *one* function across *many arguments*. Both are valid; they're different tools. |
-| Manual `posts.map(...)` + `Promise.all` to fix N+1 | Unnecessary. `query.batch` collapses the calls with the call site unchanged. |
-| `.find()` inside the batch resolver | O(n²) on large batches. Build a `Map` first. |
-| `retryRemoteFunction` wrapping a query | Breaks query identity — dedupe, `refresh()`, and single-flight targeting all stop working. See §8. |
-| `event.url.pathname.includes('__data')` | `__data.json` is the **load function** data path, not the remote-function endpoint. |
-| Bundle sizes, load times, error rates, platform table | The author's numbers on their app. Unverified here; treat as illustration, not as targets. |
+| Original                                              | Correction                                                                                                                                               |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query.batch(async (ids) => …)` — no schema           | Every remote function taking an argument **must** validate it with a Valibot schema. These are public HTTP endpoints.                                    |
+| `export let posts = []`                               | Svelte 4. This repo is runes-only: `let { posts } = $props()`.                                                                                           |
+| Batch example presented as batching                   | It merges three functions into one — composition. `query.batch` batches _one_ function across _many arguments_. Both are valid; they're different tools. |
+| Manual `posts.map(...)` + `Promise.all` to fix N+1    | Unnecessary. `query.batch` collapses the calls with the call site unchanged.                                                                             |
+| `.find()` inside the batch resolver                   | O(n²) on large batches. Build a `Map` first.                                                                                                             |
+| `retryRemoteFunction` wrapping a query                | Breaks query identity — dedupe, `refresh()`, and single-flight targeting all stop working. See §8.                                                       |
+| `event.url.pathname.includes('__data')`               | `__data.json` is the **load function** data path, not the remote-function endpoint.                                                                      |
+| Bundle sizes, load times, error rates, platform table | The author's numbers on their app. Unverified here; treat as illustration, not as targets.                                                               |
 
 ## Reference
 
 - Official docs: SvelteKit → Remote functions
-- Requires `kit.experimental.remoteFunctions` and `compilerOptions.experimental.async` in `svelte.config.js`
+- Requires `experimental.remoteFunctions` and `compilerOptions.experimental.async` in the `sveltekit()` plugin options in **`vite.config.ts`** (this SvelteKit version has no `svelte.config.js`; the official docs still show one)
