@@ -87,23 +87,13 @@ Bun-specific server APIs (`Bun.file`, `Bun.serve` internals, `bun:sqlite`, …) 
 
 ## Testing
 
-Two runners, split by what they test. This is not a preference — `bun test` cannot compile `.svelte` files, and the official `bun-plugin-svelte` is `0.0.6` and untouched since March 2025, so it is not a base to build on.
+**`bun test` is the test runner.** Not Vitest, not Jest. Native, no config, Jest-compatible API: `import { test, expect } from 'bun:test'`.
 
-### `bun test` — logic
+Tests target logic, which is where this app's risk lives: remote function handlers, `src/lib/server/` modules, Valibot schemas, pure helpers. Since remote functions hold the data layer, testing them well covers most of what can break.
 
-Everything that is plain TypeScript: remote function handlers, `src/lib/server/` modules, pure helpers, schemas. Native, fast, no config, Jest-compatible API via `import { test, expect } from 'bun:test'`.
+Test a remote function by extracting its handler body into a plain exported function and testing that directly. A wrapped `query`/`form` needs a request context to invoke, which isn't worth constructing — and the wrapper is SvelteKit's code, not ours.
 
-Test remote functions by extracting the handler body into a plain exported function and testing that. The `query`/`form` wrapper is SvelteKit's to test, not ours — and a wrapped remote function needs a request context to invoke, which is not worth constructing in a unit test.
-
-### Vitest browser mode — components
-
-Component tests use **Vitest + `vitest-browser-svelte`** in browser mode, which is the Svelte team's current recommendation. Real browser, real rendering — jsdom does not model Svelte 5 effects and async boundaries faithfully enough to trust.
-
-Run it under Bun like everything else: `bun --bun run test:components` (or rely on `run.bun = true` in `bunfig.toml`). Vitest targets Node officially, so if a Vitest-on-Bun defect blocks work, **record it in this section with a link** rather than quietly reverting that script to Node — an undocumented Node dependency is how the runtimes drift apart.
-
-### Keeping the two runners apart
-
-`bun test` globs `*.test.ts` and will happily pick up Vitest specs it cannot run. Name component tests `*.svelte.test.ts` and scope each runner explicitly so neither claims the other's files. Verify by running both and confirming the file counts sum to the total.
+Note that `bun test` cannot compile `.svelte` files, so component rendering is out of scope. If a component ever genuinely needs a rendering test, raise it then rather than adding a second runner pre-emptively.
 
 ## Conventions
 
