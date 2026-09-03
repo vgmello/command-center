@@ -1,44 +1,23 @@
-import * as v from 'valibot';
 import { query } from '$app/server';
-import {
-	DOMAIN_SORT_KEYS,
-	DOMAIN_STATUS_FILTERS,
-	domainSortOptions,
-	domainStatusFilterOptions
-} from '$lib/platform/query';
+import { domainSortOptions, domainStatusFilterOptions } from '$lib/platform/query';
 import { describeHealthThresholds } from '$lib/platform/health';
 import { ENVIRONMENTS, NAV_ITEMS, TIME_RANGES } from '$lib/server/platform/fixtures';
-import { platformSource, workspaceSource } from '$lib/server/platform';
-import { DEFAULT_PAGE_SIZE, buildOverview, buildSystemStatus } from '$lib/server/platform/snapshot';
+import { scopeSchema, scopedDomainQuerySchema } from '$lib/server/api/schemas';
+import { workspaceSource } from '$lib/server/platform';
+import { DEFAULT_PAGE_SIZE } from '$lib/server/platform/snapshot';
+import { readDomainPage, readOverview, readSystemStatus } from '$lib/server/platform/service';
 
 /*
- * Remote functions are public HTTP endpoints, so every argument is validated with a
- * Valibot schema. The picklists are built from the same arrays the UI's select
- * controls are built from — declaring the allowed values twice is how a control ends
- * up offering a sort the endpoint rejects.
+ * The UI's transport.
  *
- * Schemas stay local to this file: only remote functions may be exported from a
- * `.remote.ts` module.
+ * These are public HTTP endpoints, so every argument is validated — against the same
+ * schemas the JSON API uses (`$lib/server/api/schemas.ts`), which is what stops the
+ * two surfaces disagreeing about what a valid time range is.
+ *
+ * Each function calls the service in process. It must never fetch `/api/v1/*`: that
+ * would add a network hop, throw away end-to-end types, and fail during SSR, where
+ * the server would be fetching itself.
  */
-
-const environmentSchema = v.picklist(['production', 'staging', 'development'] as const);
-const timeRangeSchema = v.picklist(['5m', '15m', '1h', '6h', '24h', '7d'] as const);
-
-const scopeSchema = v.object({
-	environment: environmentSchema,
-	timeRange: timeRangeSchema
-});
-
-const domainQuerySchema = v.object({
-	environment: environmentSchema,
-	timeRange: timeRangeSchema,
-	// Bounded so a long paste cannot turn into an expensive scan.
-	search: v.pipe(v.string(), v.maxLength(120)),
-	status: v.picklist(DOMAIN_STATUS_FILTERS),
-	sort: v.picklist(DOMAIN_SORT_KEYS),
-	page: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(10_000)),
-	pageSize: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100))
-});
 
 /**
  * Chrome that surrounds every page, and the vocabulary its controls are built from:
@@ -73,9 +52,7 @@ export const getShell = query(async () => {
 });
 
 /** Everything above and beside the domain table, for one environment/time-range scope. */
-export const getOverview = query(scopeSchema, async (scope) =>
-	buildOverview(platformSource(), scope)
-);
+export const getOverview = query(scopeSchema, async (scope) => readOverview(scope));
 
 /**
  * The aggregate badge in the sidebar footer.
@@ -83,9 +60,7 @@ export const getOverview = query(scopeSchema, async (scope) =>
  * Its own query rather than a field on the shell: it reflects live health, so it has
  * to refresh on the same cadence as the overview, while the rest of the shell does not.
  */
-export const getSystemStatus = query(scopeSchema, async (scope) =>
-	buildSystemStatus(await platformSource().readDomainStatusCounts(scope))
-);
+export const getSystemStatus = query(scopeSchema, async (scope) => readSystemStatus(scope));
 
 /**
  * One page of the domain health table.
@@ -95,7 +70,6 @@ export const getSystemStatus = query(scopeSchema, async (scope) =>
  * infrastructure counts. Filtering, sorting and paging are pushed into the source.
  */
 export const getDomainPage = query(
-	domainQuerySchema,
-	async ({ environment, timeRange, ...query }) =>
-		platformSource().queryDomains({ environment, timeRange }, query)
+	scopedDomainQuerySchema,
+	async ({ environment, timeRange, ...query }) => readDomainPage({ environment, timeRange }, query)
 );

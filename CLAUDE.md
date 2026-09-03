@@ -116,6 +116,61 @@ Sources return **facts**. Formatting, deriving status from a score, turning coun
 percentages — all of that stays in the pure layer above, so a new adapter cannot
 accidentally ship its own opinion about how a number should read.
 
+### Two transports, one service
+
+The data is reachable two ways, and both go through the same in-process service:
+
+```
+Browser (UI)                         External client
+    │ /_app/remote/…                     │ GET /api/v1/domains
+    ▼                                    ▼
+overview.remote.ts                 routes/api/v1/**/+server.ts
+    │ devalue · session                  │ JSON · bearer token
+    └───────────────┬────────────────────┘
+                    ▼
+        server/platform/service.ts       ← in-process calls
+                    ▼
+            PlatformSource               ← the port
+```
+
+**A transport never calls the other transport over HTTP.** A remote function that
+fetched `/api/v1/*` would add a network hop for nothing, throw away end-to-end types,
+and fail during SSR, where the server would be fetching itself. Call the service.
+
+`service.ts` is one function per thing a caller can ask for. `readOverview()` — the
+composite the overview page needs — is composed there and deliberately _not_ exposed
+publicly: it is shaped for one screen. External clients get the resources it is
+composed from, which stay stable while the screen changes.
+
+**The public contract is frozen and separate.** `src/lib/server/api/v1/dto.ts` maps
+internal types to v1 shapes, and `dto.test.ts` asserts those shapes key by key.
+Returning `Domain` or `OverviewSnapshot` directly would make every field rename a
+breaking change found by a customer instead of by a test. The mapper is also where
+presentation is stripped: `icon`, `accent`, the sparkline bounds and the pre-formatted
+strings are how _our_ UI draws a thing and mean nothing to another client.
+
+What legitimately differs between the two:
+
+|               | Remote functions           | `/api/v1`                       |
+| ------------- | -------------------------- | ------------------------------- |
+| Serialization | devalue                    | plain JSON                      |
+| Auth          | session                    | bearer token (`API_TOKENS`)     |
+| Errors        | envelope, generic message  | real status codes, named fields |
+| Versioning    | free to change with the UI | frozen per version              |
+
+What they share: the Valibot schemas in `src/lib/server/api/schemas.ts`. One
+definition of a valid time range, so the two surfaces cannot disagree.
+
+The error handling is opposite on purpose. `handleValidationError` in
+`src/hooks.server.ts` returns a bare "Bad Request" to remote callers and logs the
+detail, because those issues describe our schemas and the endpoint is public. The
+JSON API names the offending field, because there the caller wrote the request by
+hand and is owed an explanation.
+
+**With `API_TOKENS` unset the API is closed, not open** — every request gets 401. A
+data API that serves everything because someone forgot an environment variable is not
+a failure mode worth having.
+
 ### The client declares no data
 
 If a value is not a literal constant of the app's own structure, it arrives from the
@@ -328,7 +383,7 @@ an `@` costs its full length in every session, whether or not the session touche
 
 ## State
 
-Overview screen built and verified. `bun test` (78 tests), `bun run check`, `bun run lint`,
+Overview screen built and verified. `bun test` (86 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
@@ -339,8 +394,14 @@ What exists:
 - `src/lib/server/platform/` — the `PlatformSource` / `WorkspaceSource` ports, the fixture
   implementation, the resolver, and the snapshot assembler. **Replacing the fixture with
   real telemetry is a new file plus a resolver entry**; nothing above the ports changes
+- `src/lib/server/platform/service.ts` — the in-process API both transports call
 - `src/routes/overview.remote.ts` — `getShell`, `getOverview`, `getSystemStatus`,
   `getDomainPage`, all Valibot-validated
+- `src/routes/api/v1/` — public JSON API: `domains`, `domains/summary`, `metrics`,
+  `incidents`, `deployments`, `infrastructure`, `status`. Token-authenticated,
+  frozen DTOs in `src/lib/server/api/v1/dto.ts` with a shape test
+- `src/hooks.server.ts` — `handleValidationError`: generic message to the client,
+  detail to the log
 - `src/lib/components/` — app shell (`app/`), overview panels (`overview/`), shared
   primitives, the icon registry and `tone.ts`
 - `src/lib/scope.svelte.ts` — environment / time range / auto-refresh, held in context
