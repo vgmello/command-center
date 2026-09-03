@@ -12,19 +12,24 @@
 	import { CRITICALITY_LABELS, STATUS_LABELS } from '$lib/platform/health';
 	import { formatLatency, formatPercent } from '$lib/platform/format';
 	import { paginationItems } from '$lib/platform/pagination';
-	import type { DomainPage, DomainQuery, DomainSortKey, HealthStatus } from '$lib/platform/types';
+	import type { DomainPage } from '$lib/platform/types';
+	import type { DomainSortKey, DomainStatusFilter, SelectOption } from '$lib/platform/query';
 
-	type StatusFilter = HealthStatus | 'all';
 	type ViewMode = 'grid' | 'list';
 
 	interface Props {
 		result: DomainPage;
+		/** Filter and sort choices, supplied by the server so this list exists once. */
+		statusOptions: SelectOption<DomainStatusFilter>[];
+		sortOptions: SelectOption<DomainSortKey>[];
+		/** Sentence describing the health bands, generated from the thresholds themselves. */
+		thresholds: string;
 		search: string;
-		status: StatusFilter;
-		sort: DomainQuery['sort'];
+		status: DomainStatusFilter;
+		sort: DomainSortKey;
 		view: ViewMode;
 		onSearch: (value: string) => void;
-		onStatusChange: (value: StatusFilter) => void;
+		onStatusChange: (value: DomainStatusFilter) => void;
 		onSortChange: (value: DomainSortKey) => void;
 		onViewChange: (value: ViewMode) => void;
 		onPageChange: (value: number) => void;
@@ -32,6 +37,9 @@
 
 	let {
 		result,
+		statusOptions,
+		sortOptions,
+		thresholds,
 		search,
 		status,
 		sort,
@@ -43,23 +51,8 @@
 		onPageChange
 	}: Props = $props();
 
-	const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
-		{ value: 'all', label: 'All' },
-		{ value: 'healthy', label: 'Healthy' },
-		{ value: 'degraded', label: 'Degraded' },
-		{ value: 'down', label: 'Down' }
-	];
-
-	const SORT_OPTIONS: Array<{ value: DomainSortKey; label: string }> = [
-		{ value: 'health-score', label: 'Health Score' },
-		{ value: 'error-rate', label: 'Error Rate' },
-		{ value: 'p95-latency', label: 'P95 Latency' },
-		{ value: 'active-incidents', label: 'Active Incidents' },
-		{ value: 'name', label: 'Name' }
-	];
-
-	const statusLabel = $derived(STATUS_OPTIONS.find((o) => o.value === status)?.label ?? 'All');
-	const sortLabel = $derived(SORT_OPTIONS.find((o) => o.value === sort)?.label ?? 'Health Score');
+	const statusLabel = $derived(statusOptions.find((o) => o.value === status)?.label ?? 'All');
+	const sortLabel = $derived(sortOptions.find((o) => o.value === sort)?.label ?? '');
 	const pages = $derived(paginationItems(result.page.page, result.page.totalPages));
 </script>
 
@@ -75,8 +68,7 @@
 					<Icon name="info" size={14} />
 				</Tooltip.Trigger>
 				<Tooltip.Content class="max-w-[260px]">
-					Health score blends error rate, latency and open incidents. 75 and above is healthy, 50–74
-					degraded, below 50 down.
+					Health score blends error rate, latency and open incidents. {thresholds}
 				</Tooltip.Content>
 			</Tooltip.Root>
 		</Tooltip.Provider>
@@ -102,7 +94,7 @@
 		<Select.Root
 			type="single"
 			value={status}
-			onValueChange={(value) => onStatusChange(value as StatusFilter)}
+			onValueChange={(value) => onStatusChange(value as DomainStatusFilter)}
 		>
 			<Select.Trigger
 				class="h-10 gap-2 rounded-lg border-border bg-background px-3 dark:bg-background"
@@ -111,7 +103,7 @@
 				<span class="text-[13px] font-medium text-foreground">{statusLabel}</span>
 			</Select.Trigger>
 			<Select.Content>
-				{#each STATUS_OPTIONS as option (option.value)}
+				{#each statusOptions as option (option.value)}
 					<Select.Item value={option.value} label={option.label} />
 				{/each}
 			</Select.Content>
@@ -129,7 +121,7 @@
 				<span class="text-[13px] font-medium text-foreground">{sortLabel}</span>
 			</Select.Trigger>
 			<Select.Content>
-				{#each SORT_OPTIONS as option (option.value)}
+				{#each sortOptions as option (option.value)}
 					<Select.Item value={option.value} label={option.label} />
 				{/each}
 			</Select.Content>

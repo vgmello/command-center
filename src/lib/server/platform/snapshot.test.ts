@@ -1,184 +1,195 @@
 import { describe, expect, test } from 'bun:test';
 import {
-	DEFAULT_PAGE_SIZE,
 	buildCountTiles,
 	buildMetrics,
 	buildOverview,
 	buildSystemStatus,
-	queryDomains
+	toSeries
 } from './snapshot';
-import { listDomains } from './fixtures';
-import { statusFromScore } from '$lib/platform/health';
-import type { DomainQuery } from '$lib/platform/types';
+import type { PlatformSource } from './source';
+import type { DomainStatusCounts, RateObservation } from '$lib/platform/types';
+import type { PlatformScope } from '$lib/platform/query';
 
-const baseQuery: DomainQuery = {
-	environment: 'production',
-	timeRange: '15m',
-	search: '',
-	status: 'all',
-	sort: 'health-score',
-	page: 1,
-	pageSize: DEFAULT_PAGE_SIZE
-};
+const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
 
-const domains = listDomains();
+const counts = (
+	healthy: number,
+	degraded: number,
+	down: number,
+	unknown = 0
+): DomainStatusCounts => ({ healthy, degraded, down, unknown });
 
-describe('listDomains', () => {
-	test('derives status from score rather than storing it', () => {
-		for (const domain of domains) {
-			expect(domain.status).toBe(statusFromScore(domain.healthScore));
-		}
-	});
+/**
+ * A source that returns exactly what the test says and records how it was called.
+ *
+ * The assembler is supposed to depend on the interface and nothing else — building
+ * a snapshot from a stub that shares no code with the fixtures is what proves it.
+ */
+function stubSource(overrides: Partial<PlatformSource> = {}) {
+	const calls: string[] = [];
 
-	test('gives every domain a unique slug', () => {
-		expect(new Set(domains.map((d) => d.slug)).size).toBe(domains.length);
-	});
+	const source: PlatformSource = {
+		id: 'stub',
+		async readDomainStatusCounts() {
+			calls.push('counts');
+			return counts(3, 1, 1);
+		},
+		async readRates() {
+			calls.push('rates');
+			return [];
+		},
+		async queryDomains() {
+			calls.push('domains');
+			return {
+				domains: [],
+				page: { page: 1, pageSize: 8, totalItems: 0, totalPages: 1, from: 0, to: 0 }
+			};
+		},
+		async listIncidents(_scope, limit) {
+			calls.push(`incidents:${limit}`);
+			return [];
+		},
+		async listDeployments(_scope, limit) {
+			calls.push(`deployments:${limit}`);
+			return [];
+		},
+		async listInfrastructure() {
+			calls.push('infrastructure');
+			return [];
+		},
+		...overrides
+	};
 
-	test('produces series the sparklines can scale', () => {
-		for (const domain of domains) {
-			expect(domain.healthTrend.values.length).toBeGreaterThan(1);
-			expect(domain.healthTrend.max).toBeGreaterThanOrEqual(domain.healthTrend.min);
-		}
-	});
-
-	test('is deterministic, so a refresh does not redraw a different history', () => {
-		expect(listDomains()[0].healthTrend.values).toEqual(domains[0].healthTrend.values);
-	});
-});
-
-describe('queryDomains', () => {
-	test('pages without losing or duplicating rows', () => {
-		const seen = new Set<string>();
-		let page = 1;
-
-		while (true) {
-			const result = queryDomains(domains, { ...baseQuery, page });
-			for (const domain of result.domains) seen.add(domain.id);
-			if (page >= result.page.totalPages) break;
-			page++;
-		}
-
-		expect(seen.size).toBe(domains.length);
-	});
-
-	test('reports the 1-based range the footer prints', () => {
-		const result = queryDomains(domains, { ...baseQuery, page: 2 });
-		expect(result.page.from).toBe(9);
-		expect(result.page.to).toBe(16);
-		expect(result.page.totalItems).toBe(domains.length);
-	});
-
-	test('clamps a page beyond the end instead of returning nothing', () => {
-		const result = queryDomains(domains, { ...baseQuery, page: 999 });
-		expect(result.page.page).toBe(result.page.totalPages);
-		expect(result.domains.length).toBeGreaterThan(0);
-	});
-
-	test('filters by status', () => {
-		const result = queryDomains(domains, { ...baseQuery, status: 'down', pageSize: 100 });
-		expect(result.domains.length).toBeGreaterThan(0);
-		expect(result.domains.every((d) => d.status === 'down')).toBe(true);
-	});
-
-	test('searches case-insensitively on name and slug', () => {
-		expect(queryDomains(domains, { ...baseQuery, search: 'PAYMENT' }).domains[0].name).toBe(
-			'Payment Domain'
-		);
-		expect(queryDomains(domains, { ...baseQuery, search: 'order-domain' }).domains[0].name).toBe(
-			'Order Domain'
-		);
-	});
-
-	test('an empty result set still reports a usable page', () => {
-		const result = queryDomains(domains, { ...baseQuery, search: 'nothing-matches-this' });
-		expect(result.domains).toEqual([]);
-		expect(result.page.from).toBe(0);
-		expect(result.page.to).toBe(0);
-		expect(result.page.totalPages).toBe(1);
-	});
-
-	test('the default sort leads with criticality, then the worst score in the tier', () => {
-		const result = queryDomains(domains, baseQuery);
-		const names = result.domains.map((d) => d.name);
-
-		expect(names[0]).toBe('Payment Domain');
-		// Business-critical tier, worst first.
-		expect(names.slice(1, 4)).toEqual(['Inventory Domain', 'Order Domain', 'User Domain']);
-	});
-
-	test('sorting by error rate puts the worst offender first', () => {
-		const result = queryDomains(domains, { ...baseQuery, sort: 'error-rate' });
-		expect(result.domains[0].errorRatePct).toBe(Math.max(...domains.map((d) => d.errorRatePct)));
-	});
-
-	test('sorting by name is alphabetical', () => {
-		const result = queryDomains(domains, { ...baseQuery, sort: 'name', pageSize: 100 });
-		const names = result.domains.map((d) => d.name);
-		expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
-	});
-
-	test('does not mutate the list it was given', () => {
-		const order = domains.map((d) => d.id);
-		queryDomains(domains, { ...baseQuery, sort: 'name' });
-		expect(domains.map((d) => d.id)).toEqual(order);
-	});
-});
+	return { source, calls };
+}
 
 describe('buildCountTiles', () => {
 	test('the status counts add up to the total', () => {
-		const tiles = buildCountTiles(domains);
-		const [total, ...statuses] = tiles;
+		const [total, ...statuses] = buildCountTiles(counts(18, 4, 3));
 
-		expect(total.value).toBe(domains.length);
-		expect(statuses.reduce((sum, tile) => sum + tile.value, 0)).toBe(total.value);
+		expect(total.value).toBe(25);
+		expect(statuses.reduce((sum, tile) => sum + tile.value, 0)).toBe(25);
+		expect(statuses.map((tile) => tile.percentage)).toEqual([72, 16, 12]);
+	});
+
+	test('every tile names its own icon, so the client picks none', () => {
+		expect(buildCountTiles(counts(1, 0, 0)).every((tile) => tile.icon.length > 0)).toBe(true);
 	});
 
 	test('the total tile has a caption instead of a percentage', () => {
-		const [total] = buildCountTiles(domains);
+		const [total] = buildCountTiles(counts(1, 0, 0));
 		expect(total.percentage).toBeNull();
 		expect(total.caption).toBe('Across platform');
+	});
+
+	test('does not divide by zero when nothing is reporting', () => {
+		expect(buildCountTiles(counts(0, 0, 0)).every((tile) => tile.value === 0)).toBe(true);
+	});
+});
+
+describe('buildMetrics', () => {
+	const observation = (over: Partial<RateObservation>): RateObservation => ({
+		id: 'm',
+		label: 'M',
+		value: 1,
+		kind: 'rate',
+		unit: 'req/s',
+		samples: [1, 2, 3],
+		change: 1,
+		polarity: 'neutral',
+		...over
+	});
+
+	test('formats each kind in its own unit', () => {
+		const [rate, percent, duration] = buildMetrics(
+			[
+				observation({ kind: 'rate', value: 18_700, unit: 'req/s' }),
+				observation({ kind: 'percent', value: 1.38, unit: '' }),
+				observation({ kind: 'duration-ms', value: 412, unit: 'ms' })
+			],
+			'15m'
+		);
+
+		expect([rate.formatted, rate.unit]).toEqual(['18.7k', 'req/s']);
+		expect([percent.formatted, percent.unit]).toEqual(['1.38%', '']);
+		expect([duration.formatted, duration.unit]).toEqual(['412', 'ms']);
+	});
+
+	test('reads direction from the sign of the change', () => {
+		const [up, down, flat] = buildMetrics(
+			[observation({ change: 3 }), observation({ change: -3 }), observation({ change: 0 })],
+			'15m'
+		);
+
+		expect([up.direction, down.direction, flat.direction]).toEqual(['up', 'down', 'flat']);
+	});
+
+	test("a duration's change is in its own unit, a rate's is a percentage", () => {
+		const [rate, duration] = buildMetrics(
+			[
+				observation({ kind: 'rate', change: 8.4 }),
+				observation({ kind: 'duration-ms', unit: 'ms', change: -28 })
+			],
+			'15m'
+		);
+
+		expect(rate.changeFormatted).toBe('↑ 8.4%');
+		expect(duration.changeFormatted).toBe('↓ 28ms');
+	});
+
+	test('carries polarity through untouched, since only the source knows it', () => {
+		const [metric] = buildMetrics([observation({ polarity: 'lower-is-better' })], '15m');
+		expect(metric.polarity).toBe('lower-is-better');
+	});
+
+	test('labels the comparison window with the compact range id', () => {
+		expect(buildMetrics([observation({})], '1h')[0].comparedToLabel).toBe('vs 1h ago');
+	});
+});
+
+describe('toSeries', () => {
+	test('precomputes the bounds the sparklines scale against', () => {
+		expect(toSeries([3, 9, 5])).toEqual({ values: [3, 9, 5], min: 3, max: 9 });
+	});
+
+	test('an empty series does not produce Infinity bounds', () => {
+		expect(toSeries([])).toEqual({ values: [], min: 0, max: 0 });
 	});
 });
 
 describe('buildSystemStatus', () => {
 	test('an outage outranks a degradation', () => {
-		expect(buildSystemStatus([{ status: 'down' }, { status: 'degraded' }] as never).status).toBe(
-			'down'
-		);
+		expect(buildSystemStatus(counts(1, 1, 1)).status).toBe('down');
 	});
 
 	test('reports all clear only when nothing is wrong', () => {
-		const status = buildSystemStatus([{ status: 'healthy' }] as never);
+		const status = buildSystemStatus(counts(5, 0, 0));
 		expect(status.label).toBe('All Systems');
 		expect(status.detail).toBe('Operational');
 	});
 
 	test('pluralises the detail line', () => {
-		expect(buildSystemStatus([{ status: 'degraded' }] as never).detail).toBe('1 domain degraded');
-		expect(
-			buildSystemStatus([{ status: 'degraded' }, { status: 'degraded' }] as never).detail
-		).toBe('2 domains degraded');
-	});
-});
-
-describe('buildMetrics', () => {
-	test('states polarity so the UI can colour the trend correctly', () => {
-		const metrics = buildMetrics('15m');
-		const byId = Object.fromEntries(metrics.map((metric) => [metric.id, metric]));
-
-		expect(byId['error-rate'].polarity).toBe('lower-is-better');
-		expect(byId['request-rate'].polarity).toBe('higher-is-better');
-	});
-
-	test('labels the comparison window from the selected time range', () => {
-		expect(buildMetrics('1h')[0].comparedToLabel).toBe('vs 1h ago');
-		expect(buildMetrics('15m')[0].comparedToLabel).toBe('vs 15m ago');
+		expect(buildSystemStatus(counts(1, 1, 0)).detail).toBe('1 domain degraded');
+		expect(buildSystemStatus(counts(1, 2, 0)).detail).toBe('2 domains degraded');
 	});
 });
 
 describe('buildOverview', () => {
-	test('assembles a snapshot whose distribution matches its count tiles', () => {
-		const snapshot = buildOverview('production', '15m', new Date('2026-09-03T12:00:00.000Z'));
+	test('assembles from the interface alone, with no knowledge of the fixtures', async () => {
+		const { source } = stubSource();
+		const snapshot = await buildOverview(source, scope, new Date('2026-09-03T12:00:00.000Z'));
+
+		expect(snapshot.counts[0].value).toBe(5);
+		expect(snapshot.distribution.total).toBe(5);
+		expect(snapshot.generatedAt).toBe('2026-09-03T12:00:00.000Z');
+		expect(snapshot.environment).toBe('production');
+		expect(snapshot.timeRange).toBe('15m');
+	});
+
+	test('the tiles and the donut are built from the same counts', async () => {
+		const { source } = stubSource();
+		const snapshot = await buildOverview(source, scope);
+
 		const healthyTile = snapshot.counts.find((tile) => tile.id === 'healthy');
 		const healthySlice = snapshot.distribution.slices.find((slice) => slice.status === 'healthy');
 
@@ -186,17 +197,28 @@ describe('buildOverview', () => {
 		expect(snapshot.distribution.total).toBe(snapshot.counts[0].value);
 	});
 
-	test('timestamps incidents relative to the clock it was given', () => {
-		const now = new Date('2026-09-03T12:00:00.000Z');
-		const snapshot = buildOverview('production', '15m', now);
+	test('asks the source for the panel limits rather than trimming afterwards', async () => {
+		const { source, calls } = stubSource();
+		await buildOverview(source, scope);
 
-		expect(snapshot.generatedAt).toBe(now.toISOString());
-		expect(new Date(snapshot.incidents[0].openedAt).getTime()).toBeLessThan(now.getTime());
+		expect(calls).toContain('incidents:5');
+		expect(calls).toContain('deployments:5');
 	});
 
-	test('carries the requested scope through', () => {
-		const snapshot = buildOverview('staging', '6h');
-		expect(snapshot.environment).toBe('staging');
-		expect(snapshot.timeRange).toBe('6h');
+	test('does not fetch the domain table; that is a separate query', async () => {
+		const { source, calls } = stubSource();
+		await buildOverview(source, scope);
+
+		expect(calls).not.toContain('domains');
+	});
+
+	test('propagates a source failure instead of serving a half-built page', async () => {
+		const { source } = stubSource({
+			async readRates() {
+				throw new Error('metrics backend unreachable');
+			}
+		});
+
+		expect(buildOverview(source, scope)).rejects.toThrow('metrics backend unreachable');
 	});
 });

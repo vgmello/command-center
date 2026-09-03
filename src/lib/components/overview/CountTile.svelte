@@ -9,13 +9,6 @@
 
 	let { tile }: Props = $props();
 
-	const ICONS: Record<string, string> = {
-		total: 'box',
-		healthy: 'circle-check',
-		degraded: 'triangle-alert',
-		down: 'circle-x'
-	};
-
 	const tone = $derived(tile.status ? statusTone(tile.status) : null);
 </script>
 
@@ -30,7 +23,7 @@
 				? `${tone.chip} border-0`
 				: 'bg-muted text-muted-foreground'}"
 		>
-			<Icon name={ICONS[tile.id] ?? 'box'} size={18} strokeWidth={1.9} />
+			<Icon name={tile.icon} size={18} strokeWidth={1.9} />
 		</span>
 	</div>
 	<p class="tabular mt-2 text-[11.5px] text-muted-foreground">

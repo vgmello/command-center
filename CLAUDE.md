@@ -81,6 +81,54 @@ A property that describes what something _is_ stays separate from a property tha
 describes how it is _doing_. A domain's accent tint is identity; its health is status.
 They are allowed to disagree — and they usually do — so they never share a field.
 
+### Plugging in a real data source
+
+Everything the UI shows comes from a **source** behind an interface, never from a
+module the UI imports directly:
+
+- `src/lib/server/platform/source.ts` — `PlatformSource` (telemetry: domain counts,
+  the domain page, rates, incidents, deployments, infrastructure) and
+  `WorkspaceSource` (the signed-in user and their pins). Two interfaces, because
+  they will be replaced independently and on different schedules.
+- `src/lib/server/platform/fixture-source.ts` — the seeded stand-in.
+- `src/lib/server/platform/index.ts` — resolves one implementation from
+  `PLATFORM_SOURCE` / `WORKSPACE_SOURCE`, caches the instance, and **throws on an
+  unknown name**. Falling back to fixtures on a typo would serve invented numbers
+  in production with nothing on the page admitting it.
+
+To add a real backend: implement the interface, register it in the resolver, set the
+env var. Nothing above the interface changes.
+
+Two rules the interface encodes, and that a new implementation must honour:
+
+- **Ask for the answer, not the raw rows.** `readDomainStatusCounts()` returns counts,
+  not every domain, because that is one aggregate query against a real backend.
+- **Push filtering, sorting and paging down.** `queryDomains()` takes the whole query
+  so an adapter can translate it to SQL or a search API. Doing it above the interface
+  would force every adapter to over-fetch. In-memory filtering is one adapter's
+  strategy (`in-memory-query.ts`), not the contract.
+
+Every method is `async` even where the fixture needs nothing awaited — a synchronous
+port would have to be rewritten, along with every caller, the first time real I/O
+appears.
+
+Sources return **facts**. Formatting, deriving status from a score, turning counts into
+percentages — all of that stays in the pure layer above, so a new adapter cannot
+accidentally ship its own opinion about how a number should read.
+
+### The client declares no data
+
+If a value is not a literal constant of the app's own structure, it arrives from the
+server. That includes lists the UI merely _offers_: the domain table's status filters
+and sort options travel in `getShell`, built from the same `src/lib/platform/query.ts`
+arrays the Valibot picklists are built from. A hardcoded option list in a component is
+a second source of truth that drifts until the endpoint rejects something the UI
+offered.
+
+The same rule covers copy that restates a rule: the health-score tooltip is generated
+by `describeHealthThresholds()` from the constants `statusFromScore()` applies, so it
+cannot describe bands the code no longer uses.
+
 ### Split queries by how often they change
 
 One remote function per thing that changes on its own schedule, not one per page.
@@ -280,21 +328,25 @@ an `@` costs its full length in every session, whether or not the session touche
 
 ## State
 
-Overview screen built and verified. `bun test` (60 tests), `bun run check`, `bun run lint`,
+Overview screen built and verified. `bun test` (78 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
 
-- `src/lib/platform/` — `types.ts` (the server↔UI contract) plus `health.ts`, `format.ts`,
+- `src/lib/platform/` — `types.ts` (the server↔UI contract), `query.ts` (the domain-query
+  vocabulary shared by the schemas and the toolbar), plus `health.ts`, `format.ts`,
   `geometry.ts` and `pagination.ts`, each with a test file
-- `src/lib/server/platform/` — seeded fixtures and the snapshot builder. **This is the layer
-  that gets replaced when live telemetry lands**; nothing above it changes
-- `src/routes/overview.remote.ts` — `getShell`, `getOverview`, `getDomainPage`, all Valibot-validated
-- `src/lib/components/` — app shell (`app/`), overview panels (`overview/`), shared primitives,
-  the icon registry and `tone.ts`
+- `src/lib/server/platform/` — the `PlatformSource` / `WorkspaceSource` ports, the fixture
+  implementation, the resolver, and the snapshot assembler. **Replacing the fixture with
+  real telemetry is a new file plus a resolver entry**; nothing above the ports changes
+- `src/routes/overview.remote.ts` — `getShell`, `getOverview`, `getSystemStatus`,
+  `getDomainPage`, all Valibot-validated
+- `src/lib/components/` — app shell (`app/`), overview panels (`overview/`), shared
+  primitives, the icon registry and `tone.ts`
 - `src/lib/scope.svelte.ts` — environment / time range / auto-refresh, held in context
 - `src/routes/status/` — the original health-probe slice, kept as the minimal end-to-end reference
 - Placeholder routes for every nav destination, so the sidebar navigates instead of 404ing
+- `.env.example` — the source selection and the production server's `PORT`/`ORIGIN`
 
 Not yet built: per-domain, per-incident and per-deployment detail routes. Until they exist the
 table's row actions menu and those rows stay non-navigating, by the rule above.

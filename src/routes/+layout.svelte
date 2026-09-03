@@ -3,7 +3,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import AppSidebar from '$lib/components/app/AppSidebar.svelte';
 	import TopBar from '$lib/components/app/TopBar.svelte';
-	import { getShell } from './overview.remote';
+	import { getShell, getSystemStatus } from './overview.remote';
 	import { setScope } from '$lib/scope.svelte';
 
 	let { children } = $props();
@@ -17,13 +17,12 @@
 <div class="flex h-svh overflow-hidden bg-background">
 	<svelte:boundary>
 		{@const shell = await getShell()}
+		{@const system = await getSystemStatus({
+			environment: scope.environment,
+			timeRange: scope.timeRange
+		})}
 
-		<AppSidebar
-			nav={shell.nav}
-			favorites={shell.favorites}
-			user={shell.user}
-			system={shell.system}
-		/>
+		<AppSidebar nav={shell.nav} favorites={shell.favorites} user={shell.user} {system} />
 
 		<div class="flex min-w-0 flex-1 flex-col">
 			<TopBar

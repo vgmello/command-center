@@ -8,14 +8,15 @@
 	import MetricStrip from '$lib/components/overview/MetricStrip.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { getScope } from '$lib/scope.svelte';
-	import { getDomainPage, getOverview } from './overview.remote';
-	import type { DomainPage, DomainSortKey, HealthStatus } from '$lib/platform/types';
+	import { getDomainPage, getOverview, getShell } from './overview.remote';
+	import type { DomainPage } from '$lib/platform/types';
+	import type { DomainSortKey, DomainStatusFilter } from '$lib/platform/query';
 
 	const scope = getScope();
 
 	let searchInput = $state('');
 	let search = $state('');
-	let status = $state<HealthStatus | 'all'>('all');
+	let status = $state<DomainStatusFilter>('all');
 	let sort = $state<DomainSortKey>('health-score');
 	let view = $state<'grid' | 'list'>('list');
 	let pageNumber = $state(1);
@@ -36,13 +37,18 @@
 
 	const scopeArgs = $derived({ environment: scope.environment, timeRange: scope.timeRange });
 
+	// Page size is the server's to decide — it is the same number the table's footer
+	// arithmetic and the source's paging are built on.
+	const shell = $derived(getShell());
+	const pageSize = $derived(shell.current?.defaultPageSize ?? 8);
+
 	const domainArgs = $derived({
 		...scopeArgs,
 		search,
 		status,
 		sort,
 		page: pageNumber,
-		pageSize: 8
+		pageSize
 	});
 
 	const overview = $derived(getOverview(scopeArgs));
@@ -96,10 +102,13 @@
 			{/snippet}
 		</svelte:boundary>
 
-		{#if domainPage}
+		{#if domainPage && shell.current}
 			<div class="transition-opacity {domains.loading ? 'opacity-60' : ''}">
 				<DomainHealthTable
 					result={domainPage}
+					statusOptions={shell.current.domainStatusFilters}
+					sortOptions={shell.current.domainSortOptions}
+					thresholds={shell.current.healthThresholds}
 					search={searchInput}
 					{status}
 					{sort}

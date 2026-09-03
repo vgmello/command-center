@@ -9,6 +9,7 @@ import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 import ChevronRight from '@lucide/svelte/icons/chevron-right';
 import CircleAlert from '@lucide/svelte/icons/circle-alert';
 import CircleCheck from '@lucide/svelte/icons/circle-check';
+import CircleHelp from '@lucide/svelte/icons/circle-help';
 import CircleX from '@lucide/svelte/icons/circle-x';
 import ClipboardCheck from '@lucide/svelte/icons/clipboard-check';
 import Cloud from '@lucide/svelte/icons/cloud';
@@ -72,6 +73,7 @@ const ICONS = {
 	'chevron-right': ChevronRight,
 	'circle-alert': CircleAlert,
 	'circle-check': CircleCheck,
+	'circle-help': CircleHelp,
 	'circle-x': CircleX,
 	'clipboard-check': ClipboardCheck,
 	cloud: Cloud,

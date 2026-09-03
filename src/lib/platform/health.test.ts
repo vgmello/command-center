@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { buildDistribution, rollUpStatus, statusFromScore, statusSeverity } from './health';
-import type { HealthStatus } from './types';
+import {
+	HEALTH_THRESHOLDS,
+	buildDistribution,
+	describeHealthThresholds,
+	rollUpStatus,
+	statusFromScore,
+	statusSeverity
+} from './health';
+import type { DomainStatusCounts } from './types';
 
 describe('statusFromScore', () => {
 	test('maps the documented thresholds', () => {
@@ -34,10 +41,15 @@ describe('rollUpStatus', () => {
 });
 
 describe('buildDistribution', () => {
-	const domains = (...statuses: HealthStatus[]) => statuses.map((status) => ({ status }));
+	const counts = (
+		healthy: number,
+		degraded: number,
+		down: number,
+		unknown = 0
+	): DomainStatusCounts => ({ healthy, degraded, down, unknown });
 
-	test('counts every status and keeps the slice order stable', () => {
-		const result = buildDistribution(domains('healthy', 'healthy', 'degraded', 'down'));
+	test('keeps the slice order stable and totals the counts', () => {
+		const result = buildDistribution(counts(2, 1, 1));
 
 		expect(result.total).toBe(4);
 		expect(result.slices.map((slice) => slice.status)).toEqual([
@@ -51,8 +63,20 @@ describe('buildDistribution', () => {
 	});
 
 	test('does not divide by zero on an empty platform', () => {
-		const result = buildDistribution([]);
+		const result = buildDistribution(counts(0, 0, 0));
 		expect(result.total).toBe(0);
 		expect(result.slices.every((slice) => slice.percentage === 0)).toBe(true);
+	});
+});
+
+describe('describeHealthThresholds', () => {
+	test('states the same bands statusFromScore applies', () => {
+		const sentence = describeHealthThresholds();
+
+		expect(sentence).toContain(String(HEALTH_THRESHOLDS.healthy));
+		expect(sentence).toContain(String(HEALTH_THRESHOLDS.degraded));
+		expect(statusFromScore(HEALTH_THRESHOLDS.healthy)).toBe('healthy');
+		expect(statusFromScore(HEALTH_THRESHOLDS.healthy - 1)).toBe('degraded');
+		expect(statusFromScore(HEALTH_THRESHOLDS.degraded - 1)).toBe('down');
 	});
 });

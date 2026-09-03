@@ -1,104 +1,51 @@
 import type {
 	CountTile,
-	Criticality,
-	Domain,
-	DomainPage,
-	DomainQuery,
-	EnvironmentId,
+	DomainStatusCounts,
+	HealthStatus,
 	OverviewSnapshot,
 	RateMetric,
-	SystemStatus,
-	TimeRangeId
+	RateObservation,
+	Series,
+	SystemStatus
 } from '$lib/platform/types';
-import { buildDistribution, STATUS_LABELS } from '$lib/platform/health';
+import type { PlatformScope } from '$lib/platform/query';
+import type { PlatformSource } from './source';
+import { STATUS_LABELS, buildDistribution } from '$lib/platform/health';
 import { formatChange, formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
-import {
-	CURRENT_USER,
-	TIME_RANGES,
-	listDeployments,
-	listDomains,
-	listIncidents,
-	listInfrastructure
-} from './fixtures';
-import { buildSeries } from './series';
+
+/**
+ * Assembles one overview snapshot from whatever source is configured.
+ *
+ * Everything in this file is either a pure transform of what the source returned or
+ * the orchestration that fetches it. No invented numbers, no I/O of its own — that
+ * split is what lets the fixture source be swapped for a real one without touching
+ * anything here.
+ */
 
 export const DEFAULT_PAGE_SIZE = 8;
 
-/** Attention order: a mission-critical wobble outranks a standard-tier outage. */
-const CRITICALITY_WEIGHT: Record<Criticality, number> = {
-	'mission-critical': 0,
-	'business-critical': 1,
-	important: 2,
-	standard: 3
+/** How many rows the side panels show. The source pages; it does not guess. */
+export const INCIDENT_LIMIT = 5;
+export const DEPLOYMENT_LIMIT = 5;
+
+const COUNT_TILE_ICONS: Record<'total' | HealthStatus, string> = {
+	total: 'box',
+	healthy: 'circle-check',
+	degraded: 'triangle-alert',
+	down: 'circle-x',
+	unknown: 'circle-help'
 };
 
-/**
- * Filter, sort, and slice the domain list.
- *
- * Pure and exported on its own so it can be tested without a request context —
- * the remote function that wraps it adds validation and nothing else.
- */
-export function queryDomains(domains: Domain[], query: DomainQuery): DomainPage {
-	const needle = query.search.trim().toLowerCase();
-
-	const filtered = domains.filter((domain) => {
-		if (query.status !== 'all' && domain.status !== query.status) return false;
-		if (!needle) return true;
-		return domain.name.toLowerCase().includes(needle) || domain.slug.includes(needle);
-	});
-
-	const sorted = [...filtered].sort(comparatorFor(query.sort));
-
-	const pageSize = Math.max(1, query.pageSize);
-	const totalItems = sorted.length;
-	const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-	const page = Math.min(Math.max(1, query.page), totalPages);
-	const offset = (page - 1) * pageSize;
-	const slice = sorted.slice(offset, offset + pageSize);
-
-	return {
-		domains: slice,
-		page: {
-			page,
-			pageSize,
-			totalItems,
-			totalPages,
-			from: totalItems === 0 ? 0 : offset + 1,
-			to: offset + slice.length
-		}
-	};
-}
-
-function comparatorFor(sort: DomainQuery['sort']): (a: Domain, b: Domain) => number {
-	switch (sort) {
-		case 'error-rate':
-			return (a, b) => b.errorRatePct - a.errorRatePct;
-		case 'p95-latency':
-			return (a, b) => b.p95LatencyMs - a.p95LatencyMs;
-		case 'active-incidents':
-			return (a, b) => b.activeIncidents - a.activeIncidents || a.healthScore - b.healthScore;
-		case 'name':
-			return (a, b) => a.name.localeCompare(b.name);
-		case 'health-score':
-		default:
-			// Criticality-weighted: a mission-critical domain at 74 is a bigger problem
-			// than a standard-tier one at 38, so the tier leads and the score breaks ties.
-			return (a, b) =>
-				CRITICALITY_WEIGHT[a.criticality] - CRITICALITY_WEIGHT[b.criticality] ||
-				a.healthScore - b.healthScore;
-	}
-}
-
 /** Tiles across the top: one total, then one per status that matters at a glance. */
-export function buildCountTiles(domains: Domain[]): CountTile[] {
-	const total = domains.length;
+export function buildCountTiles(counts: DomainStatusCounts): CountTile[] {
+	const total = counts.healthy + counts.degraded + counts.down + counts.unknown;
 	const share = (count: number) => (total === 0 ? 0 : Math.round((count / total) * 100));
-	const count = (status: Domain['status']) => domains.filter((d) => d.status === status).length;
 
 	return [
 		{
 			id: 'total',
 			label: 'Total Domains',
+			icon: COUNT_TILE_ICONS.total,
 			value: total,
 			percentage: null,
 			caption: 'Across platform',
@@ -107,8 +54,9 @@ export function buildCountTiles(domains: Domain[]): CountTile[] {
 		...(['healthy', 'degraded', 'down'] as const).map((status) => ({
 			id: status,
 			label: STATUS_LABELS[status],
-			value: count(status),
-			percentage: share(count(status)),
+			icon: COUNT_TILE_ICONS[status],
+			value: counts[status],
+			percentage: share(counts[status]),
 			caption: null,
 			status
 		}))
@@ -116,115 +64,122 @@ export function buildCountTiles(domains: Domain[]): CountTile[] {
 }
 
 /**
- * The three headline rates.
+ * Format observed rates for display.
  *
- * `polarity` is stated per metric because the UI cannot know that a rising
- * request rate is fine while a rising error rate is not.
+ * The source says what a metric *is* (`kind`) and which way is better
+ * (`polarity`); this decides how it reads. Keeping that here means a new metric
+ * needs no UI change, and a formatting change touches no source.
  */
-export function buildMetrics(timeRange: TimeRangeId): RateMetric[] {
+export function buildMetrics(
+	observations: RateObservation[],
+	timeRange: PlatformScope['timeRange']
+): RateMetric[] {
 	// The compact id ("15m") rather than the long label ("Last 15 minutes"): the
 	// caption sits under a metric in an 11px line and has to stay on one row.
-	const window = TIME_RANGES.find((range) => range.id === timeRange) ?? TIME_RANGES[1];
-	const comparedToLabel = `vs ${window.id} ago`;
+	const comparedToLabel = `vs ${timeRange} ago`;
 
-	const requestRate = 18_700;
-	const errorRate = 1.38;
-	const p95 = 412;
+	return observations.map((observation) => {
+		const { formatted, unit } = formatValue(observation);
 
-	return [
-		{
-			id: 'request-rate',
-			label: 'Request Rate',
-			value: requestRate,
-			formatted: formatCompact(requestRate),
-			unit: 'req/s',
-			series: buildSeries(`request-rate:${timeRange}`, requestRate, {
-				volatility: 0.08,
-				drift: 0.12
-			}),
-			direction: 'up',
-			changeFormatted: formatChange(8.4, '%', 1),
+		return {
+			id: observation.id,
+			label: observation.label,
+			value: observation.value,
+			formatted,
+			unit,
+			series: toSeries(observation.samples),
+			direction: observation.change > 0 ? 'up' : observation.change < 0 ? 'down' : 'flat',
+			changeFormatted: formatChangeFor(observation),
 			comparedToLabel,
-			polarity: 'higher-is-better'
-		},
-		{
-			id: 'error-rate',
-			label: 'Error Rate',
-			value: errorRate,
-			formatted: formatPercent(errorRate),
-			unit: '',
-			series: buildSeries(`error-rate:${timeRange}`, errorRate, {
-				volatility: 0.2,
-				drift: 0.35
-			}),
-			direction: 'up',
-			changeFormatted: formatChange(0.32, '%'),
-			comparedToLabel,
-			polarity: 'lower-is-better'
-		},
-		{
-			id: 'p95-latency',
-			label: 'P95 Latency',
-			value: p95,
-			formatted: formatLatency(p95).value,
-			unit: formatLatency(p95).unit,
-			series: buildSeries(`p95:${timeRange}`, p95, { volatility: 0.12, drift: -0.15 }),
-			direction: 'down',
-			changeFormatted: formatChange(-28, 'ms', 0),
-			comparedToLabel,
-			polarity: 'lower-is-better'
+			polarity: observation.polarity
+		};
+	});
+}
+
+function formatValue(observation: RateObservation): { formatted: string; unit: string } {
+	switch (observation.kind) {
+		case 'percent':
+			return { formatted: formatPercent(observation.value), unit: '' };
+		case 'duration-ms': {
+			const latency = formatLatency(observation.value);
+			return { formatted: latency.value, unit: latency.unit };
 		}
-	];
+		case 'rate':
+		default:
+			return { formatted: formatCompact(observation.value), unit: observation.unit };
+	}
+}
+
+/**
+ * A rate's change is relative (percent), a percentage's change is in points (also
+ * printed with a %), and a duration's change is in its own unit.
+ */
+function formatChangeFor(observation: RateObservation): string {
+	switch (observation.kind) {
+		case 'percent':
+			return formatChange(observation.change, '%', 2);
+		case 'duration-ms':
+			return formatChange(observation.change, observation.unit, 0);
+		case 'rate':
+		default:
+			return formatChange(observation.change, '%', 1);
+	}
+}
+
+/** Precompute the bounds once so every sparkline renders without a pass over the data. */
+export function toSeries(values: number[]): Series {
+	if (values.length === 0) return { values, min: 0, max: 0 };
+	return { values, min: Math.min(...values), max: Math.max(...values) };
 }
 
 /** The aggregate badge in the sidebar footer, derived rather than declared. */
-export function buildSystemStatus(domains: Domain[]): SystemStatus {
-	const down = domains.filter((d) => d.status === 'down').length;
-	const degraded = domains.filter((d) => d.status === 'degraded').length;
-
-	if (down > 0) {
+export function buildSystemStatus(counts: DomainStatusCounts): SystemStatus {
+	if (counts.down > 0) {
 		return {
 			status: 'down',
 			label: 'Partial Outage',
-			detail: `${down} domain${down === 1 ? '' : 's'} down`
+			detail: `${counts.down} domain${counts.down === 1 ? '' : 's'} down`
 		};
 	}
-	if (degraded > 0) {
+	if (counts.degraded > 0) {
 		return {
 			status: 'degraded',
 			label: 'Degraded',
-			detail: `${degraded} domain${degraded === 1 ? '' : 's'} degraded`
+			detail: `${counts.degraded} domain${counts.degraded === 1 ? '' : 's'} degraded`
 		};
 	}
 	return { status: 'healthy', label: 'All Systems', detail: 'Operational' };
 }
 
 /**
- * Assemble everything the overview page needs except the paged domain table.
+ * Everything the overview page needs except the paged domain table.
  *
- * The table is a separate query because it changes on every toolbar interaction
- * while the rest of the page does not — refetching the incidents list because
- * someone typed in the domain search would be wasted work.
+ * The reads run concurrently: they are independent, and issuing them in sequence
+ * would make the page as slow as the sum of its panels rather than its slowest one.
  */
-export function buildOverview(
-	environment: EnvironmentId,
-	timeRange: TimeRangeId,
+export async function buildOverview(
+	source: PlatformSource,
+	scope: PlatformScope,
 	now: Date = new Date()
-): OverviewSnapshot {
-	const domains = listDomains();
+): Promise<OverviewSnapshot> {
+	const [counts, rates, incidents, deployments, infrastructure] = await Promise.all([
+		source.readDomainStatusCounts(scope),
+		source.readRates(scope),
+		source.listIncidents(scope, INCIDENT_LIMIT),
+		source.listDeployments(scope, DEPLOYMENT_LIMIT),
+		source.listInfrastructure(scope)
+	]);
 
 	return {
 		generatedAt: now.toISOString(),
-		environment,
-		timeRange,
-		counts: buildCountTiles(domains),
-		metrics: buildMetrics(timeRange),
-		distribution: buildDistribution(domains),
-		incidents: listIncidents(now),
-		deployments: listDeployments(now),
-		infrastructure: listInfrastructure(),
-		system: buildSystemStatus(domains)
+		environment: scope.environment,
+		timeRange: scope.timeRange,
+		counts: buildCountTiles(counts),
+		metrics: buildMetrics(rates, scope.timeRange),
+		distribution: buildDistribution(counts),
+		incidents,
+		deployments,
+		infrastructure,
+		system: buildSystemStatus(counts)
 	};
 }
-
-export { CURRENT_USER };

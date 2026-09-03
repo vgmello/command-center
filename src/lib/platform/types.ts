@@ -87,6 +87,8 @@ export interface RateMetric {
 export interface CountTile {
 	id: string;
 	label: string;
+	/** Icon key, named by the server for the same reason every other icon is. */
+	icon: string;
 	value: number;
 	/** Share of the platform total, 0–100. `null` on the total tile itself. */
 	percentage: number | null;
@@ -106,6 +108,30 @@ export interface DistributionSlice {
 export interface HealthDistribution {
 	total: number;
 	slices: DistributionSlice[];
+}
+
+/** Domains per status across the whole scope — an aggregate, not a page of rows. */
+export type DomainStatusCounts = Record<HealthStatus, number>;
+
+/**
+ * A rate metric as *observed*, before anything decides how to print it.
+ *
+ * `kind` is what tells the formatter whether 412 is a duration, a percentage or a
+ * count; `polarity` is what tells the UI whether an increase is good news. Neither
+ * can be inferred from the number, so the source states both.
+ */
+export interface RateObservation {
+	id: string;
+	label: string;
+	value: number;
+	kind: 'rate' | 'percent' | 'duration-ms';
+	/** Display unit for `rate`. Percent and duration derive their own. */
+	unit: string;
+	/** Raw samples across the scope's window, in the metric's own unit. */
+	samples: number[];
+	/** Signed change against the comparison window, in the metric's own unit. */
+	change: number;
+	polarity: TrendPolarity;
 }
 
 /** A business domain: the unit this dashboard is organised around. */
@@ -189,21 +215,6 @@ export interface Page {
 export interface DomainPage {
 	domains: Domain[];
 	page: Page;
-}
-
-/** Sort keys the domain table offers. */
-export type DomainSortKey =
-	'health-score' | 'error-rate' | 'p95-latency' | 'active-incidents' | 'name';
-
-/** Filter/sort state for a domain table request. Mirrors the toolbar controls. */
-export interface DomainQuery {
-	environment: EnvironmentId;
-	timeRange: TimeRangeId;
-	search: string;
-	status: HealthStatus | 'all';
-	sort: DomainSortKey;
-	page: number;
-	pageSize: number;
 }
 
 /** Everything the overview page needs except the paged domain table. */

@@ -1,7 +1,7 @@
 import type {
 	Criticality,
 	DistributionSlice,
-	Domain,
+	DomainStatusCounts,
 	HealthDistribution,
 	HealthStatus
 } from './types';
@@ -31,8 +31,8 @@ export const CRITICALITY_LABELS: Record<Criticality, string> = {
  */
 export function statusFromScore(score: number): HealthStatus {
 	if (!Number.isFinite(score)) return 'unknown';
-	if (score >= 75) return 'healthy';
-	if (score >= 50) return 'degraded';
+	if (score >= HEALTH_THRESHOLDS.healthy) return 'healthy';
+	if (score >= HEALTH_THRESHOLDS.degraded) return 'degraded';
 	return 'down';
 }
 
@@ -49,25 +49,40 @@ export function rollUpStatus(statuses: HealthStatus[]): HealthStatus {
 	);
 }
 
-/**
- * Count domains per status and turn the counts into donut slices.
- *
- * Percentages are rounded for display but the counts stay exact, so the legend
- * can show "18 Healthy 72%" without the arithmetic drifting between the two.
- */
-export function buildDistribution(domains: Pick<Domain, 'status'>[]): HealthDistribution {
-	const order: HealthStatus[] = ['healthy', 'degraded', 'down', 'unknown'];
-	const total = domains.length;
+/** Score bands. Exported so nothing has to restate them — including the UI copy. */
+export const HEALTH_THRESHOLDS = { healthy: 75, degraded: 50 } as const;
 
-	const slices: DistributionSlice[] = order.map((status) => {
-		const count = domains.filter((d) => d.status === status).length;
-		return {
-			status,
-			label: STATUS_LABELS[status],
-			count,
-			percentage: total === 0 ? 0 : Math.round((count / total) * 100)
-		};
-	});
+/**
+ * Human-readable statement of the bands above.
+ *
+ * The table's tooltip explains the scoring; if it spelled the numbers out itself,
+ * changing a threshold would silently turn that tooltip into a lie.
+ */
+export function describeHealthThresholds(): string {
+	const { healthy, degraded } = HEALTH_THRESHOLDS;
+	return `${healthy} and above is healthy, ${degraded}–${healthy - 1} degraded, below ${degraded} down.`;
+}
+
+/**
+ * Turn per-status counts into donut slices.
+ *
+ * Takes counts rather than the domain list because that is what an aggregate query
+ * returns — asking a real backend for every row just to count four statuses would
+ * be a fixture habit leaking into the contract.
+ *
+ * Percentages are rounded for display but the counts stay exact, so the legend can
+ * show "18 Healthy 72%" without the arithmetic drifting between the two.
+ */
+export function buildDistribution(counts: DomainStatusCounts): HealthDistribution {
+	const order: HealthStatus[] = ['healthy', 'degraded', 'down', 'unknown'];
+	const total = order.reduce((sum, status) => sum + counts[status], 0);
+
+	const slices: DistributionSlice[] = order.map((status) => ({
+		status,
+		label: STATUS_LABELS[status],
+		count: counts[status],
+		percentage: total === 0 ? 0 : Math.round((counts[status] / total) * 100)
+	}));
 
 	return { total, slices };
 }
