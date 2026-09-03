@@ -26,6 +26,88 @@ When solving any problem, work down this list and stop at the first tier that ca
 
 When adding a dependency, say in the PR which tiers you ruled out and why. "Tier 1–3 can't do X" is a fine answer; not having checked is not.
 
+## Architecture
+
+Five layers. Each one may know about the layers below it and nothing above.
+
+| Layer          | Lives in                                 | Knows about                            | Must never                                         |
+| -------------- | ---------------------------------------- | -------------------------------------- | -------------------------------------------------- |
+| **Domain**     | `src/lib/<domain>/types.ts`              | nothing                                | import from `$lib/server` or from a component      |
+| **Pure logic** | `src/lib/<domain>/*.ts`                  | the domain types                       | touch the network, the clock, or `process`         |
+| **Server**     | `src/lib/server/**`                      | domain types, pure logic, data sources | be imported by anything reachable from the browser |
+| **Transport**  | `src/routes/*.remote.ts`                 | server modules                         | contain business logic worth testing               |
+| **UI**         | `src/lib/components/**`, `src/routes/**` | domain types, remote functions         | re-derive a fact the server already stated         |
+
+### The server sends facts, not presentation
+
+A payload describes what is true, never how it looks. A domain carries a `status`
+and a `healthScore`; it does not carry a colour, a CSS class, or a component.
+
+This is what lets the theme change without touching the data layer, and it is what
+keeps a snapshot serialisable — devalue can send a string, not a Svelte component.
+
+Two consequences worth stating outright:
+
+- **Icons are string keys.** The data says `icon: 'landmark'`; one module
+  (`src/lib/components/icon.ts`) knows what that draws. That keeps `@lucide/svelte`
+  out of every server module and off the wire.
+- **Status maps to colour in exactly one file.** `src/lib/components/tone.ts` is the
+  only crossing point between operational meaning and Tailwind classes. Components
+  ask for `statusTone('degraded')`, never for amber. Write the classes out in full
+  there — Tailwind only ships classes it can see literally in the source.
+
+### Derive rather than store
+
+If a value is a function of another value, compute it in one place and export that
+function. `statusFromScore()` is the example: every caller derives a domain's status
+from its score the same way, so a badge cannot contradict the number printed beside it.
+
+Storing both invites them to drift, and the drift shows up in the UI as a lie.
+
+### Identity is not status
+
+A property that describes what something _is_ stays separate from a property that
+describes how it is _doing_. A domain's accent tint is identity; its health is status.
+They are allowed to disagree — and they usually do — so they never share a field.
+
+### Split queries by how often they change
+
+One remote function per thing that changes on its own schedule, not one per page.
+Typing in the domain table's search box must refetch eight rows, not the incident
+list, the deployment feed and the infrastructure counts as well.
+
+The corollary: do not merge two queries just because one page happens to render both.
+
+### Page state is context, never module state
+
+Per-user, per-render state (selected environment, time range, filters) goes in a
+`.svelte.ts` class published through `setContext`/`getContext`.
+
+Module-level `$state` is a **single instance shared by every concurrent SSR request**
+on the server — one user's environment switch leaks into another user's render. Context
+is created per render, so it cannot. See `src/lib/scope.svelte.ts`.
+
+### Fixtures are deterministic
+
+Stand-in data is seeded (`seededRandom`, `hashSeed`), never `Math.random()`. A sparkline
+that redraws differently on every refresh reports change that did not happen, which
+undermines every number beside it. Deterministic fixtures are also the only kind that
+can be asserted on in a test.
+
+Anything time-relative takes the clock as an argument (`buildOverview(env, range, now)`,
+`formatRelativeTime(iso, now)`) rather than calling `new Date()` internally. Untestable
+otherwise, and it lets the client re-render "2m ago" without refetching.
+
+### Do not ship links to routes that do not exist
+
+A row that navigates to a 404 is worse than a row that does not navigate. Render it as
+a row; make it a link when the destination lands.
+
+`resolve()` is typed against the literal route union, so it cannot be applied to an href
+that is only known at runtime — a nav list supplied by the server is the one legitimate
+reason to disable `svelte/no-navigation-without-resolve`, and the override is scoped to
+the two components that need it.
+
 ## Data layer: remote functions, not `+page.server.ts`
 
 Remote functions are the default way this app talks to the server. Prefer them over `load` functions and `+server.ts` endpoints. Reach for a `load` function only when SvelteKit genuinely requires it (e.g. route-level redirects/guards before render), and for `+server.ts` only for true external HTTP surfaces (webhooks, OAuth callbacks, RSS/sitemap).
@@ -171,8 +253,10 @@ Note that `bun test` cannot compile `.svelte` files, so component rendering is o
 
 - Components: `PascalCase.svelte`. Remote modules: `<domain>.remote.ts`. Rune modules: `<name>.svelte.ts`.
 - App components go in `src/lib/components/`; `src/lib/components/ui/` is reserved for shadcn-svelte's vendored output.
-- Server-only code that is not a remote function goes in `src/lib/server/`.
-- Shared types and pure helpers go in `src/lib/`.
+- Component subfolders group by role, not by page: `components/app/` is the shell (sidebar, top bar), `components/overview/` is one screen's panels, and anything reused across screens sits at the top of `components/`.
+- Server-only code that is not a remote function goes in `src/lib/server/`, grouped by domain (`server/platform/`).
+- Shared types and pure helpers go in `src/lib/<domain>/` — `types.ts` for the contract, one file per concern beside it.
+- Delete vendored components nothing imports. `shadcn-svelte add` brings them back in one command; unused source is not free.
 
 ## Docs
 
@@ -180,15 +264,26 @@ Developer docs live under `docs/devs/<topic>/`. Svelte and SvelteKit notes go in
 
 ## State
 
-Scaffolded and verified. `bun test`, `bun run check`, `bun run lint`, and `bun run build` all pass, and the production server boots and serves.
+Overview screen built and verified. `bun test` (60 tests), `bun run check`, `bun run lint`,
+and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
 
-- `src/lib/server/health.ts` — plain logic, plus `health.test.ts` covering it
-- `src/routes/status.remote.ts` — `getHealth` (`query`) and `getServiceDetail` (`query.batch`)
-- `src/routes/+page.svelte` — awaits both inside `<svelte:boundary>`, rendered with Card, Table, Badge, Button, and Separator
-- `src/lib/components/ui/` — button, card, badge, table, separator
+- `src/lib/platform/` — `types.ts` (the server↔UI contract) plus `health.ts`, `format.ts`,
+  `geometry.ts` and `pagination.ts`, each with a test file
+- `src/lib/server/platform/` — seeded fixtures and the snapshot builder. **This is the layer
+  that gets replaced when live telemetry lands**; nothing above it changes
+- `src/routes/overview.remote.ts` — `getShell`, `getOverview`, `getDomainPage`, all Valibot-validated
+- `src/lib/components/` — app shell (`app/`), overview panels (`overview/`), shared primitives,
+  the icon registry and `tone.ts`
+- `src/lib/scope.svelte.ts` — environment / time range / auto-refresh, held in context
+- `src/routes/status/` — the original health-probe slice, kept as the minimal end-to-end reference
+- Placeholder routes for every nav destination, so the sidebar navigates instead of 404ing
 
-This slice exists to prove the wiring end-to-end and doubles as the reference for the conventions above. The `probe()` function is a stand-in — replace it with real checks as services land.
+Not yet built: per-domain, per-incident and per-deployment detail routes. Until they exist the
+table's row actions menu and those rows stay non-navigating, by the rule above.
 
-**Known behaviour:** with an async `<svelte:boundary>`, SSR renders the `pending` snippet and the awaited content resolves on the client. Expect "Checking services…" in view-source rather than the table. If a route needs its data present in the initial HTML for SEO or first paint, that route is a case for a `load` function.
+**Known behaviour:** with an async `<svelte:boundary>`, SSR renders the `pending` snippet and the
+awaited content resolves on the client. Expect the skeletons in view-source rather than the table.
+If a route needs its data present in the initial HTML for SEO or first paint, that route is a case
+for a `load` function.
