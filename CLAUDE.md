@@ -24,13 +24,23 @@ Four flavours from `$app/server`:
 
 ### Rules
 
-- **Validate every argument.** Remote functions are exposed HTTP endpoints. Pass a Standard Schema (Valibot or Zod) as the first argument. `'unchecked'` only with a written justification.
+- **Validate every argument.** Remote functions are exposed HTTP endpoints. Pass a **Valibot** schema as the first argument. `'unchecked'` only with a written justification.
 - **Prefer `form` over `command`** for mutations.
 - **Use single-flight mutations.** After a mutation, refresh affected queries from inside the server handler (`getThing().refresh()` / `.set(result)`), or accept client-requested refreshes via `requested(fn, limit)` with an explicit, non-`Infinity` limit. Never let the client drive an unbounded refresh list.
 - **Never trust `url`, `route`, or `params` from `getRequestEvent()`** inside a remote function for authorization — they describe the calling page, not the endpoint, and are client-controlled. Authorize from cookies/session.
 - **Sensitive form fields get a leading underscore** (`_password`) so they're not echoed back on failed non-JS submissions.
 - Redirects work in `query`, `form`, and `prerender` — not in `command`.
 - Implement `handleValidationError` in `src/hooks.server.ts`; return a generic message, never validation internals.
+
+### Validation
+
+**Valibot** is the validation library. Not Zod — don't introduce a second Standard Schema implementation.
+
+Chosen for bundle size: Valibot is modular and tree-shakes to roughly what you import, which matters because preflight schemas ship to the client. Import it namespaced (`import * as v from 'valibot'`) so the tree-shaking actually works.
+
+Any Standard Schema library would satisfy SvelteKit here — this is a consistency decision, not a technical constraint.
+
+Schemas used as form preflight must live in a shared module or a `<script module>` block. **They cannot be exported from a `.remote.ts` file** — only remote functions may be exported from those.
 
 ### Experimental flags
 
@@ -74,6 +84,26 @@ Currently a prerelease (`1.0.0-next.1` as of 2026-09). Accepted deliberately: th
 ### Bun APIs
 
 Bun-specific server APIs (`Bun.file`, `Bun.serve` internals, `bun:sqlite`, …) are allowed in server-only code — remote functions, `src/lib/server/`, hooks. Keep them out of anything reachable from the browser. Since dev and production share the runtime, a Bun API that works locally works in production; the remaining hazard is only the client bundle.
+
+## Testing
+
+Two runners, split by what they test. This is not a preference — `bun test` cannot compile `.svelte` files, and the official `bun-plugin-svelte` is `0.0.6` and untouched since March 2025, so it is not a base to build on.
+
+### `bun test` — logic
+
+Everything that is plain TypeScript: remote function handlers, `src/lib/server/` modules, pure helpers, schemas. Native, fast, no config, Jest-compatible API via `import { test, expect } from 'bun:test'`.
+
+Test remote functions by extracting the handler body into a plain exported function and testing that. The `query`/`form` wrapper is SvelteKit's to test, not ours — and a wrapped remote function needs a request context to invoke, which is not worth constructing in a unit test.
+
+### Vitest browser mode — components
+
+Component tests use **Vitest + `vitest-browser-svelte`** in browser mode, which is the Svelte team's current recommendation. Real browser, real rendering — jsdom does not model Svelte 5 effects and async boundaries faithfully enough to trust.
+
+Run it under Bun like everything else: `bun --bun run test:components` (or rely on `run.bun = true` in `bunfig.toml`). Vitest targets Node officially, so if a Vitest-on-Bun defect blocks work, **record it in this section with a link** rather than quietly reverting that script to Node — an undocumented Node dependency is how the runtimes drift apart.
+
+### Keeping the two runners apart
+
+`bun test` globs `*.test.ts` and will happily pick up Vitest specs it cannot run. Name component tests `*.svelte.test.ts` and scope each runner explicitly so neither claims the other's files. Verify by running both and confirming the file counts sum to the total.
 
 ## Conventions
 

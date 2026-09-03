@@ -422,7 +422,7 @@ Recorded so nobody reintroduces these by copying the original:
 
 | Original | Correction |
 | --- | --- |
-| `query.batch(async (ids) => …)` — no schema | Every remote function taking an argument **must** validate it with a Standard Schema (Valibot/Zod). These are public HTTP endpoints. |
+| `query.batch(async (ids) => …)` — no schema | Every remote function taking an argument **must** validate it with a Valibot schema. These are public HTTP endpoints. |
 | `export let posts = []` | Svelte 4. This repo is runes-only: `let { posts } = $props()`. |
 | Batch example presented as batching | It merges three functions into one — composition. `query.batch` batches *one* function across *many arguments*. Both are valid; they're different tools. |
 | Manual `posts.map(...)` + `Promise.all` to fix N+1 | Unnecessary. `query.batch` collapses the calls with the call site unchanged. |
