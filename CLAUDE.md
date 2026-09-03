@@ -171,6 +171,44 @@ hand and is owed an explanation.
 data API that serves everything because someone forgot an environment variable is not
 a failure mode worth having.
 
+### The API reference is generated, not maintained
+
+`/api/v1/reference` renders an interactive reference from `/api/v1/openapi.json`, via
+`@scalar/sveltekit`. Tier 4 on the API selection order, and the tiers above genuinely
+cannot do it — a browsable, try-it-out OpenAPI viewer is not something SvelteKit, Bun
+or Node provide. The wrapper is one dependency and ~21KB, and it is handed a URL
+rather than inline content, so the page always shows what the API currently serves.
+
+**What updates itself, with no action:**
+
+- **Response shapes.** `src/lib/server/api/v1/dto.ts` declares the contract as Valibot
+  schemas; the TypeScript types are inferred from them and the JSON Schema is generated
+  from them by `toJsonSchemaDefs`. Change a field and the types, the validation and the
+  document all move together, because there is only one declaration.
+- **Constraints.** `minimum`, `maximum`, `integer`, enum members — carried through by
+  the conversion. These are the first things a hand-written spec loses.
+- **Filter and sort values.** Read from the same `src/lib/platform/query.ts` arrays the
+  toolbar and the picklists use. Add a sort key once and it is offered by the UI,
+  accepted by validation, and documented.
+- **The server URL.** Taken from `url.origin`, so local, preview and production are all
+  correct without three settings to keep in sync.
+
+**What is written by hand, once per endpoint:** its entry in `paths` — summary,
+description, parameters, which schema it returns. About fifteen lines.
+
+That part is deliberate. Deriving paths from the filesystem would mean any new
+`+server.ts` silently becomes public API by existing, and prose that explains _why_
+an endpoint exists cannot be generated from a type.
+
+**Forgetting is caught, not tolerated.** `openapi.test.ts` reads the routes off disk
+and fails when a route under `/api/v1` is undocumented, when the document names a
+route that does not exist, when a `$ref` dangles, or when an operation is missing its
+scope parameters or error responses. The maintenance burden is one test failure telling
+you exactly what to add.
+
+The document itself is served without a token: it describes the shape of the API, not
+any data, and the reference UI fetches it before anyone has authenticated.
+
 ### The client declares no data
 
 If a value is not a literal constant of the app's own structure, it arrives from the
@@ -383,7 +421,7 @@ an `@` costs its full length in every session, whether or not the session touche
 
 ## State
 
-Overview screen built and verified. `bun test` (86 tests), `bun run check`, `bun run lint`,
+Overview screen built and verified. `bun test` (93 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
@@ -400,6 +438,8 @@ What exists:
 - `src/routes/api/v1/` — public JSON API: `domains`, `domains/summary`, `metrics`,
   `incidents`, `deployments`, `infrastructure`, `status`. Token-authenticated,
   frozen DTOs in `src/lib/server/api/v1/dto.ts` with a shape test
+- `/api/v1/openapi.json` and `/api/v1/reference` — the generated OpenAPI 3.1 document
+  and the Scalar reference that renders it
 - `src/hooks.server.ts` — `handleValidationError`: generic message to the client,
   detail to the log
 - `src/lib/components/` — app shell (`app/`), overview panels (`overview/`), shared

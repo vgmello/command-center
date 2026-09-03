@@ -1,3 +1,4 @@
+import * as v from 'valibot';
 import type {
 	Deployment,
 	Domain,
@@ -27,85 +28,121 @@ import type {
  *    of v1 rather than shipped in a shape we would regret.
  *
  * Anything added here is permanent for v1. Removing or renaming means v2.
+ *
+ * Written as Valibot schemas rather than bare interfaces so the TypeScript types and
+ * the published OpenAPI document come from one declaration. A hand-written spec
+ * beside hand-written types is two things that drift.
+ *
+ * The enums are spelled out here rather than imported from the internal unions on
+ * purpose: adding a fifth health status internally must not silently widen a
+ * published contract. It should fail at the mapper and force a decision.
  */
 
-export interface DomainRefDto {
-	id: string;
-	name: string;
-}
+const criticalitySchema = v.picklist([
+	'mission-critical',
+	'business-critical',
+	'important',
+	'standard'
+]);
+const healthStatusSchema = v.picklist(['healthy', 'degraded', 'down', 'unknown']);
 
-export interface DomainDto {
-	id: string;
-	name: string;
-	criticality: Domain['criticality'];
-	healthScore: number;
-	status: Domain['status'];
-	serviceCount: number;
-	errorRatePct: number;
-	p95LatencyMs: number;
-	activeIncidents: number;
-}
+export const domainRefSchema = v.object({
+	id: v.string(),
+	name: v.string()
+});
 
-export interface PageDto {
-	page: number;
-	pageSize: number;
-	totalItems: number;
-	totalPages: number;
-}
+export const domainSchema = v.object({
+	id: v.string(),
+	name: v.string(),
+	criticality: criticalitySchema,
+	/** 0–100; the single number the platform ranks domains by. */
+	healthScore: v.pipe(v.number(), v.minValue(0), v.maxValue(100)),
+	status: healthStatusSchema,
+	serviceCount: v.pipe(v.number(), v.integer()),
+	errorRatePct: v.number(),
+	p95LatencyMs: v.number(),
+	activeIncidents: v.pipe(v.number(), v.integer())
+});
 
-export interface DomainPageDto {
-	data: DomainDto[];
-	page: PageDto;
-}
+export const pageSchema = v.object({
+	page: v.pipe(v.number(), v.integer()),
+	pageSize: v.pipe(v.number(), v.integer()),
+	totalItems: v.pipe(v.number(), v.integer()),
+	totalPages: v.pipe(v.number(), v.integer())
+});
 
-export interface DomainSummaryDto {
-	total: number;
-	healthy: number;
-	degraded: number;
-	down: number;
-	unknown: number;
-}
+export const domainPageSchema = v.object({
+	data: v.array(domainSchema),
+	page: pageSchema
+});
 
-export interface MetricDto {
-	id: string;
-	label: string;
-	value: number;
-	unit: string;
-	kind: RateObservation['kind'];
-	change: number;
-	polarity: RateObservation['polarity'];
-}
+export const domainSummarySchema = v.object({
+	total: v.pipe(v.number(), v.integer()),
+	healthy: v.pipe(v.number(), v.integer()),
+	degraded: v.pipe(v.number(), v.integer()),
+	down: v.pipe(v.number(), v.integer()),
+	unknown: v.pipe(v.number(), v.integer())
+});
 
-export interface IncidentDto {
-	id: string;
-	title: string;
-	domain: DomainRefDto;
-	severity: Incident['severity'];
-	state: Incident['state'];
-	openedAt: string;
-}
+export const metricSchema = v.object({
+	id: v.string(),
+	label: v.string(),
+	value: v.number(),
+	unit: v.string(),
+	/** What the value is, so a client knows how to render it. */
+	kind: v.picklist(['rate', 'percent', 'duration-ms']),
+	/** Signed change over the requested window, in the metric's own unit. */
+	change: v.number(),
+	/** Whether an increase is good news. Not inferable from the number. */
+	polarity: v.picklist(['higher-is-better', 'lower-is-better', 'neutral'])
+});
 
-export interface DeploymentDto {
-	id: string;
-	service: string;
-	version: string;
-	domain: DomainRefDto;
-	status: Deployment['status'];
-	deployedAt: string;
-}
+export const incidentSchema = v.object({
+	id: v.string(),
+	title: v.string(),
+	domain: domainRefSchema,
+	severity: v.picklist(['critical', 'warning', 'info']),
+	state: v.picklist(['open', 'acknowledged', 'mitigated', 'resolved']),
+	openedAt: v.pipe(v.string(), v.isoTimestamp())
+});
 
-export interface InfrastructureDto {
-	id: string;
-	label: string;
-	count: number;
-	status: InfrastructureGroup['status'];
-}
+export const deploymentSchema = v.object({
+	id: v.string(),
+	service: v.string(),
+	version: v.string(),
+	domain: domainRefSchema,
+	status: v.picklist(['success', 'failed', 'in-progress', 'rolled-back']),
+	deployedAt: v.pipe(v.string(), v.isoTimestamp())
+});
 
-export interface SystemStatusDto {
-	status: SystemStatus['status'];
-	label: string;
-	detail: string;
-}
+export const infrastructureSchema = v.object({
+	id: v.string(),
+	label: v.string(),
+	count: v.pipe(v.number(), v.integer()),
+	status: healthStatusSchema
+});
+
+export const systemStatusSchema = v.object({
+	status: healthStatusSchema,
+	label: v.string(),
+	detail: v.string()
+});
+
+export const errorSchema = v.object({
+	error: v.literal('invalid_request'),
+	issues: v.array(v.object({ path: v.string(), message: v.string() }))
+});
+
+export type DomainRefDto = v.InferOutput<typeof domainRefSchema>;
+export type DomainDto = v.InferOutput<typeof domainSchema>;
+export type PageDto = v.InferOutput<typeof pageSchema>;
+export type DomainPageDto = v.InferOutput<typeof domainPageSchema>;
+export type DomainSummaryDto = v.InferOutput<typeof domainSummarySchema>;
+export type MetricDto = v.InferOutput<typeof metricSchema>;
+export type IncidentDto = v.InferOutput<typeof incidentSchema>;
+export type DeploymentDto = v.InferOutput<typeof deploymentSchema>;
+export type InfrastructureDto = v.InferOutput<typeof infrastructureSchema>;
+export type SystemStatusDto = v.InferOutput<typeof systemStatusSchema>;
 
 export function toDomainDto(domain: Domain): DomainDto {
 	return {
