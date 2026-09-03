@@ -174,40 +174,60 @@ a failure mode worth having.
 ### The API reference is generated, not maintained
 
 `/api/v1/reference` renders an interactive reference from `/api/v1/openapi.json`, via
-`@scalar/sveltekit`. Tier 4 on the API selection order, and the tiers above genuinely
-cannot do it — a browsable, try-it-out OpenAPI viewer is not something SvelteKit, Bun
-or Node provide. The wrapper is one dependency and ~21KB, and it is handed a URL
-rather than inline content, so the page always shows what the API currently serves.
+`@scalar/sveltekit`. The document itself is assembled by
+`sveltekit-openapi-generator`, a Vite plugin that collects `@swagger` JSDoc blocks
+from the route files. Both are devDependencies; neither ships to the client.
 
-**What updates itself, with no action:**
+**The document has two halves, kept apart on purpose:**
 
-- **Response shapes.** `src/lib/server/api/v1/dto.ts` declares the contract as Valibot
-  schemas; the TypeScript types are inferred from them and the JSON Schema is generated
-  from them by `toJsonSchemaDefs`. Change a field and the types, the validation and the
-  document all move together, because there is only one declaration.
-- **Constraints.** `minimum`, `maximum`, `integer`, enum members — carried through by
-  the conversion. These are the first things a hand-written spec loses.
-- **Filter and sort values.** Read from the same `src/lib/platform/query.ts` arrays the
-  toolbar and the picklists use. Add a sort key once and it is offered by the UI,
-  accepted by validation, and documented.
-- **The server URL.** Taken from `url.origin`, so local, preview and production are all
-  correct without three settings to keep in sync.
+| Half                           | Lives in                                   | Written how                |
+| ------------------------------ | ------------------------------------------ | -------------------------- |
+| Which paths exist, and why     | the `@swagger` block above each handler    | by hand, once per endpoint |
+| Schemas, parameters, responses | `components.yaml`, generated from `dto.ts` | never by hand              |
 
-**What is written by hand, once per endpoint:** its entry in `paths` — summary,
-description, parameters, which schema it returns. About fifteen lines.
+Prose belongs next to the code it describes. Schemas belong wherever they are already
+defined once — which is the Valibot schemas the endpoints validate and serialise with.
+Writing response shapes into a JSDoc comment, as the plugin's own examples do, would
+reintroduce exactly the drift this split exists to prevent: the constraints go first,
+because nobody remembers to update a `maximum` in a comment.
 
-That part is deliberate. Deriving paths from the filesystem would mean any new
-`+server.ts` silently becomes public API by existing, and prose that explains _why_
-an endpoint exists cannot be generated from a type.
+**The generated half.** `bun run openapi:components` serialises `openApiComponents()`
+to `src/lib/server/api/v1/components.yaml`, which the plugin merges in. It runs as part
+of `bun run build`, and `openapi.test.ts` regenerates it in memory and fails if the
+committed file disagrees — so a schema change that was not regenerated is a red test,
+not a wrong published contract.
 
-**Forgetting is caught, not tolerated.** `openapi.test.ts` reads the routes off disk
-and fails when a route under `/api/v1` is undocumented, when the document names a
-route that does not exist, when a `$ref` dangles, or when an operation is missing its
-scope parameters or error responses. The maintenance burden is one test failure telling
-you exactly what to add.
+**Adding an endpoint** means an `@swagger` block above the handler. Everything it
+refers to — `#/components/parameters/Environment`, `#/components/schemas/DomainPage` —
+already exists.
 
-The document itself is served without a token: it describes the shape of the API, not
-any data, and the reference UI fetches it before anyone has authenticated.
+**What the tests catch**, because the plugin checks none of it:
+
+- an annotation that is not valid YAML (`swagger-jsdoc` _skips_ those silently, so the
+  endpoint would vanish from the document with no error)
+- a route under `/api/v1` with no annotation, and an annotation naming a path that has
+  no route — the annotation repeats the route in its own text, so a typo is otherwise
+  invisible
+- a `$ref` pointing at a component that does not exist
+- an operation missing its scope parameters, its `security`, or its error responses
+- a duplicate `operationId`, which would collide in a generated client
+- a tag used by an operation but never described
+- `components.yaml` being stale
+
+**Watch out for YAML in comments.** An unquoted `key: value` colon or a leading quote
+inside a `description` ends the scalar and breaks the block. Use `>-` folded scalars for
+any description with punctuation. The parse test is what tells you.
+
+**Two gaps filled at serve time** in `src/routes/api/v1/openapi.json/+server.ts`,
+because the plugin's base document has no option for either and it merges only
+`components.*` from the shared file: the root-level `security` (without it Scalar
+reports "no authentication selected" for an API that 401s everyone) and the `tags`
+array carrying descriptions and order.
+
+The plugin emits OpenAPI **3.0.0**, not 3.1. Scalar renders both.
+
+The document is served without a token: it describes the shape of the API, not any
+data, and the reference UI fetches it before anyone has authenticated.
 
 ### The client declares no data
 
@@ -421,7 +441,7 @@ an `@` costs its full length in every session, whether or not the session touche
 
 ## State
 
-Overview screen built and verified. `bun test` (93 tests), `bun run check`, `bun run lint`,
+Overview screen built and verified. `bun test` (95 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
@@ -438,8 +458,8 @@ What exists:
 - `src/routes/api/v1/` — public JSON API: `domains`, `domains/summary`, `metrics`,
   `incidents`, `deployments`, `infrastructure`, `status`. Token-authenticated,
   frozen DTOs in `src/lib/server/api/v1/dto.ts` with a shape test
-- `/api/v1/openapi.json` and `/api/v1/reference` — the generated OpenAPI 3.1 document
-  and the Scalar reference that renders it
+- `/api/v1/openapi.json` and `/api/v1/reference` — the generated OpenAPI document and
+  the Scalar reference that renders it
 - `src/hooks.server.ts` — `handleValidationError`: generic message to the client,
   detail to the log
 - `src/lib/components/` — app shell (`app/`), overview panels (`overview/`), shared

@@ -5,11 +5,30 @@ import { toDomainSummaryDto } from '$lib/server/api/v1/dto';
 import { readDomainStatusCounts } from '$lib/server/platform/service';
 
 /**
- * GET /api/v1/domains/summary
- *
- * Counts per status. Its own resource rather than a field on the collection,
- * because a source answers it with one aggregate query and a caller usually wants
- * one or the other, not both.
+ * @swagger
+ * /api/v1/domains/summary:
+ *   get:
+ *     summary: Count domains by status
+ *     description: An aggregate, answered without returning the domains themselves.
+ *     operationId: getDomainSummary
+ *     tags:
+ *       - Domains
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/Environment'
+ *       - $ref: '#/components/parameters/TimeRange'
+ *     responses:
+ *       200:
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DomainSummary'
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
  */
 export const GET: RequestHandler = async ({ url, request }) =>
 	apiResponse(request, async () =>

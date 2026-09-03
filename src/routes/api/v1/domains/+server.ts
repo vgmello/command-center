@@ -5,11 +5,35 @@ import { toDomainPageDto } from '$lib/server/api/v1/dto';
 import { readDomainPage } from '$lib/server/platform/service';
 
 /**
- * GET /api/v1/domains
- *
- * Filtering, sorting and paging travel as query parameters and are pushed into the
- * source, so this handler never holds more than one page in memory. Same service
- * call the UI's `getDomainPage` makes — in process, not over HTTP.
+ * @swagger
+ * /api/v1/domains:
+ *   get:
+ *     summary: List domains
+ *     description: Filtering, sorting and paging are applied by the data source, so a large platform never materialises more than one page.
+ *     operationId: listDomains
+ *     tags:
+ *       - Domains
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/Environment'
+ *       - $ref: '#/components/parameters/TimeRange'
+ *       - $ref: '#/components/parameters/Search'
+ *       - $ref: '#/components/parameters/DomainStatus'
+ *       - $ref: '#/components/parameters/DomainSort'
+ *       - $ref: '#/components/parameters/Page'
+ *       - $ref: '#/components/parameters/PageSize'
+ *     responses:
+ *       200:
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DomainPage'
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
  */
 export const GET: RequestHandler = async ({ url, request }) =>
 	apiResponse(request, async () => {

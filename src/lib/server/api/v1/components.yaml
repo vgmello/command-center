@@ -1,0 +1,361 @@
+# GENERATED FILE — do not edit.
+# Produced from the Valibot schemas in dto.ts by `bun run openapi:components`.
+# Merged into the published spec by the openapi plugin in vite.config.ts.
+components:
+  parameters:
+    DomainSort:
+      description: '`health-score` orders by criticality tier first, then by the worst score within the tier.'
+      in: query
+      name: sort
+      required: false
+      schema:
+        default: health-score
+        enum:
+          - health-score
+          - error-rate
+          - p95-latency
+          - active-incidents
+          - name
+        type: string
+    DomainStatus:
+      in: query
+      name: status
+      required: false
+      schema:
+        default: all
+        enum:
+          - all
+          - healthy
+          - degraded
+          - down
+          - unknown
+        type: string
+    Environment:
+      description: Deployment target to report on.
+      in: query
+      name: environment
+      required: false
+      schema:
+        default: production
+        enum:
+          - production
+          - staging
+          - development
+        type: string
+    Limit:
+      description: Maximum number of records to return.
+      in: query
+      name: limit
+      required: false
+      schema:
+        default: 20
+        maximum: 100
+        minimum: 1
+        type: integer
+    Page:
+      in: query
+      name: page
+      required: false
+      schema:
+        default: 1
+        minimum: 1
+        type: integer
+    PageSize:
+      in: query
+      name: pageSize
+      required: false
+      schema:
+        default: 25
+        maximum: 100
+        minimum: 1
+        type: integer
+    Search:
+      description: Case-insensitive match on domain name or id.
+      in: query
+      name: search
+      required: false
+      schema:
+        maxLength: 120
+        type: string
+    TimeRange:
+      description: Lookback window for every metric and trend in the response.
+      in: query
+      name: timeRange
+      required: false
+      schema:
+        default: 15m
+        enum:
+          - 5m
+          - 15m
+          - 1h
+          - 6h
+          - 24h
+          - 7d
+        type: string
+  responses:
+    BadRequest:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+      description: The request could not be parsed or failed validation.
+    Unauthorized:
+      description: Missing or invalid bearer token.
+  schemas:
+    Deployment:
+      properties:
+        deployedAt:
+          format: date-time
+          type: string
+        domain:
+          $ref: '#/$defs/DomainRef'
+        id:
+          type: string
+        service:
+          type: string
+        status:
+          enum:
+            - success
+            - failed
+            - in-progress
+            - rolled-back
+          type: string
+        version:
+          type: string
+      required:
+        - id
+        - service
+        - version
+        - domain
+        - status
+        - deployedAt
+      type: object
+    Domain:
+      properties:
+        activeIncidents:
+          type: integer
+        criticality:
+          enum:
+            - mission-critical
+            - business-critical
+            - important
+            - standard
+          type: string
+        errorRatePct:
+          type: number
+        healthScore:
+          maximum: 100
+          minimum: 0
+          type: number
+        id:
+          type: string
+        name:
+          type: string
+        p95LatencyMs:
+          type: number
+        serviceCount:
+          type: integer
+        status:
+          enum:
+            - healthy
+            - degraded
+            - down
+            - unknown
+          type: string
+      required:
+        - id
+        - name
+        - criticality
+        - healthScore
+        - status
+        - serviceCount
+        - errorRatePct
+        - p95LatencyMs
+        - activeIncidents
+      type: object
+    DomainPage:
+      properties:
+        data:
+          items:
+            $ref: '#/$defs/Domain'
+          type: array
+        page:
+          $ref: '#/$defs/Page'
+      required:
+        - data
+        - page
+      type: object
+    DomainRef:
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+      required:
+        - id
+        - name
+      type: object
+    DomainSummary:
+      properties:
+        degraded:
+          type: integer
+        down:
+          type: integer
+        healthy:
+          type: integer
+        total:
+          type: integer
+        unknown:
+          type: integer
+      required:
+        - total
+        - healthy
+        - degraded
+        - down
+        - unknown
+      type: object
+    Error:
+      properties:
+        error:
+          const: invalid_request
+        issues:
+          items:
+            properties:
+              message:
+                type: string
+              path:
+                type: string
+            required:
+              - path
+              - message
+            type: object
+          type: array
+      required:
+        - error
+        - issues
+      type: object
+    Incident:
+      properties:
+        domain:
+          $ref: '#/$defs/DomainRef'
+        id:
+          type: string
+        openedAt:
+          format: date-time
+          type: string
+        severity:
+          enum:
+            - critical
+            - warning
+            - info
+          type: string
+        state:
+          enum:
+            - open
+            - acknowledged
+            - mitigated
+            - resolved
+          type: string
+        title:
+          type: string
+      required:
+        - id
+        - title
+        - domain
+        - severity
+        - state
+        - openedAt
+      type: object
+    Infrastructure:
+      properties:
+        count:
+          type: integer
+        id:
+          type: string
+        label:
+          type: string
+        status:
+          enum:
+            - healthy
+            - degraded
+            - down
+            - unknown
+          type: string
+      required:
+        - id
+        - label
+        - count
+        - status
+      type: object
+    Metric:
+      properties:
+        change:
+          type: number
+        id:
+          type: string
+        kind:
+          enum:
+            - rate
+            - percent
+            - duration-ms
+          type: string
+        label:
+          type: string
+        polarity:
+          enum:
+            - higher-is-better
+            - lower-is-better
+            - neutral
+          type: string
+        unit:
+          type: string
+        value:
+          type: number
+      required:
+        - id
+        - label
+        - value
+        - unit
+        - kind
+        - change
+        - polarity
+      type: object
+    Page:
+      properties:
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+      required:
+        - page
+        - pageSize
+        - totalItems
+        - totalPages
+      type: object
+    SystemStatus:
+      properties:
+        detail:
+          type: string
+        label:
+          type: string
+        status:
+          enum:
+            - healthy
+            - degraded
+            - down
+            - unknown
+          type: string
+      required:
+        - status
+        - label
+        - detail
+      type: object
+  securitySchemes:
+    bearerAuth:
+      description: A token from `API_TOKENS`.
+      scheme: bearer
+      type: http
