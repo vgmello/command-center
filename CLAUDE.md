@@ -49,10 +49,31 @@ Remote functions are experimental and the API moves. Never answer a remote-funct
 
 ## Runtime: Bun
 
+**Bun is the runtime everywhere — local dev included.** Node never executes this project's code, in any environment. This is deliberate: dev and production must agree on the runtime, or Bun-specific server APIs work locally and fail in production (or the reverse).
+
+### Tooling
+
 - `bun install`, `bun run <script>`, `bunx` — never `npm`/`pnpm`/`yarn`/`npx`.
 - `bun.lock` is committed. Don't add other lockfiles.
-- Production is served by Bun. Adapter choice (`adapter-node` executed under Bun vs. a Bun-specific adapter) is **not yet decided** — settle it before the first deploy and record the decision here.
-- Bun-specific server APIs are allowed in server-only code, but keep them out of anything that has to run in the Vite dev SSR path or the browser.
+
+### Running Vite under Bun
+
+`bun run dev` is **not** enough. Bun respects a binary's shebang, and Vite's is `#!/usr/bin/env node` — so a plain `bun run dev` silently hands the dev server to Node. Two ways to force the Bun runtime:
+
+- **Per-invocation:** `bun --bun run dev` (equivalently `bunx --bun vite dev`). The `--bun` flag overrides the shebang.
+- **Repo-wide (preferred):** set `run.bun = true` in `bunfig.toml`, which makes every `bun run` use Bun without the flag. Committed to the repo so it applies to everyone and to CI.
+
+Verify rather than assume — `process.versions.bun` is defined only under Bun. If it's `undefined` in the dev server, Vite is running on Node and the `--bun`/`bunfig.toml` setup is not taking effect.
+
+### Adapter
+
+**`@sveltejs/adapter-bun`** — the official SvelteKit Bun adapter. Not the community `svelte-adapter-bun`; if you find that name in a search result or an older guide, it is the wrong package for this repo.
+
+Currently a prerelease (`1.0.0-next.1` as of 2026-09). Accepted deliberately: this repo is already on experimental remote functions, and the official adapter tracks SvelteKit API changes directly where a third-party one lags. **Pin the exact version** — no `^` range — and read the changelog before bumping.
+
+### Bun APIs
+
+Bun-specific server APIs (`Bun.file`, `Bun.serve` internals, `bun:sqlite`, …) are allowed in server-only code — remote functions, `src/lib/server/`, hooks. Keep them out of anything reachable from the browser. Since dev and production share the runtime, a Bun API that works locally works in production; the remaining hazard is only the client bundle.
 
 ## Conventions
 
