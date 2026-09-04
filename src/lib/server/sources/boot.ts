@@ -3,6 +3,7 @@ import { SourceCache } from './cache';
 import { createDispatcher } from './dispatch';
 import { FIXTURE_CONNECTIONS, FIXTURE_PROVIDERS } from './fixtures';
 import type { ProviderDefinition } from './provider';
+import { REAL_PROVIDERS } from './providers';
 import { SourceRegistry } from './registry';
 import { createRouters } from './routers';
 
@@ -26,6 +27,36 @@ export async function readSourceConfig(path: string | undefined): Promise<unknow
 }
 
 /**
+ * Which providers a configuration may name.
+ *
+ * With no configuration at all, the fixtures — the app runs as it always has.
+ *
+ * With a configuration, the real providers only. A connections file naming
+ * `fixture-cloud` is refused rather than serving seeded numbers with nothing on the page
+ * admitting it, which is the failure the port resolver's throw-on-unknown-name exists to
+ * prevent.
+ *
+ * `SOURCES_ALLOW_FIXTURES` re-admits the fixtures alongside the real ones. That is a
+ * genuine local-development need — one real provider configured, the other kinds still
+ * seeded, because nothing yet renders a capability gap as anything but a broken page.
+ * It is an environment variable rather than a flag in the config file on purpose: which
+ * data a deployment is allowed to invent is a deployment decision, and the config file
+ * is the thing most likely to be copied from a laptop to a server by mistake.
+ */
+function providersFor(options: {
+	config: unknown;
+	env: Record<string, string | undefined>;
+	providers?: readonly ProviderDefinition<unknown>[];
+}): readonly ProviderDefinition<unknown>[] {
+	if (options.providers) return options.providers;
+	if (options.config == null) return FIXTURE_PROVIDERS;
+
+	return options.env.SOURCES_ALLOW_FIXTURES === 'true'
+		? [...REAL_PROVIDERS, ...FIXTURE_PROVIDERS]
+		: REAL_PROVIDERS;
+}
+
+/**
  * Build the registry, the cache and the four routers.
  *
  * With no configuration the fixture providers are connected, so the app behaves exactly
@@ -38,15 +69,17 @@ export function buildSources(options: {
 	env: Record<string, string | undefined>;
 	catalog: { platform: PlatformSource; service: ServiceSource };
 	/**
-	 * Which providers may be named. Defaults to the fixtures, and ONLY when no config
-	 * was supplied — a real connections file naming "fixture-cloud" would otherwise be
-	 * a valid configuration serving seeded numbers with nothing on the page admitting it.
+	 * Which providers may be named.
+	 *
+	 * With no configuration this is the fixtures, so the app runs as it always has. With
+	 * a configuration it is the real providers ONLY — a connections file naming
+	 * "fixture-cloud" is refused rather than serving seeded numbers with nothing on the
+	 * page admitting it.
 	 */
 	providers?: readonly ProviderDefinition<unknown>[];
 }) {
 	const registry = new SourceRegistry();
-	const providers = options.providers ?? (options.config == null ? FIXTURE_PROVIDERS : []);
-	for (const provider of providers) registry.register(provider);
+	for (const provider of providersFor(options)) registry.register(provider);
 
 	registry.load(options.config ?? FIXTURE_CONNECTIONS, options.env);
 

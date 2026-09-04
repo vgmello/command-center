@@ -83,6 +83,12 @@ export type GapReason = 'no-connection' | 'no-binding' | 'no-capability' | 'not-
  * them would tell an on-call engineer to configure a source that is already configured.
  */
 export type Panel<T> =
-	| { status: 'ok'; data: T; source: SourceRef; stale?: true }
+	/**
+	 * `source` is optional because the ports do not carry provenance yet — which
+	 * connection answered arrives with bindings, in the increment that adds them. A panel
+	 * that knows its answer but not yet who gave it is still `ok`; inventing a SourceRef
+	 * to satisfy the type would put a name on a page that nothing verified.
+	 */
+	| { status: 'ok'; data: T; source?: SourceRef; stale?: true }
 	| { status: 'unavailable'; capability: Capability; kind: SourceKind; reason: GapReason }
 	| { status: 'failed'; capability: Capability; kind: SourceKind; source: SourceRef };

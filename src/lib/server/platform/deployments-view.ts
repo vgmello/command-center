@@ -7,6 +7,7 @@ import type {
 } from '$lib/platform/types';
 import type { PlatformScope } from '$lib/platform/query';
 import type { DeploymentSource } from './source';
+import { panel } from '../sources/panel';
 import { formatChange } from '$lib/platform/format';
 import { formatDuration } from '$lib/platform/deployments';
 
@@ -137,7 +138,10 @@ export async function buildDeploymentsSnapshot(
 		source.readStatusTrend(scope),
 		source.readDomainBreakdown(scope),
 		source.readTrends(scope, grain),
-		source.listInsights(scope),
+		// The one read on this screen a source may legitimately not answer: Octopus
+		// reports what ran, not what it means. Wrapped so the page states the gap instead
+		// of dying on it.
+		panel('deployment.insights', async () => ({ data: await source.listInsights(scope) })),
 		source.listDeployments(scope, RECENT_DEPLOYMENT_LIMIT),
 		source.listDeployingDomains(scope)
 	]);

@@ -1,3 +1,4 @@
+import type { Panel } from './sources';
 /**
  * The vocabulary of the platform view.
  *
@@ -352,7 +353,15 @@ export interface DeploymentsSnapshot {
 	/** Successful / in-progress / failed, plotted across the scope's window. */
 	statusTrend: TimeSeries[];
 	byDomain: DomainBreakdown;
-	insights: DeploymentInsight[];
+	/**
+	 * Deployment insights, or an account of why there are none.
+	 *
+	 * A `Panel` rather than a bare list because not every deployment source has an
+	 * opinion to give — Octopus reports what ran, not what it means. An empty list would
+	 * say "nothing to flag", which is a different statement from "this source does not
+	 * do insights", and a reader cannot tell them apart.
+	 */
+	insights: Panel<DeploymentInsight[]>;
 	frequency: TimeSeries;
 	meanDuration: TimeSeries;
 	summary: DeploymentSummary;

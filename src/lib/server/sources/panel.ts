@@ -13,7 +13,7 @@ import { CapabilityUnavailableError, SourceFailedError } from './errors';
  */
 export async function panel<T>(
 	capability: Capability,
-	read: () => Promise<{ data: T; source: SourceRef; stale?: true }>
+	read: () => Promise<{ data: T; source?: SourceRef; stale?: true }>
 ): Promise<Panel<T>> {
 	try {
 		const { data, source, stale } = await read();

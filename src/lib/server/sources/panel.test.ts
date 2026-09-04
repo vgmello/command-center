@@ -19,7 +19,7 @@ describe('panel', () => {
 		expect(result.status).toBe('ok');
 		if (result.status !== 'ok') throw new Error('unreachable');
 		expect(result.data).toBe(42);
-		expect(result.source.connectionId).toBe('azure-prod');
+		expect(result.source!.connectionId).toBe('azure-prod');
 	});
 
 	test('an unavailable capability becomes a stated gap, not an empty value', async () => {
@@ -43,7 +43,7 @@ describe('panel', () => {
 		expect(result.status).toBe('failed');
 		if (result.status !== 'failed') throw new Error('unreachable');
 		// The panel can still say who did not answer.
-		expect(result.source.name).toBe('Azure — Production');
+		expect(result.source!.name).toBe('Azure — Production');
 	});
 
 	test('an unexpected error is not swallowed', async () => {

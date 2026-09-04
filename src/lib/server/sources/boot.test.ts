@@ -110,3 +110,33 @@ describe('buildSources', () => {
 		expect(calls).toBe(1);
 	});
 });
+
+describe('fixtures in a real configuration', () => {
+	const namingFixture = {
+		connections: [{ id: 'f', provider: 'fixture-cloud', label: 'Fixture Cloud', settings: {} }]
+	};
+
+	test('a config naming a fixture provider is refused by default', () => {
+		expect(() => buildSources({ config: namingFixture, env: {}, catalog })).toThrow(
+			/fixture-cloud/
+		);
+	});
+
+	test('SOURCES_ALLOW_FIXTURES re-admits them, because saying so is the point', () => {
+		const routers = buildSources({
+			config: namingFixture,
+			env: { SOURCES_ALLOW_FIXTURES: 'true' },
+			catalog
+		});
+
+		expect(routers.infrastructure).toBeDefined();
+	});
+
+	test('any other value is not consent', () => {
+		for (const value of ['1', 'yes', 'TRUE', '']) {
+			expect(() =>
+				buildSources({ config: namingFixture, env: { SOURCES_ALLOW_FIXTURES: value }, catalog })
+			).toThrow(/fixture-cloud/);
+		}
+	});
+});
