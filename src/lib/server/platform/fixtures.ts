@@ -614,10 +614,11 @@ export function buildStatusTrend(now: Date, buckets = 16): TimeSeries[] {
 	];
 
 	return shapes.map(([id, label, centre, volatility]) => {
-		const values = buildSeries(`deploy:${id}`, centre, { volatility, floor: 0 }).values.slice(
-			0,
-			buckets
-		);
+		const values = buildSeries(`deploy:${id}`, centre, {
+			points: buckets,
+			volatility,
+			floor: 0
+		}).values;
 
 		return {
 			id,
@@ -665,14 +666,16 @@ export function buildDeploymentTrends(
 	);
 
 	const counts = buildSeries(`deploy:frequency:${grain}`, today, {
+		points: buckets,
 		volatility: 0.18,
 		floor: 1
-	}).values.slice(0, buckets);
+	}).values;
 	const durations = buildSeries(`deploy:duration:${grain}`, meanToday, {
+		points: buckets,
 		volatility: 0.12,
 		drift: -0.2,
 		floor: 30
-	}).values.slice(0, buckets);
+	}).values;
 
 	const step = GRAIN_DAYS[grain];
 	const labels = Array.from({ length: buckets }, (_, index) =>

@@ -280,6 +280,21 @@ as arguments, an axis can be asserted in a test — and that is how the axis lab
 that reason: rounding them independently produces numbers each defensible alone and
 unreadable side by side.
 
+### Fixtures: ask for the window, never slice it
+
+`buildSeries` defaults to 24 points. Callers that need more must pass `points`, because
+slicing a longer window out of a shorter series yields `undefined` entries that pass
+silently through arithmetic and land in whichever bucket a `NaN` comparison falls into.
+That is exactly how the latency heatmap ended up with eight blank columns per row, and
+how the cost chart would have lost days after the 24th of a month. `series.test.ts`
+asserts the requested length is honoured; no fixture slices any more.
+
+**A number a reader sees twice must be pinned once.** The metrics tab plots a series
+and prints its latest value in a tile, while the overview tab prints the catalog's
+figure for the same metric. Left alone those disagree, and a reader switching tabs
+watches P95 move by a hundred milliseconds for no reason — so the newest bucket of each
+series is pinned to the stated reading, and a test compares the two tabs.
+
 ### A rollup is not always worst-wins
 
 `rollUpStatus` is right for a service — one dead instance of three is an incident — and
@@ -519,7 +534,7 @@ an `@` costs its full length in every session, whether or not the session touche
 ## State
 
 Overview, Domains, Deployments, the Service detail view and Infrastructure built and
-verified. `bun test` (203 tests), `bun run check`, `bun run lint`,
+verified, plus the service Metrics tab. `bun test` (230 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
@@ -529,14 +544,17 @@ What exists:
   `geometry.ts` and `pagination.ts`, each with a test file
 - `src/lib/server/platform/` — the `PlatformSource` / `WorkspaceSource` ports, the fixture
   implementation, the resolver, and one assembler per screen (`snapshot.ts` for the
-  overview, `domains-view.ts`, `deployments-view.ts`, `service-view.ts`). **Replacing the fixture with real
+  overview, `domains-view.ts`, `deployments-view.ts`, `service-view.ts`,
+  `service-metrics-view.ts`, `infrastructure-view.ts`). **Replacing the fixture with real
   telemetry is a new file plus a resolver entry**; nothing above the ports changes
 - `src/lib/server/platform/service.ts` — the in-process API both transports call
 - `src/routes/shell.remote.ts` — `getShell`, `getSystemStatus`
 - `src/routes/overview.remote.ts` — `getOverview`
 - `src/routes/domains.remote.ts` — `getDomainPage`, `getDomainsView`
 - `src/routes/deployments.remote.ts` — `getDeploymentPage`, `getDeploymentsView`
-- `src/routes/services.remote.ts` — `getServices`, `getServiceView`
+- `src/routes/services.remote.ts` — `getServices`, `getServiceView`, `getServiceMetrics`
+  (its own query: the two tabs are never on screen together, and six series is a lot to
+  fetch for a reader looking at the dependency graph)
 - `src/routes/infrastructure.remote.ts` — `getInfrastructureView`, one query because
   every panel reflects the same estate at the same moment. All remote
   functions are Valibot-validated against the schemas the JSON API shares, the service
@@ -569,6 +587,13 @@ Last 30) rather than a calendar, because a real filter with no new dependency be
 picker that needs one; and the Filters button reports and clears the active filters
 rather than opening a panel of controls that are already on screen. The insight rows
 have no "View report" link, because those reports do not exist yet.
+
+**Where the fixtures deliberately differ from the mocks.** Two figures in the metrics
+mock are not derivable and are computed properly here instead. The error budget reads
+"21m remaining", not "21h 36m": a 99.90% target over 30 days allows 43.2 minutes of
+downtime, and achieving 99.95% spends half of it — no window and no target produce 21
+hours. And "Budget burn" is labelled with the window it actually measures, because the
+mock's percentage and its "last 7 days" caption describe different periods.
 
 Not yet built: per-domain, per-incident and per-deployment detail routes. Until they exist the
 table's row actions menu and those rows stay non-navigating, by the rule above. The domains

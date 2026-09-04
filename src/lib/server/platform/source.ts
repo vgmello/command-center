@@ -18,6 +18,8 @@ import type {
 	DatabaseInstance,
 	HealthCheck,
 	InfraAlert,
+	LatencyHeatmap,
+	MetricInsight,
 	InfraRegion,
 	MessageQueue,
 	NodeCounts,
@@ -26,6 +28,7 @@ import type {
 	Service,
 	ServiceDependencies,
 	ServiceStat,
+	SloBudget,
 	StorageClass,
 	ServiceEndpoint,
 	TimeSeries,
@@ -188,6 +191,34 @@ export interface ServiceSource {
 
 	/** Slowest endpoints first, already ranked and shared out by the source. */
 	listEndpoints(scope: PlatformScope, slug: string, limit: number): Promise<ServiceEndpoint[]>;
+
+	/**
+	 * The metrics tab's series, in one call.
+	 *
+	 * Six series drawn from the same window over the same service. Separate reads would
+	 * let two charts on one screen describe different minutes, which is the whole
+	 * failure a dashboard exists to avoid.
+	 */
+	readMetricSeries(
+		scope: PlatformScope,
+		slug: string
+	): Promise<{
+		requestRate: TimeSeries;
+		p95Latency: TimeSeries;
+		errorRate: TimeSeries;
+		saturation: TimeSeries[];
+		byEndpoint: TimeSeries[];
+		byInstance: TimeSeries[];
+	}>;
+
+	/** The availability objective and what is left of its budget. */
+	readSloBudget(scope: PlatformScope, slug: string): Promise<SloBudget>;
+
+	/** P95 bucketed by time and band, with the bands it was bucketed against. */
+	readLatencyHeatmap(scope: PlatformScope, slug: string): Promise<LatencyHeatmap>;
+
+	/** Movements worth a reader's attention: anomalies, and merely notable changes. */
+	listMetricInsights(scope: PlatformScope, slug: string): Promise<MetricInsight[]>;
 }
 
 /**

@@ -484,6 +484,9 @@ components:
           type: number
         path:
           type: string
+        requestsPerSecond:
+          minimum: 0
+          type: number
         status:
           enum:
             - healthy
@@ -495,6 +498,7 @@ components:
         - method
         - path
         - p95LatencyMs
+        - requestsPerSecond
         - status
       type: object
     Error:

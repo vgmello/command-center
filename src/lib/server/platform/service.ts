@@ -19,6 +19,7 @@ import type {
 	Service,
 	ServiceDependencies,
 	ServiceEndpoint,
+	ServiceMetricsSnapshot,
 	ServiceSnapshot,
 	SystemStatus,
 	TrendGrain
@@ -29,6 +30,7 @@ import { DEPLOYMENT_LIMIT, INCIDENT_LIMIT, buildOverview, buildSystemStatus } fr
 import { RECENT_CHANGE_LIMIT, buildDomainsSnapshot } from './domains-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
+import { buildServiceMetricsSnapshot } from './service-metrics-view';
 import { buildInfrastructureSnapshot } from './infrastructure-view';
 
 /**
@@ -178,6 +180,19 @@ export function readServiceView(
 	slug: string
 ): Promise<ServiceSnapshot | null> {
 	return buildServiceSnapshot(serviceSource(), deploymentSource(), scope, slug);
+}
+
+/**
+ * One service's metrics tab.
+ *
+ * Separate from `readServiceView` so a reader on the overview never pays for six
+ * series they are not looking at. `null` for an unknown slug, as the overview is.
+ */
+export function readServiceMetrics(
+	scope: PlatformScope,
+	slug: string
+): Promise<ServiceMetricsSnapshot | null> {
+	return buildServiceMetricsSnapshot(serviceSource(), scope, slug);
 }
 
 /** The infrastructure page's aggregate. Screen-shaped, and unexposed for the same reason. */

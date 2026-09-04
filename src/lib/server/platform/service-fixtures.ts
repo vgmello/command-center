@@ -1,6 +1,9 @@
 import type {
 	DependencyNode,
 	FavoriteItem,
+	LatencyHeatmap,
+	MetricInsight,
+	SloBudget,
 	HealthCheck,
 	Series,
 	Service,
@@ -12,6 +15,7 @@ import type {
 import { describeInstanceHealth } from '$lib/platform/services';
 import { formatChange, formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
 import { statusFromScore } from '$lib/platform/health';
+import { bandFor } from '$lib/platform/chart';
 import { buildSeries } from './series';
 import { listDomains } from './fixtures';
 
@@ -373,10 +377,11 @@ function node(name: string, protocol: string, status: DependencyNode['status']):
 export function readRequestRate(slug: string, now: Date, buckets = 18): TimeSeries {
 	const seed = seedFor(slug);
 	const centre = seed?.requestRate ?? 100;
-	const values = buildSeries(`${slug}:rps`, centre, { volatility: 0.16, floor: 0 }).values.slice(
-		0,
-		buckets
-	);
+	const values = buildSeries(`${slug}:rps`, centre, {
+		points: buckets,
+		volatility: 0.16,
+		floor: 0
+	}).values;
 
 	return {
 		id: 'request-rate',
@@ -413,18 +418,286 @@ export function listEndpoints(slug: string, limit: number): ServiceEndpoint[] {
 	];
 
 	const slowest = seed.p95LatencyMs * 1.12;
+	// Traffic is not proportional to latency: the health check is the fastest endpoint
+	// and among the least called, which is exactly why the two shares are separate.
+	const traffic = [0.267, 0.189, 0.133, 0.1, 0.04];
+	const rows = shapes.slice(0, limit);
+	const trafficTotal = traffic.slice(0, rows.length).reduce((sum, share) => sum + share, 0);
 
-	return shapes.slice(0, limit).map(([method, path, factor]) => {
-		const p95LatencyMs = Math.round(slowest * factor);
+	return rows.map(([method, path, factor], index) => {
+		const requestShare = traffic[index] / trafficTotal;
+
 		return {
 			id: `${method} ${path}`,
 			method,
 			path,
-			p95LatencyMs,
-			sharePct: Math.round(factor * 100),
+			p95LatencyMs: Math.round(slowest * factor),
+			latencySharePct: Math.round(factor * 100),
+			requestsPerSecond: Math.round(seed.requestRate * requestShare),
+			requestSharePct: Math.round(traffic[index] * 1000) / 10,
 			status: statusFromScore(100 - factor * 70)
 		};
 	});
+}
+
+/** Buckets across the window, labelled with wall-clock times. */
+function clockPoints(now: Date, values: number[], stepMinutes = 1) {
+	return values.map((value, index) => {
+		const at = new Date(now.getTime() - (values.length - 1 - index) * stepMinutes * 60_000);
+		return {
+			label: `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`,
+			value: Math.round(value * 100) / 100
+		};
+	});
+}
+
+function series(id: string, label: string, points: ReturnType<typeof clockPoints>): TimeSeries {
+	const values = points.map((point) => point.value);
+	return { id, label, points, min: Math.min(...values), max: Math.max(...values) };
+}
+
+/**
+ * Every series the metrics tab plots, from one window.
+ *
+ * Built together rather than one call per chart, so two panels on the same screen
+ * cannot describe different minutes — the failure a dashboard exists to avoid.
+ */
+export function readMetricSeries(slug: string, now: Date, buckets = 32) {
+	const seed = seedFor(slug);
+	const centre = seed ?? {
+		requestRate: 100,
+		p95LatencyMs: 200,
+		errorRatePct: 0.5,
+		instancesTotal: 1
+	};
+
+	const shape = (id: string, value: number, volatility: number, floor = 0) =>
+		buildSeries(`${slug}:m:${id}`, value, { points: buckets, volatility, floor }).values;
+
+	const endpoints = listEndpoints(slug, 5);
+	const instances = Array.from(
+		{ length: Math.max(1, centre.instancesTotal) },
+		(_, index) => `${slug}-6c7f9d7c4b-1a2${'bcdefgh'[index] ?? index}`
+	);
+
+	/*
+	 * The newest bucket is pinned to the service's stated reading.
+	 *
+	 * Without it the tile above a chart shows the last sample of a wandering series
+	 * while the Overview tab shows the catalog's figure, and a reader switching tabs
+	 * watches P95 change by a hundred milliseconds for no reason.
+	 */
+	const pinned = (id: string, label: string, values: number[], reading: number) => {
+		const points = clockPoints(now, values);
+		if (points.length > 0) points[points.length - 1].value = Math.round(reading * 100) / 100;
+		return series(id, label, points);
+	};
+
+	return {
+		requestRate: pinned(
+			'request-rate',
+			'Total',
+			shape('rps', centre.requestRate, 0.14),
+			centre.requestRate
+		),
+		p95Latency: pinned(
+			'p95',
+			'P95 Latency',
+			shape('p95', centre.p95LatencyMs, 0.12),
+			centre.p95LatencyMs
+		),
+		errorRate: pinned(
+			'error-rate',
+			'Error Rate',
+			shape('errors', centre.errorRatePct, 0.26),
+			centre.errorRatePct
+		),
+		saturation: [
+			series('cpu', 'CPU', clockPoints(now, shape('cpu', 42, 0.08))),
+			series('memory', 'Memory', clockPoints(now, shape('memory', 58, 0.06)))
+		],
+		// One band per endpoint, each a share of the same total the line chart plots.
+		byEndpoint: endpoints.map((endpoint) =>
+			series(
+				endpoint.id,
+				`${endpoint.path}`,
+				clockPoints(
+					now,
+					shape(`ep:${endpoint.id}`, centre.requestRate * (endpoint.requestSharePct / 100), 0.18)
+				)
+			)
+		),
+		byInstance: instances.map((name, index) =>
+			series(name, name, clockPoints(now, shape(`inst:${index}`, centre.p95LatencyMs, 0.16)))
+		)
+	};
+}
+
+/**
+ * The availability objective.
+ *
+ * The budget is worked out from the objective rather than stated: an allowance is a
+ * consequence of a target and a window, and stating it separately is how the two end
+ * up disagreeing.
+ */
+export function readSloBudget(slug: string, now: Date): SloBudget {
+	const seed = seedFor(slug);
+	const achievedPct = seed?.availabilityPct ?? 99.9;
+	const targetPct = 99.9;
+	const windowDays = 30;
+
+	const allowanceMinutes = ((100 - targetPct) / 100) * windowDays * 24 * 60;
+	const spentMinutes = ((100 - achievedPct) / 100) * windowDays * 24 * 60;
+	const remainingMinutes = Math.max(0, allowanceMinutes - spentMinutes);
+	const remainingPct = allowanceMinutes === 0 ? 0 : (remainingMinutes / allowanceMinutes) * 100;
+
+	const burn = buildSeries(`${slug}:burn`, 1.2, { points: 28, volatility: 0.5, floor: 0 }).values;
+
+	return {
+		label: `Availability (${windowDays}d rolling)`,
+		achievedPct,
+		targetPct,
+		remainingPct,
+		remainingLabel: formatMinutes(remainingMinutes),
+		burnPct: Math.round((spentMinutes / allowanceMinutes) * 1000) / 10,
+		burnWindowLabel: `of the ${windowDays}-day budget`,
+		burn: {
+			id: 'burn',
+			label: 'Budget burn',
+			// Dated, not indexed: the bars carry a tooltip, and "12" is not an answer to
+			// "which day was that".
+			points: burn.map((value, index) => ({
+				label: new Date(now.getTime() - (burn.length - 1 - index) * 86_400_000).toLocaleDateString(
+					'en-GB',
+					{ month: 'short', day: 'numeric' }
+				),
+				value
+			})),
+			min: Math.min(...burn),
+			max: Math.max(...burn)
+		}
+	};
+}
+
+/** "21h 36m" — an allowance stated as time somebody can spend. */
+function formatMinutes(minutes: number): string {
+	const whole = Math.floor(minutes);
+	const hours = Math.floor(whole / 60);
+	if (hours === 0) return `${whole}m`;
+	return `${hours}h ${String(whole % 60).padStart(2, '0')}m`;
+}
+
+/** Upper bounds in milliseconds, worst first. The legend reads off these. */
+const LATENCY_BANDS = [2000, 1000, 500, 200, 100];
+
+const LATENCY_BAND_LABELS = [
+	'> 2s',
+	'1s – 2s',
+	'500ms – 1s',
+	'200ms – 500ms',
+	'100ms – 200ms',
+	'< 100ms'
+];
+
+/**
+ * P95 bucketed by time and by percentile row.
+ *
+ * Rows are latency percentiles rather than instances: the question the heatmap answers
+ * is "how wide is the tail", and one row per instance answers a different one — which
+ * is what the chart beside it is for.
+ */
+export function readLatencyHeatmap(
+	slug: string,
+	now: Date,
+	columns = 32,
+	rows = 8
+): LatencyHeatmap {
+	const seed = seedFor(slug);
+	const centre = seed?.p95LatencyMs ?? 200;
+
+	const columnLabels = Array.from({ length: columns }, (_, index) => {
+		const at = new Date(now.getTime() - (columns - 1 - index) * 60_000);
+		return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+	});
+
+	// Each row is a slice of the distribution: the top row is the slow tail.
+	const rowLabels = Array.from({ length: rows }, (_, index) => `p${99 - index * 6}`);
+
+	const cells = [];
+	for (let row = 0; row < rows; row++) {
+		/*
+		 * Latency percentiles are not linear. A service whose P95 is 820ms has a P57
+		 * around 100ms, not 300 — the tail is where the time goes. A straight line
+		 * between the two paints every row amber and makes a healthy service look sick.
+		 */
+		const position = (rows - 1 - row) / Math.max(1, rows - 1);
+		const rowCentre = centre * (0.12 + 1.9 * position ** 2.5);
+		const values = buildSeries(`${slug}:heat:${row}`, rowCentre, {
+			points: columns,
+			volatility: 0.22,
+			floor: 10
+		}).values;
+
+		for (let column = 0; column < columns; column++) {
+			cells.push({
+				column,
+				row,
+				band: bandFor(values[column], LATENCY_BANDS),
+				columnLabel: columnLabels[column]
+			});
+		}
+	}
+
+	return { columnLabels, rowLabels, bands: LATENCY_BAND_LABELS, cells };
+}
+
+/**
+ * Flagged movements.
+ *
+ * Each states the number that triggered it and the range it left, so an insight cannot
+ * outlive the condition it describes — and a reader can judge it without opening it.
+ */
+export function listMetricInsights(slug: string, now: Date): MetricInsight[] {
+	const seed = seedFor(slug);
+	if (!seed) return [];
+
+	const insights: MetricInsight[] = [];
+	const NORMAL_ERROR_RANGE = { low: 0.05, high: 0.2 };
+
+	if (seed.errorRatePct > NORMAL_ERROR_RANGE.high) {
+		insights.push({
+			id: 'error-rate',
+			kind: 'anomaly',
+			severity: 'critical',
+			title: 'High Error Rate',
+			detail: `Error rate is ${formatPercent(seed.errorRatePct)}, outside the normal range (${formatPercent(NORMAL_ERROR_RANGE.low)} – ${formatPercent(NORMAL_ERROR_RANGE.high)})`,
+			affects: '/v1/payments',
+			startedAt: new Date(now.getTime() - 5 * 60_000).toISOString()
+		});
+	}
+
+	const usualLatency = Math.round(seed.p95LatencyMs / 1.35);
+	insights.push({
+		id: 'latency',
+		kind: 'anomaly',
+		severity: 'warning',
+		title: 'Latency Increased',
+		detail: `P95 latency is ${seed.p95LatencyMs}ms, 35% higher than usual (avg ${usualLatency}ms)`,
+		affects: '/v1/payments',
+		startedAt: new Date(now.getTime() - 8 * 60_000).toISOString()
+	});
+
+	insights.push({
+		id: 'traffic',
+		kind: 'insight',
+		severity: 'info',
+		title: 'Traffic Spike',
+		detail: `Request rate increased by 12% to ${seed.requestRate} req/s`,
+		affects: 'Normal',
+		startedAt: new Date(now.getTime() - 10 * 60_000).toISOString()
+	});
+
+	return insights;
 }
 
 /**

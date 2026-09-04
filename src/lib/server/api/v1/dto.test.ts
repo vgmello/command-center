@@ -235,13 +235,20 @@ describe('v1 service shapes', () => {
 		expect((dtos[0] as unknown as Record<string, unknown>).series).toBeUndefined();
 	});
 
-	test('an endpoint drops the bar width, which is a fact about our table', async () => {
+	test('an endpoint drops both bar widths and keeps the measurements', async () => {
 		const endpoints = await catalog.listEndpoints(scope, 'payment-api', 5);
 		const dto = toEndpointDto(endpoints[0]) as unknown as Record<string, unknown>;
 
-		expect(endpoints[0].sharePct).toBeDefined();
-		expect(dto.sharePct).toBeUndefined();
-		expect(Object.keys(dto).sort()).toEqual(['method', 'p95LatencyMs', 'path', 'status']);
+		expect(endpoints[0].latencySharePct).toBeDefined();
+		expect(dto.latencySharePct).toBeUndefined();
+		expect(dto.requestSharePct).toBeUndefined();
+		expect(Object.keys(dto).sort()).toEqual([
+			'method',
+			'p95LatencyMs',
+			'path',
+			'requestsPerSecond',
+			'status'
+		]);
 	});
 
 	test('dependencies keep both directions and every protocol', async () => {

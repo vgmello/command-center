@@ -104,8 +104,10 @@ describe('buildServiceSnapshot', () => {
 		const snapshot = await build('payment-api');
 		const [slowest] = snapshot!.endpoints;
 
-		expect(slowest.sharePct).toBe(100);
-		expect(snapshot!.endpoints.every((one) => one.sharePct <= 100 && one.sharePct >= 0)).toBe(true);
+		expect(slowest.latencySharePct).toBe(100);
+		expect(
+			snapshot!.endpoints.every((one) => one.latencySharePct <= 100 && one.latencySharePct >= 0)
+		).toBe(true);
 		// Ranked, so the table needs no sort of its own.
 		const latencies = snapshot!.endpoints.map((one) => one.p95LatencyMs);
 		expect(latencies).toEqual([...latencies].sort((a, b) => b - a));

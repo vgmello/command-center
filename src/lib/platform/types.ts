@@ -499,9 +499,93 @@ export interface ServiceEndpoint {
 	method: string;
 	path: string;
 	p95LatencyMs: number;
-	/** Share of the slowest endpoint's latency, 0–100 — what the bar draws. */
-	sharePct: number;
+	/**
+	 * Share of the slowest endpoint's latency, 0–100 — what the overview's bar draws.
+	 *
+	 * Named for what it measures, because the metrics tab shows a second share of a
+	 * different denominator and `sharePct` alone would not say which.
+	 */
+	latencySharePct: number;
+	requestsPerSecond: number;
+	/** Share of the service's total request rate, 0–100. */
+	requestSharePct: number;
 	status: HealthStatus;
+}
+
+/**
+ * An availability objective and what is left of its budget.
+ *
+ * The budget is stated as remaining time rather than as a percentage of a percentage:
+ * "21h 36m" is a thing an on-call engineer can spend, and "0.05% of 30 days" is not.
+ */
+export interface SloBudget {
+	/** What the window actually measures, e.g. "Availability (30d rolling)". */
+	label: string;
+	achievedPct: number;
+	targetPct: number;
+	/** How much of the objective's allowance is intact, 0–100 — what the bar draws. */
+	remainingPct: number;
+	remainingLabel: string;
+	burnPct: number;
+	burnWindowLabel: string;
+	/** Daily burn across the window, for the sparkline beside the figure. */
+	burn: TimeSeries;
+}
+
+/** One column of the latency heatmap: a time bucket and its band. */
+export interface HeatmapCell {
+	column: number;
+	row: number;
+	/** Index into `LatencyHeatmap.bands`, worst first. */
+	band: number;
+	columnLabel: string;
+}
+
+/**
+ * P95 latency over time and across instances.
+ *
+ * Bands travel with the cells because the legend and the colours must agree, and only
+ * the source knows which thresholds it bucketed against.
+ */
+export interface LatencyHeatmap {
+	columnLabels: string[];
+	rowLabels: string[];
+	bands: string[];
+	cells: HeatmapCell[];
+}
+
+/** A flagged movement in a service's metrics. */
+export interface MetricInsight {
+	id: string;
+	kind: 'anomaly' | 'insight';
+	severity: IncidentSeverity;
+	title: string;
+	detail: string;
+	/** What it was observed on — an endpoint, an instance. */
+	affects: string;
+	startedAt: string;
+}
+
+/** Everything the service metrics tab renders. */
+export interface ServiceMetricsSnapshot {
+	generatedAt: string;
+	environment: EnvironmentId;
+	timeRange: TimeRangeId;
+	service: Service;
+	stats: ServiceStat[];
+	requestRate: TimeSeries;
+	p95Latency: TimeSeries;
+	errorRate: TimeSeries;
+	/** CPU and memory on one axis, because both are percentages of the same thing. */
+	saturation: TimeSeries[];
+	/** Request rate split by endpoint, stacked so the top edge is the total. */
+	byEndpoint: TimeSeries[];
+	/** P95 per instance, to show whether one of them is the problem. */
+	byInstance: TimeSeries[];
+	endpoints: ServiceEndpoint[];
+	slo: SloBudget;
+	heatmap: LatencyHeatmap;
+	insights: MetricInsight[];
 }
 
 /** Everything the service overview tab renders. */

@@ -237,6 +237,85 @@ export function stackedMax(series: StackedSeries[], buckets: number): number {
 	return max;
 }
 
+export interface StackedBand {
+	seriesId: string;
+	label: string;
+	/** Filled path: the band's own top edge, closed along the band below it. */
+	area: string;
+	/** The top edge alone, for a hairline that keeps adjacent bands apart. */
+	line: string;
+}
+
+/**
+ * Cumulative areas, one band per series.
+ *
+ * Each band is drawn between the running total below it and the running total
+ * including it, so the top of the stack is the sum — which is the only thing a stacked
+ * area is read for. Drawing each series from the baseline and relying on opacity would
+ * show a top edge that is not the total.
+ */
+export function stackedBands(series: StackedSeries[], plot: Plot, bounds: Bounds): StackedBand[] {
+	if (series.length === 0) return [];
+
+	const buckets = Math.max(...series.map((one) => one.values.length));
+	if (buckets === 0) return [];
+
+	const innerWidth = plot.width - plot.padLeft - plot.padRight;
+	const innerHeight = plot.height - plot.padTop - plot.padBottom;
+	const span = bounds.max - bounds.min || 1;
+	const step = buckets === 1 ? 0 : innerWidth / (buckets - 1);
+
+	const x = (index: number) =>
+		round(plot.padLeft + (buckets === 1 ? innerWidth / 2 : index * step));
+	const y = (value: number) =>
+		round(plot.padTop + innerHeight - ((value - bounds.min) / span) * innerHeight);
+
+	const running = new Array<number>(buckets).fill(0);
+
+	return series.map((one) => {
+		const below = [...running];
+		for (let index = 0; index < buckets; index++) {
+			running[index] += one.values[index] ?? 0;
+		}
+
+		const top = running.map((total, index) => `${index === 0 ? 'M' : 'L'} ${x(index)} ${y(total)}`);
+		const back = below
+			.map((total, index) => ({ total, index }))
+			.reverse()
+			.map(({ total, index }) => `L ${x(index)} ${y(total)}`);
+
+		return {
+			seriesId: one.id,
+			label: one.label,
+			area: `${top.join(' ')} ${back.join(' ')} Z`,
+			line: top.join(' ')
+		};
+	});
+}
+
+export interface HeatCell {
+	column: number;
+	row: number;
+	/** Index into the caller's band list, worst first. */
+	band: number;
+	value: number;
+	columnLabel: string;
+}
+
+/**
+ * Put a reading into one of an ordered set of bands.
+ *
+ * Bands are upper bounds, worst first — `[2000, 1000, 500, 200, 100]` reads as "over
+ * two seconds, one to two, …". Anything below the last bound falls into the final
+ * band, so every value lands somewhere and the legend can never be incomplete.
+ */
+export function bandFor(value: number, upperBounds: number[]): number {
+	for (let index = 0; index < upperBounds.length; index++) {
+		if (value >= upperBounds[index]) return index;
+	}
+	return upperBounds.length;
+}
+
 /**
  * Longitude/latitude to a point in an equirectangular box.
  *

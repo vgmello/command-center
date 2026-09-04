@@ -234,6 +234,7 @@ export const endpointSchema = v.object({
 	method: v.string(),
 	path: v.string(),
 	p95LatencyMs: v.pipe(v.number(), v.minValue(0)),
+	requestsPerSecond: v.pipe(v.number(), v.minValue(0)),
 	status: healthStatusSchema
 });
 
@@ -482,14 +483,19 @@ export function toDependenciesDto(dependencies: ServiceDependencies): Dependenci
 }
 
 /**
- * `sharePct` is deliberately absent: it is the width of a bar in our table, computed
- * against the slowest endpoint in the list we happened to return.
+ * Both share fields are deliberately absent.
+ *
+ * `latencySharePct` and `requestSharePct` are bar widths, computed against whichever
+ * endpoints we happened to return — a caller with a different `limit` would get
+ * different percentages for the same traffic. The measurements they are derived from
+ * travel instead, so a client can work out any share it actually wants.
  */
 export function toEndpointDto(endpoint: ServiceEndpoint): EndpointDto {
 	return {
 		method: endpoint.method,
 		path: endpoint.path,
 		p95LatencyMs: endpoint.p95LatencyMs,
+		requestsPerSecond: endpoint.requestsPerSecond,
 		status: endpoint.status
 	};
 }

@@ -161,10 +161,11 @@ export function readUtilization(now: Date, buckets = 18): ResourceUsage[] {
 	];
 
 	return seeds.map(([id, label, centre, volatility, change, axisMax]) => {
-		const values = buildSeries(`infra:${id}`, centre, { volatility, floor: 0 }).values.slice(
-			0,
-			buckets
-		);
+		const values = buildSeries(`infra:${id}`, centre, {
+			points: buckets,
+			volatility,
+			floor: 0
+		}).values;
 		const bitrate = id === 'network' ? formatBitrate(centre) : null;
 
 		return {
@@ -322,10 +323,11 @@ export function readCost(now: Date): CostBreakdown {
 	});
 
 	const categories = seeds.map(([id, label, dailyRate, accent]) => {
-		const daily = buildSeries(`cost:${id}`, dailyRate, { volatility: 0.12, floor: 1 }).values.slice(
-			0,
-			days
-		);
+		const daily = buildSeries(`cost:${id}`, dailyRate, {
+			points: days,
+			volatility: 0.12,
+			floor: 1
+		}).values;
 		// The month-to-date figure is the sum of the days drawn, so the legend, the
 		// headline and the columns cannot describe different months.
 		const amount = daily.reduce((sum, value) => sum + value, 0);

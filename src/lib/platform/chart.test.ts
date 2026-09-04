@@ -5,7 +5,9 @@ import {
 	niceScale,
 	plotBars,
 	plotPoints,
+	bandFor,
 	seriesBounds,
+	stackedBands,
 	thinLabels
 } from './chart';
 import type { Plot } from './chart';
@@ -159,5 +161,68 @@ describe('thinLabels', () => {
 		expect(labels).toHaveLength(12);
 		expect(labels.filter(Boolean).length).toBeLessThanOrEqual(4);
 		expect(labels[0]).toBe('t0');
+	});
+});
+
+describe('stackedBands', () => {
+	const stack = [
+		{ id: 'a', label: 'A', values: [1, 2, 3] },
+		{ id: 'b', label: 'B', values: [2, 2, 2] }
+	];
+
+	test('one band per series, in the order given', () => {
+		const bands = stackedBands(stack, plot, { min: 0, max: 6, step: 2 });
+
+		expect(bands.map((band) => band.seriesId)).toEqual(['a', 'b']);
+	});
+
+	test('each band is closed, so it fills rather than draws a line', () => {
+		for (const band of stackedBands(stack, plot, { min: 0, max: 6, step: 2 })) {
+			expect(band.area.endsWith('Z')).toBe(true);
+			expect(band.line.endsWith('Z')).toBe(false);
+		}
+	});
+
+	test('the top of the stack is the sum, not the largest series', () => {
+		const [, top] = stackedBands(stack, plot, { min: 0, max: 6, step: 2 });
+		// Bucket 2 totals 5 of a 6 ceiling, so its top edge sits near the plot top.
+		const inner = plot.height - plot.padTop - plot.padBottom;
+		const expected = plot.padTop + inner - (5 / 6) * inner;
+
+		expect(top.line).toContain(`${Math.round(expected * 100) / 100}`);
+	});
+
+	test('an empty stack draws nothing rather than throwing', () => {
+		expect(stackedBands([], plot, { min: 0, max: 1, step: 1 })).toEqual([]);
+	});
+
+	test('a series missing a bucket is treated as zero, not as a hole', () => {
+		const ragged = [
+			{ id: 'a', label: 'A', values: [1, 2, 3] },
+			{ id: 'b', label: 'B', values: [1] }
+		];
+
+		expect(() => stackedBands(ragged, plot, { min: 0, max: 4, step: 1 })).not.toThrow();
+	});
+});
+
+describe('bandFor', () => {
+	const bounds = [2000, 1000, 500, 200, 100];
+
+	test('places a reading in the first band it exceeds', () => {
+		expect(bandFor(2500, bounds)).toBe(0);
+		expect(bandFor(1500, bounds)).toBe(1);
+		expect(bandFor(750, bounds)).toBe(2);
+		expect(bandFor(300, bounds)).toBe(3);
+		expect(bandFor(150, bounds)).toBe(4);
+	});
+
+	test('anything under the last bound lands in the final band, never nowhere', () => {
+		expect(bandFor(50, bounds)).toBe(bounds.length);
+		expect(bandFor(0, bounds)).toBe(bounds.length);
+	});
+
+	test('a value exactly on a bound belongs to the worse band', () => {
+		expect(bandFor(1000, bounds)).toBe(1);
 	});
 });

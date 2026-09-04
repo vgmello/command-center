@@ -19,7 +19,9 @@ import type {
 	HealthCheck,
 	InfraAlert,
 	InfraRegion,
+	LatencyHeatmap,
 	MessageQueue,
+	MetricInsight,
 	NodeCounts,
 	RateObservation,
 	ResourceUsage,
@@ -28,6 +30,7 @@ import type {
 	ServiceDependencies,
 	ServiceEndpoint,
 	ServiceStat,
+	SloBudget,
 	TimeSeries,
 	TrendGrain
 } from '$lib/platform/types';
@@ -61,6 +64,10 @@ import {
 	findService,
 	listFavorites,
 	listEndpoints,
+	listMetricInsights,
+	readLatencyHeatmap,
+	readMetricSeries,
+	readSloBudget,
 	listHealthChecks,
 	listServices,
 	readDependencies,
@@ -301,6 +308,22 @@ export class FixtureServiceSource implements ServiceSource {
 		limit: number
 	): Promise<ServiceEndpoint[]> {
 		return listEndpoints(slug, limit);
+	}
+
+	async readMetricSeries(_scope: PlatformScope, slug: string) {
+		return readMetricSeries(slug, new Date());
+	}
+
+	async readSloBudget(_scope: PlatformScope, slug: string): Promise<SloBudget> {
+		return readSloBudget(slug, new Date());
+	}
+
+	async readLatencyHeatmap(_scope: PlatformScope, slug: string): Promise<LatencyHeatmap> {
+		return readLatencyHeatmap(slug, new Date());
+	}
+
+	async listMetricInsights(_scope: PlatformScope, slug: string): Promise<MetricInsight[]> {
+		return listMetricInsights(slug, new Date());
 	}
 }
 
