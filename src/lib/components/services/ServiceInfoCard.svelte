@@ -20,11 +20,17 @@
 		['Runtime', service.runtime]
 	] as const);
 
-	const links = $derived([
-		['Repository', service.repository, 'git-branch'],
-		['Chat Channel', service.chatChannel, 'message-square'],
-		['Runbook', service.runbook, 'scroll-text']
-	] as const satisfies ReadonlyArray<readonly [string, ExternalLink, string]>);
+	// A row per link the catalog actually records. An absent runbook is omitted rather
+	// than rendered as a link to nowhere.
+	const links = $derived(
+		(
+			[
+				['Repository', service.repository, 'git-branch'],
+				['Chat Channel', service.chatChannel, 'message-square'],
+				['Runbook', service.runbook, 'scroll-text']
+			] as ReadonlyArray<readonly [string, ExternalLink | null, string]>
+		).filter((one): one is readonly [string, ExternalLink, string] => one[1] !== null)
+	);
 </script>
 
 <SectionCard title="Service Info">

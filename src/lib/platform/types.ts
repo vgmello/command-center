@@ -393,9 +393,10 @@ export interface Service {
 	serviceType: string;
 	language: string;
 	runtime: string;
-	repository: ExternalLink;
-	chatChannel: ExternalLink;
-	runbook: ExternalLink;
+	/** Each may be absent: a catalog entry without a runbook is a fact, not a blank link. */
+	repository: ExternalLink | null;
+	chatChannel: ExternalLink | null;
+	runbook: ExternalLink | null;
 	/** Observability console for this service, if the catalog records one. */
 	dashboard: ExternalLink | null;
 	instancesHealthy: number;

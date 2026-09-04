@@ -1037,16 +1037,18 @@ components:
         activeAlerts:
           type: integer
         chatChannel:
-          properties:
-            href:
-              format: uri
-              type: string
-            label:
-              type: string
-          required:
-            - label
-            - href
-          type: object
+          anyOf:
+            - properties:
+                href:
+                  format: uri
+                  type: string
+                label:
+                  type: string
+              required:
+                - label
+                - href
+              type: object
+            - type: 'null'
         dashboard:
           anyOf:
             - properties:
@@ -1077,27 +1079,31 @@ components:
         owner:
           type: string
         repository:
-          properties:
-            href:
-              format: uri
-              type: string
-            label:
-              type: string
-          required:
-            - label
-            - href
-          type: object
+          anyOf:
+            - properties:
+                href:
+                  format: uri
+                  type: string
+                label:
+                  type: string
+              required:
+                - label
+                - href
+              type: object
+            - type: 'null'
         runbook:
-          properties:
-            href:
-              format: uri
-              type: string
-            label:
-              type: string
-          required:
-            - label
-            - href
-          type: object
+          anyOf:
+            - properties:
+                href:
+                  format: uri
+                  type: string
+                label:
+                  type: string
+              required:
+                - label
+                - href
+              type: object
+            - type: 'null'
         runtime:
           type: string
         serviceType:

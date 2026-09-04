@@ -1,0 +1,298 @@
+# The service catalog.
+#
+# Generated from the fixture catalog by `bun run catalog:example` — edit the seeds,
+# not this file. Copy it somewhere, point CATALOG_FILE at the copy, and set
+# CATALOG_SOURCE=file.
+#
+# Everything here is DECLARED: what a service is, who owns it, where its runbook
+# lives. Nothing here is a reading — status, error rates and instance counts come
+# from the connected sources, and read "unknown" when nothing is watching.
+
+version: 1
+
+domains:
+  - slug: payment-domain
+    name: Payment Domain
+    shortName: Payment
+    owner: '@payments-team'
+    criticality: mission-critical
+    icon: landmark
+    accent: blue
+  - slug: order-domain
+    name: Order Domain
+    shortName: Order
+    owner: '@order-team'
+    criticality: business-critical
+    icon: shopping-cart
+    accent: green
+  - slug: user-domain
+    name: User Domain
+    shortName: User
+    owner: '@user-team'
+    criticality: business-critical
+    icon: users
+    accent: violet
+  - slug: inventory-domain
+    name: Inventory Domain
+    shortName: Inventory
+    owner: '@inventory-team'
+    criticality: business-critical
+    icon: package
+    accent: red
+  - slug: notification-domain
+    name: Notification Domain
+    shortName: Notification
+    owner: '@notify-team'
+    criticality: important
+    icon: bell
+    accent: amber
+  - slug: shared-domain
+    name: Shared Domain
+    shortName: Shared
+    owner: '@platform-team'
+    criticality: important
+    icon: share-2
+    accent: slate
+  - slug: pricing-domain
+    name: Pricing Domain
+    shortName: Pricing
+    owner: '@pricing-team'
+    criticality: important
+    icon: tag
+    accent: slate
+  - slug: analytics-domain
+    name: Analytics Domain
+    shortName: Analytics
+    owner: '@data-team'
+    criticality: important
+    icon: chart-column
+    accent: amber
+  - slug: shipping-domain
+    name: Shipping Domain
+    shortName: Shipping
+    owner: '@logistics-team'
+    criticality: standard
+    icon: truck
+    accent: blue
+  - slug: catalog-domain
+    name: Catalog Domain
+    shortName: Catalog
+    owner: '@catalog-team'
+    criticality: standard
+    icon: library
+    accent: violet
+  - slug: search-domain
+    name: Search Domain
+    shortName: Search
+    owner: '@search-team'
+    criticality: standard
+    icon: search
+    accent: red
+  - slug: identity-domain
+    name: Identity Domain
+    shortName: Identity
+    owner: '@user-team'
+    criticality: standard
+    icon: shield
+    accent: green
+  - slug: billing-domain
+    name: Billing Domain
+    shortName: Billing
+    owner: '@payments-team'
+    criticality: standard
+    icon: receipt
+    accent: blue
+  - slug: fraud-domain
+    name: Fraud Domain
+    shortName: Fraud
+    owner: '@fraud-team'
+    criticality: standard
+    icon: shield-alert
+    accent: amber
+  - slug: reporting-domain
+    name: Reporting Domain
+    shortName: Reporting
+    owner: '@data-team'
+    criticality: standard
+    icon: file-chart-column
+    accent: slate
+  - slug: loyalty-domain
+    name: Loyalty Domain
+    shortName: Loyalty
+    owner: '@growth-team'
+    criticality: standard
+    icon: gift
+    accent: red
+  - slug: returns-domain
+    name: Returns Domain
+    shortName: Returns
+    owner: '@logistics-team'
+    criticality: standard
+    icon: undo-2
+    accent: green
+  - slug: warehouse-domain
+    name: Warehouse Domain
+    shortName: Warehouse
+    owner: '@logistics-team'
+    criticality: standard
+    icon: warehouse
+    accent: violet
+  - slug: tax-domain
+    name: Tax Domain
+    shortName: Tax
+    owner: '@finance-team'
+    criticality: standard
+    icon: percent
+    accent: slate
+  - slug: subscription-domain
+    name: Subscription Domain
+    shortName: Subscription
+    owner: '@growth-team'
+    criticality: standard
+    icon: repeat
+    accent: blue
+  - slug: content-domain
+    name: Content Domain
+    shortName: Content
+    owner: '@catalog-team'
+    criticality: standard
+    icon: file-text
+    accent: violet
+  - slug: partner-domain
+    name: Partner Domain
+    shortName: Partner
+    owner: '@partner-team'
+    criticality: standard
+    icon: handshake
+    accent: amber
+  - slug: messaging-domain
+    name: Messaging Domain
+    shortName: Messaging
+    owner: '@notify-team'
+    criticality: standard
+    icon: message-square
+    accent: green
+  - slug: audit-domain
+    name: Audit Domain
+    shortName: Audit
+    owner: '@platform-team'
+    criticality: standard
+    icon: clipboard-check
+    accent: slate
+  - slug: recommendation-domain
+    name: Recommendation Domain
+    shortName: Recommendation
+    owner: '@data-team'
+    criticality: standard
+    icon: sparkles
+    accent: violet
+
+services:
+  - slug: payment-api
+    name: payment-api
+    domain: payment-domain
+    description: API Gateway service for payment processing
+    owner: '@payments-team'
+    type: API Gateway
+    language: '.NET 8'
+    runtime: Container
+    icon: code
+    accent: blue
+    links:
+      repository: https://github.com/company/payment-api
+      chat: https://chat.example.com/svc-payment-api
+      runbook: https://runbooks.example.com/payment-api
+      dashboard: https://grafana.example.com/d/payment-api
+    identity:
+      apm: payment-api
+      deployment: payment-api
+  - slug: payment-gateway
+    name: payment-gateway
+    domain: payment-domain
+    description: Outbound integration with external payment providers
+    owner: '@payments-team'
+    type: Integration
+    language: Go 1.22
+    runtime: Container
+    icon: code
+    accent: blue
+    links:
+      repository: https://github.com/company/payment-gateway
+      chat: https://chat.example.com/svc-payment-gateway
+      runbook: https://runbooks.example.com/payment-gateway
+      dashboard: https://grafana.example.com/d/payment-gateway
+    identity:
+      apm: payment-gateway
+      deployment: payment-gateway
+  - slug: order-service
+    name: order-service
+    domain: order-domain
+    description: Order lifecycle and fulfilment orchestration
+    owner: '@order-team'
+    type: Domain Service
+    language: '.NET 8'
+    runtime: Container
+    icon: code
+    accent: green
+    links:
+      repository: https://github.com/company/order-service
+      chat: https://chat.example.com/svc-order-service
+      runbook: https://runbooks.example.com/order-service
+      dashboard: https://grafana.example.com/d/order-service
+    identity:
+      apm: order-service
+      deployment: order-service
+  - slug: user-profile
+    name: user-profile
+    domain: user-domain
+    description: 'Profile, preferences and identity attributes'
+    owner: '@user-team'
+    type: Domain Service
+    language: TypeScript
+    runtime: Container
+    icon: code
+    accent: violet
+    links:
+      repository: https://github.com/company/user-profile
+      chat: https://chat.example.com/svc-user-profile
+      runbook: https://runbooks.example.com/user-profile
+      dashboard: https://grafana.example.com/d/user-profile
+    identity:
+      apm: user-profile
+      deployment: user-profile
+  - slug: inventory-service
+    name: inventory-service
+    domain: inventory-domain
+    description: 'Stock levels, reservations and warehouse sync'
+    owner: '@inventory-team'
+    type: Domain Service
+    language: Java 21
+    runtime: Container
+    icon: code
+    accent: red
+    links:
+      repository: https://github.com/company/inventory-service
+      chat: https://chat.example.com/svc-inventory-service
+      runbook: https://runbooks.example.com/inventory-service
+      dashboard: https://grafana.example.com/d/inventory-service
+    identity:
+      apm: inventory-service
+      deployment: inventory-service
+  - slug: notification-worker
+    name: notification-worker
+    domain: notification-domain
+    description: 'Email, SMS and push delivery queue consumer'
+    owner: '@notify-team'
+    type: Worker
+    language: Python 3.12
+    runtime: Container
+    icon: code
+    accent: amber
+    links:
+      repository: https://github.com/company/notification-worker
+      chat: https://chat.example.com/svc-notification-worker
+      runbook: https://runbooks.example.com/notification-worker
+      dashboard: https://grafana.example.com/d/notification-worker
+    identity:
+      apm: notification-worker
+      deployment: notification-worker

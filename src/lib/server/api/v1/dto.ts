@@ -207,9 +207,11 @@ export const serviceSchema = v.object({
 	serviceType: v.string(),
 	language: v.string(),
 	runtime: v.string(),
-	repository: linkSchema,
-	chatChannel: linkSchema,
-	runbook: linkSchema,
+	// Nullable like `dashboard`: a catalog entry may genuinely not record a runbook, and
+	// publishing an empty href would hand a client a link to nowhere.
+	repository: v.nullable(linkSchema),
+	chatChannel: v.nullable(linkSchema),
+	runbook: v.nullable(linkSchema),
 	/** The observability console, when the catalog records one. */
 	dashboard: v.nullable(linkSchema),
 	instancesHealthy: v.pipe(v.number(), v.integer()),

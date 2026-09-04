@@ -51,15 +51,19 @@
 				<Icon name="external-link" size={12} />
 			</a>
 		{/if}
-		<a
-			href={service.repository.href}
-			target="_blank"
-			rel="noreferrer noopener"
-			class="flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-[12.5px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-		>
-			<Icon name="settings" size={14} />
-			Service settings
-			<Icon name="external-link" size={12} />
-		</a>
+		<!-- Only when the catalog records a repository. A button that goes nowhere is worse
+		     than no button, which is the same rule the nav follows for unbuilt routes. -->
+		{#if service.repository}
+			<a
+				href={service.repository.href}
+				target="_blank"
+				rel="noreferrer noopener"
+				class="flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-[12.5px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+			>
+				<Icon name="settings" size={14} />
+				Service settings
+				<Icon name="external-link" size={12} />
+			</a>
+		{/if}
 	</div>
 </header>
