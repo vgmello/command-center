@@ -1,9 +1,9 @@
 <script lang="ts">
-	import HealthRing from '../HealthRing.svelte';
-	import Icon from '../Icon.svelte';
-	import Sparkline from '../Sparkline.svelte';
-	import StatusBadge from '../StatusBadge.svelte';
-	import { accentTile, statusTone } from '../tone';
+	import HealthRing from './HealthRing.svelte';
+	import Icon from './Icon.svelte';
+	import Sparkline from './Sparkline.svelte';
+	import StatusBadge from './StatusBadge.svelte';
+	import { accentTile, statusTone } from './tone';
 	import { CRITICALITY_LABELS, STATUS_LABELS } from '$lib/platform/health';
 	import { formatLatency, formatPercent } from '$lib/platform/format';
 	import type { Domain } from '$lib/platform/types';

@@ -20,6 +20,7 @@ import { readDomainPage } from '$lib/server/platform/service';
  *       - $ref: '#/components/parameters/TimeRange'
  *       - $ref: '#/components/parameters/Search'
  *       - $ref: '#/components/parameters/DomainStatus'
+ *       - $ref: '#/components/parameters/DomainOwner'
  *       - $ref: '#/components/parameters/DomainSort'
  *       - $ref: '#/components/parameters/Page'
  *       - $ref: '#/components/parameters/PageSize'

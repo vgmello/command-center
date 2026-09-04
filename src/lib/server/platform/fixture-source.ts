@@ -1,6 +1,9 @@
 import type {
+	ActivitySummary,
 	CurrentUser,
 	Deployment,
+	DomainChange,
+	DomainOwner,
 	DomainPage,
 	DomainStatusCounts,
 	FavoriteItem,
@@ -12,11 +15,14 @@ import type { DomainQuery, PlatformScope } from '$lib/platform/query';
 import type { PlatformSource, WorkspaceSource } from './source';
 import {
 	CURRENT_USER,
+	listActivitySummary,
 	listDeployments,
 	listDomains,
 	listFavorites,
 	listIncidents,
-	listInfrastructure
+	listInfrastructure,
+	listOwners,
+	listRecentChanges
 } from './fixtures';
 import { queryDomainsInMemory } from './in-memory-query';
 import { buildSeries } from './series';
@@ -109,6 +115,20 @@ export class FixturePlatformSource implements PlatformSource {
 
 	async listInfrastructure(_scope: PlatformScope): Promise<InfrastructureGroup[]> {
 		return listInfrastructure();
+	}
+
+	async listOwners(_scope: PlatformScope): Promise<DomainOwner[]> {
+		return listOwners();
+	}
+
+	async listRecentChanges(_scope: PlatformScope, limit: number): Promise<DomainChange[]> {
+		return listRecentChanges(new Date())
+			.sort((a, b) => Date.parse(b.changedAt) - Date.parse(a.changedAt))
+			.slice(0, limit);
+	}
+
+	async readActivitySummary(_scope: PlatformScope): Promise<ActivitySummary> {
+		return listActivitySummary();
 	}
 }
 

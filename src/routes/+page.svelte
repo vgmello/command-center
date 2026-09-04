@@ -1,15 +1,18 @@
 <script lang="ts">
-	import CountTile from '$lib/components/overview/CountTile.svelte';
+	import CountTile from '$lib/components/CountTile.svelte';
 	import DeploymentsCard from '$lib/components/overview/DeploymentsCard.svelte';
 	import DomainHealthTable from '$lib/components/overview/DomainHealthTable.svelte';
-	import HealthDistributionCard from '$lib/components/overview/HealthDistributionCard.svelte';
-	import IncidentsCard from '$lib/components/overview/IncidentsCard.svelte';
+	import HealthDistributionCard from '$lib/components/HealthDistributionCard.svelte';
+	import IncidentsCard from '$lib/components/IncidentsCard.svelte';
 	import InfrastructureCard from '$lib/components/overview/InfrastructureCard.svelte';
 	import MetricStrip from '$lib/components/overview/MetricStrip.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { getScope } from '$lib/scope.svelte';
-	import { getDomainPage, getOverview, getShell } from './overview.remote';
+	import { getDomainPage } from './domains.remote';
+	import { getOverview } from './overview.remote';
+	import { getShell } from './shell.remote';
 	import type { DomainPage } from '$lib/platform/types';
+	import { ALL_OWNERS } from '$lib/platform/query';
 	import type { DomainSortKey, DomainStatusFilter } from '$lib/platform/query';
 
 	const scope = getScope();
@@ -46,6 +49,9 @@
 		...scopeArgs,
 		search,
 		status,
+		// The overview offers no owner filter; the argument is still required, because
+		// one schema guards both screens' calls to the same endpoint.
+		owner: ALL_OWNERS,
 		sort,
 		page: pageNumber,
 		pageSize

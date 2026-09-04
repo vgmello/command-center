@@ -50,10 +50,7 @@ export default defineConfig(
 		// its destination as a prop. `resolve()` is typed against the literal route
 		// union, so it cannot be applied to an href that is only known at runtime —
 		// the rule has nothing to check here. Every other link in the app still does.
-		files: [
-			'src/lib/components/app/AppSidebar.svelte',
-			'src/lib/components/overview/SectionCard.svelte'
-		],
+		files: ['src/lib/components/app/AppSidebar.svelte', 'src/lib/components/SectionCard.svelte'],
 		rules: {
 			'svelte/no-navigation-without-resolve': 'off'
 		}

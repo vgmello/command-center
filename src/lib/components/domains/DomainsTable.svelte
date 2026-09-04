@@ -3,85 +3,73 @@
 	import DomainRowCard from '../DomainRowCard.svelte';
 	import DomainTable from '../DomainTable.svelte';
 	import DomainToolbar from '../DomainToolbar.svelte';
-	import Icon from '../Icon.svelte';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import type { ViewMode } from '../DomainToolbar.svelte';
-	import type { DomainPage } from '$lib/platform/types';
+	import type { DomainOwner, DomainPage } from '$lib/platform/types';
 	import type { DomainSortKey, DomainStatusFilter, SelectOption } from '$lib/platform/query';
 
 	/**
-	 * The overview's summary of the domain table.
+	 * The domains page's table.
 	 *
-	 * A composition of the shared toolbar, table and pager rather than its own copy of
-	 * them — the domains page renders the same three with more columns and an owner
-	 * filter, and two hand-maintained tables of the same rows drift.
-	 *
-	 * What is specific to this screen stays here: the heading, the tooltip explaining
-	 * the score, and the decision to offer neither the extra columns nor a page-size
-	 * control in a panel this narrow.
+	 * The same three parts the overview composes, asked for differently: this screen
+	 * is the table, so it has room for the ownership and availability columns, an
+	 * owner filter, and a page-size control. It carries no heading — the page's own
+	 * title already names it, and a second one would just repeat the word.
 	 */
 
 	interface Props {
 		result: DomainPage;
 		statusOptions: SelectOption<DomainStatusFilter>[];
 		sortOptions: SelectOption<DomainSortKey>[];
-		/** Sentence describing the health bands, generated from the thresholds themselves. */
-		thresholds: string;
+		pageSizes: SelectOption<string>[];
+		owners: DomainOwner[];
 		search: string;
 		status: DomainStatusFilter;
+		owner: string;
 		sort: DomainSortKey;
 		view: ViewMode;
 		onSearch: (value: string) => void;
 		onStatusChange: (value: DomainStatusFilter) => void;
+		onOwnerChange: (value: string) => void;
 		onSortChange: (value: DomainSortKey) => void;
 		onViewChange: (value: ViewMode) => void;
 		onPageChange: (value: number) => void;
+		onPageSizeChange: (value: number) => void;
 	}
 
 	let {
 		result,
 		statusOptions,
 		sortOptions,
-		thresholds,
+		pageSizes,
+		owners,
 		search,
 		status,
+		owner,
 		sort,
 		view,
 		onSearch,
 		onStatusChange,
+		onOwnerChange,
 		onSortChange,
 		onViewChange,
-		onPageChange
+		onPageChange,
+		onPageSizeChange
 	}: Props = $props();
 </script>
 
 <section class="rounded-xl border border-border bg-card">
-	<div class="flex items-center gap-2 px-4 pt-4">
-		<h2 class="text-[15px] font-semibold tracking-tight">Domain Health</h2>
-		<Tooltip.Provider delayDuration={200}>
-			<Tooltip.Root>
-				<Tooltip.Trigger
-					class="text-muted-foreground transition-colors hover:text-foreground"
-					aria-label="How the health score is calculated"
-				>
-					<Icon name="info" size={14} />
-				</Tooltip.Trigger>
-				<Tooltip.Content class="max-w-[260px]">
-					Health score blends error rate, latency and open incidents. {thresholds}
-				</Tooltip.Content>
-			</Tooltip.Root>
-		</Tooltip.Provider>
-	</div>
-
 	<DomainToolbar
 		{statusOptions}
 		{sortOptions}
+		{owners}
 		{search}
 		{status}
+		{owner}
 		{sort}
 		{view}
 		{onSearch}
 		{onStatusChange}
+		{onOwnerChange}
 		{onSortChange}
 		{onViewChange}
 	/>
@@ -97,8 +85,15 @@
 			{/each}
 		</div>
 	{:else}
-		<DomainTable domains={result.domains} trendLabel="Trend (15m)" />
+		<div class="overflow-x-auto">
+			<DomainTable
+				domains={result.domains}
+				columns={['availability', 'owner']}
+				configurable
+				identity="compact"
+			/>
+		</div>
 	{/if}
 
-	<DomainPager page={result.page} {onPageChange} />
+	<DomainPager page={result.page} {onPageChange} {pageSizes} {onPageSizeChange} />
 </section>

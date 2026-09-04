@@ -138,6 +138,15 @@ export interface RateObservation {
 export interface Domain {
 	id: string;
 	name: string;
+	/**
+	 * The name without its category suffix — "Payment", not "Payment Domain".
+	 *
+	 * Sent rather than derived by stripping the word in the UI: a domain is called
+	 * what its owners call it, and a client that guesses gets it wrong the first time
+	 * one is named "Domain Registry". A table with eleven columns needs the short
+	 * form; a sidebar and an incident feed need the full one, so both travel.
+	 */
+	shortName: string;
 	slug: string;
 	/** Icon key resolved to a Lucide component by the UI. Never a component here. */
 	icon: string;
@@ -155,6 +164,23 @@ export interface Domain {
 	errorRatePct: number;
 	p95LatencyMs: number;
 	activeIncidents: number;
+	/**
+	 * The team accountable for the domain, as a handle (`@payments-team`).
+	 *
+	 * A string rather than a `TeamId` union: owners come from an org directory that
+	 * changes without a deploy, so a closed set here would go stale the first time a
+	 * team is renamed. The filter's option list is read from the source for the same
+	 * reason.
+	 */
+	owner: string;
+	/**
+	 * Uptime over the trailing seven days, 0–100.
+	 *
+	 * Deliberately a fixed window, not the scope's `timeRange`: availability is an SLO
+	 * measure and the SLO is stated in weeks. Recomputing it over "last 15 minutes"
+	 * would print a number nobody has an objective for.
+	 */
+	availability7dPct: number;
 	/** Error-rate trend over the snapshot window, drawn beside the error rate. */
 	errorTrend: Series;
 	/** Overall health trend over the snapshot window, drawn in the Trend column. */
@@ -217,6 +243,53 @@ export interface DomainPage {
 	page: Page;
 }
 
+/**
+ * One entry in the owner filter.
+ *
+ * Carries its `domainCount` because the source counted them anyway while grouping,
+ * and the UI would otherwise have to load every domain to say "12 domains" beside a
+ * team — which is the whole thing pushing the query down was meant to avoid.
+ */
+export interface DomainOwner {
+	id: string;
+	label: string;
+	domainCount: number;
+}
+
+/**
+ * A domain whose health score moved, for the "Recently Changed" feed.
+ *
+ * Both scores travel rather than a pre-computed delta or a sentence: the direction
+ * is derived from them in one place, and a caller that wants "up 7" can have it
+ * without the server guessing which of the two framings it wanted.
+ */
+export interface DomainChange {
+	id: string;
+	domainId: string;
+	name: string;
+	icon: string;
+	accent: DomainAccent;
+	healthScore: number;
+	previousScore: number;
+	direction: TrendDirection;
+	changedAt: string;
+}
+
+/**
+ * Incident and deployment activity rolled up to counts.
+ *
+ * An aggregate, not a page of rows: the two tiles that render this need six numbers,
+ * and a real backend answers that with a `GROUP BY` rather than by shipping every
+ * incident of the day.
+ */
+export interface ActivitySummary {
+	activeIncidents: number;
+	/** How many distinct domains those incidents span — the tile's caption. */
+	incidentDomains: number;
+	deploymentsToday: number;
+	deploymentDomains: number;
+}
+
 /** Everything the overview page needs except the paged domain table. */
 export interface OverviewSnapshot {
 	/** ISO 8601 timestamp of assembly — drives the "last updated" affordance. */
@@ -230,6 +303,25 @@ export interface OverviewSnapshot {
 	deployments: Deployment[];
 	infrastructure: InfrastructureGroup[];
 	system: SystemStatus;
+}
+
+/**
+ * Everything the domains page needs except the paged table.
+ *
+ * A sibling of `OverviewSnapshot`, not an extension of it: the two screens answer
+ * different questions and will diverge. Sharing one snapshot would mean every field
+ * either screen ever needs crosses the wire for both.
+ */
+export interface DomainsSnapshot {
+	generatedAt: string;
+	environment: EnvironmentId;
+	timeRange: TimeRangeId;
+	counts: CountTile[];
+	distribution: HealthDistribution;
+	incidents: Incident[];
+	changes: DomainChange[];
+	/** The owner filter's options, read from the source rather than declared by the UI. */
+	owners: DomainOwner[];
 }
 
 /** A sidebar navigation entry. */

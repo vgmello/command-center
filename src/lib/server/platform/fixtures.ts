@@ -1,7 +1,10 @@
 import type {
+	ActivitySummary,
 	CurrentUser,
 	Deployment,
 	Domain,
+	DomainChange,
+	DomainOwner,
 	EnvironmentOption,
 	FavoriteItem,
 	Incident,
@@ -9,7 +12,7 @@ import type {
 	NavItem,
 	TimeRangeOption
 } from '$lib/platform/types';
-import { statusFromScore } from '$lib/platform/health';
+import { healthChangeDirection, statusFromScore } from '$lib/platform/health';
 import { buildSeries } from './series';
 
 /**
@@ -32,6 +35,8 @@ interface DomainSeed {
 	errorRatePct: number;
 	p95LatencyMs: number;
 	activeIncidents: number;
+	owner: string;
+	availability7dPct: number;
 	favorite?: boolean;
 }
 
@@ -46,6 +51,8 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		errorRatePct: 2.48,
 		p95LatencyMs: 820,
 		activeIncidents: 2,
+		owner: '@payments-team',
+		availability7dPct: 99.95,
 		favorite: true
 	},
 	{
@@ -58,6 +65,8 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		errorRatePct: 0.32,
 		p95LatencyMs: 210,
 		activeIncidents: 0,
+		owner: '@order-team',
+		availability7dPct: 99.93,
 		favorite: true
 	},
 	{
@@ -70,6 +79,8 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		errorRatePct: 0.18,
 		p95LatencyMs: 180,
 		activeIncidents: 0,
+		owner: '@user-team',
+		availability7dPct: 99.91,
 		favorite: true
 	},
 	{
@@ -81,7 +92,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 18,
 		errorRatePct: 1.82,
 		p95LatencyMs: 540,
-		activeIncidents: 1
+		activeIncidents: 1,
+		owner: '@inventory-team',
+		availability7dPct: 98.21
 	},
 	{
 		name: 'Notification Domain',
@@ -92,7 +105,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 16,
 		errorRatePct: 8.62,
 		p95LatencyMs: 1820,
-		activeIncidents: 1
+		activeIncidents: 1,
+		owner: '@notify-team',
+		availability7dPct: 98.76
 	},
 	{
 		name: 'Shared Domain',
@@ -103,7 +118,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 34,
 		errorRatePct: 0.28,
 		p95LatencyMs: 160,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@platform-team',
+		availability7dPct: 99.98
 	},
 	{
 		name: 'Pricing Domain',
@@ -114,7 +131,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 12,
 		errorRatePct: 0.45,
 		p95LatencyMs: 230,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@pricing-team',
+		availability7dPct: 99.72
 	},
 	{
 		name: 'Analytics Domain',
@@ -125,7 +144,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 20,
 		errorRatePct: 1.25,
 		p95LatencyMs: 620,
-		activeIncidents: 1
+		activeIncidents: 1,
+		owner: '@data-team',
+		availability7dPct: 99.64
 	},
 	{
 		name: 'Shipping Domain',
@@ -136,7 +157,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 19,
 		errorRatePct: 0.34,
 		p95LatencyMs: 240,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@logistics-team',
+		availability7dPct: 99.41
 	},
 	{
 		name: 'Catalog Domain',
@@ -147,7 +170,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 26,
 		errorRatePct: 0.21,
 		p95LatencyMs: 190,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@catalog-team',
+		availability7dPct: 99.87
 	},
 	{
 		name: 'Search Domain',
@@ -158,7 +183,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 14,
 		errorRatePct: 11.4,
 		p95LatencyMs: 2450,
-		activeIncidents: 1
+		activeIncidents: 1,
+		owner: '@search-team',
+		availability7dPct: 98.02
 	},
 	{
 		name: 'Identity Domain',
@@ -169,7 +196,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 17,
 		errorRatePct: 0.12,
 		p95LatencyMs: 140,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@user-team',
+		availability7dPct: 99.96
 	},
 	{
 		name: 'Billing Domain',
@@ -180,7 +209,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 21,
 		errorRatePct: 0.62,
 		p95LatencyMs: 310,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@payments-team',
+		availability7dPct: 98.44
 	},
 	{
 		name: 'Fraud Domain',
@@ -191,7 +222,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 11,
 		errorRatePct: 1.94,
 		p95LatencyMs: 680,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@fraud-team',
+		availability7dPct: 94.38
 	},
 	{
 		name: 'Reporting Domain',
@@ -202,7 +235,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 9,
 		errorRatePct: 0.4,
 		p95LatencyMs: 260,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@data-team',
+		availability7dPct: 98.63
 	},
 	{
 		name: 'Loyalty Domain',
@@ -213,7 +248,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 8,
 		errorRatePct: 9.75,
 		p95LatencyMs: 1960,
-		activeIncidents: 1
+		activeIncidents: 1,
+		owner: '@growth-team',
+		availability7dPct: 99.55
 	},
 	{
 		name: 'Returns Domain',
@@ -224,7 +261,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 10,
 		errorRatePct: 0.29,
 		p95LatencyMs: 220,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@logistics-team',
+		availability7dPct: 99.12
 	},
 	{
 		name: 'Warehouse Domain',
@@ -235,7 +274,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 23,
 		errorRatePct: 0.71,
 		p95LatencyMs: 330,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@logistics-team',
+		availability7dPct: 99.33
 	},
 	{
 		name: 'Tax Domain',
@@ -246,7 +287,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 7,
 		errorRatePct: 0.15,
 		p95LatencyMs: 170,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@finance-team',
+		availability7dPct: 99.81
 	},
 	{
 		name: 'Subscription Domain',
@@ -257,7 +300,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 15,
 		errorRatePct: 0.38,
 		p95LatencyMs: 250,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@growth-team',
+		availability7dPct: 99.28
 	},
 	{
 		name: 'Content Domain',
@@ -268,7 +313,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 13,
 		errorRatePct: 0.24,
 		p95LatencyMs: 200,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@catalog-team',
+		availability7dPct: 99.74
 	},
 	{
 		name: 'Partner Domain',
@@ -279,7 +326,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 12,
 		errorRatePct: 0.58,
 		p95LatencyMs: 290,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@partner-team',
+		availability7dPct: 98.9
 	},
 	{
 		name: 'Messaging Domain',
@@ -290,7 +339,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 18,
 		errorRatePct: 0.44,
 		p95LatencyMs: 270,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@notify-team',
+		availability7dPct: 99.07
 	},
 	{
 		name: 'Audit Domain',
@@ -301,7 +352,9 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 6,
 		errorRatePct: 0.09,
 		p95LatencyMs: 130,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@platform-team',
+		availability7dPct: 99.89
 	},
 	{
 		name: 'Recommendation Domain',
@@ -312,9 +365,22 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 		serviceCount: 16,
 		errorRatePct: 0.66,
 		p95LatencyMs: 350,
-		activeIncidents: 0
+		activeIncidents: 0,
+		owner: '@data-team',
+		availability7dPct: 98.55
 	}
 ];
+
+/**
+ * Drop the category suffix these fixtures all carry.
+ *
+ * A fixture's habit, not a rule: a real source reads the short name from wherever the
+ * org records it, which is why the field exists on the domain rather than as a helper
+ * the UI calls.
+ */
+function shorten(name: string): string {
+	return name.replace(/\s+Domain$/, '');
+}
 
 function slugify(name: string): string {
 	return name
@@ -338,6 +404,7 @@ export function listDomains(): Domain[] {
 			id: slug,
 			slug,
 			name: seed.name,
+			shortName: shorten(seed.name),
 			icon: seed.icon,
 			accent: seed.accent,
 			criticality: seed.criticality,
@@ -347,6 +414,8 @@ export function listDomains(): Domain[] {
 			errorRatePct: seed.errorRatePct,
 			p95LatencyMs: seed.p95LatencyMs,
 			activeIncidents: seed.activeIncidents,
+			owner: seed.owner,
+			availability7dPct: seed.availability7dPct,
 			errorTrend: buildSeries(`${slug}:errors`, seed.errorRatePct, {
 				volatility: 0.35,
 				// A domain in trouble is trending the wrong way; a healthy one is drifting down.
@@ -427,6 +496,80 @@ export function listDeployments(now: Date): Deployment[] {
 		status,
 		deployedAt: minutesAgo(now, minutes)
 	}));
+}
+
+/**
+ * The owner filter's options, grouped out of the domain list.
+ *
+ * A real adapter answers this with `GROUP BY owner`; doing it here keeps the shape
+ * of that answer — id, label, count — rather than making the caller group rows.
+ */
+export function listOwners(): DomainOwner[] {
+	const counts = new Map<string, number>();
+	for (const domain of listDomains()) {
+		counts.set(domain.owner, (counts.get(domain.owner) ?? 0) + 1);
+	}
+
+	return [...counts.entries()]
+		.map(([owner, domainCount]) => ({ id: owner, label: owner, domainCount }))
+		.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
+ * Domains whose health score moved, newest first.
+ *
+ * The deltas are seeded rather than computed from the current scores, because a
+ * change is a fact about two points in time and this fixture only holds one. When a
+ * real source lands it reads both from history; the shape does not move.
+ */
+export function listRecentChanges(now: Date): DomainChange[] {
+	const seeds: Array<[string, number, number]> = [
+		['Catalog Domain', 72, 2],
+		['Billing Domain', 58, 8],
+		['Shipping Domain', 69, 15],
+		['Analytics Domain', 81, 22],
+		['Reporting Domain', 55, 28]
+	];
+
+	const byId = new Map(listDomains().map((domain) => [domain.id, domain]));
+
+	return seeds.flatMap(([name, previousScore, minutes]) => {
+		const domain = byId.get(slugify(name));
+		if (!domain) return [];
+
+		return [
+			{
+				id: `${domain.id}@${minutes}`,
+				domainId: domain.id,
+				name: domain.name,
+				icon: domain.icon,
+				accent: domain.accent,
+				healthScore: domain.healthScore,
+				previousScore,
+				direction: healthChangeDirection(previousScore, domain.healthScore),
+				changedAt: minutesAgo(now, minutes)
+			}
+		];
+	});
+}
+
+/**
+ * Incident and deployment counts for the day.
+ *
+ * The incident numbers are counted off the domain list so the "Active Incidents"
+ * tile cannot disagree with the per-domain column beside it. Deployments have no
+ * per-domain field to count, so they are seeded.
+ */
+export function listActivitySummary(): ActivitySummary {
+	const domains = listDomains();
+	const withIncidents = domains.filter((domain) => domain.activeIncidents > 0);
+
+	return {
+		activeIncidents: withIncidents.reduce((sum, domain) => sum + domain.activeIncidents, 0),
+		incidentDomains: withIncidents.length,
+		deploymentsToday: 29,
+		deploymentDomains: 6
+	};
 }
 
 export function listInfrastructure(): InfrastructureGroup[] {

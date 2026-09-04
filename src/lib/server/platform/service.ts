@@ -1,8 +1,12 @@
 import type { PlatformScope, DomainQuery } from '$lib/platform/query';
 import type {
+	ActivitySummary,
 	Deployment,
+	DomainChange,
+	DomainOwner,
 	DomainPage,
 	DomainStatusCounts,
+	DomainsSnapshot,
 	Incident,
 	InfrastructureGroup,
 	OverviewSnapshot,
@@ -11,6 +15,7 @@ import type {
 } from '$lib/platform/types';
 import { platformSource } from './index';
 import { DEPLOYMENT_LIMIT, INCIDENT_LIMIT, buildOverview, buildSystemStatus } from './snapshot';
+import { RECENT_CHANGE_LIMIT, buildDomainsSnapshot } from './domains-view';
 
 /**
  * The application's in-process API: one function per thing a caller can ask for.
@@ -56,6 +61,21 @@ export function readInfrastructure(scope: PlatformScope): Promise<Infrastructure
 	return platformSource().listInfrastructure(scope);
 }
 
+export function readDomainOwners(scope: PlatformScope): Promise<DomainOwner[]> {
+	return platformSource().listOwners(scope);
+}
+
+export function readRecentDomainChanges(
+	scope: PlatformScope,
+	limit = RECENT_CHANGE_LIMIT
+): Promise<DomainChange[]> {
+	return platformSource().listRecentChanges(scope, limit);
+}
+
+export function readActivitySummary(scope: PlatformScope): Promise<ActivitySummary> {
+	return platformSource().readActivitySummary(scope);
+}
+
 export async function readSystemStatus(scope: PlatformScope): Promise<SystemStatus> {
 	return buildSystemStatus(await readDomainStatusCounts(scope));
 }
@@ -69,4 +89,13 @@ export async function readSystemStatus(scope: PlatformScope): Promise<SystemStat
  */
 export function readOverview(scope: PlatformScope): Promise<OverviewSnapshot> {
 	return buildOverview(platformSource(), scope);
+}
+
+/**
+ * The domains page's aggregate. Screen-shaped, and unexposed for the same reason
+ * `readOverview` is: external clients get the resources it is composed from, which
+ * stay stable while the screen changes.
+ */
+export function readDomainsView(scope: PlatformScope): Promise<DomainsSnapshot> {
+	return buildDomainsSnapshot(platformSource(), scope);
 }

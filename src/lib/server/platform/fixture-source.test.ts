@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { FixturePlatformSource, FixtureWorkspaceSource } from './fixture-source';
 import { listDomains } from './fixtures';
 import { statusFromScore } from '$lib/platform/health';
+import { ALL_OWNERS } from '$lib/platform/query';
 import type { PlatformScope } from '$lib/platform/query';
 
 const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
@@ -38,6 +39,7 @@ describe('FixturePlatformSource', () => {
 		const page = await source.queryDomains(scope, {
 			search: '',
 			status: 'all',
+			owner: ALL_OWNERS,
 			sort: 'name',
 			page: 1,
 			pageSize: 1000

@@ -1,5 +1,5 @@
 import type { Criticality, Domain, DomainPage } from '$lib/platform/types';
-import type { DomainQuery } from '$lib/platform/query';
+import { ALL_OWNERS, type DomainQuery } from '$lib/platform/query';
 
 /**
  * Filter, sort and slice a domain list in memory.
@@ -23,8 +23,13 @@ export function queryDomainsInMemory(domains: Domain[], query: DomainQuery): Dom
 
 	const filtered = domains.filter((domain) => {
 		if (query.status !== 'all' && domain.status !== query.status) return false;
+		if (query.owner !== ALL_OWNERS && domain.owner !== query.owner) return false;
 		if (!needle) return true;
-		return domain.name.toLowerCase().includes(needle) || domain.slug.includes(needle);
+		return (
+			domain.name.toLowerCase().includes(needle) ||
+			domain.slug.includes(needle) ||
+			domain.owner.toLowerCase().includes(needle)
+		);
 	});
 
 	const sorted = [...filtered].sort(comparatorFor(query.sort));

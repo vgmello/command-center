@@ -13,7 +13,7 @@ import {
 	systemStatusSchema
 } from './dto';
 import { DEFAULT_API_PAGE_SIZE } from '../schemas';
-import { DOMAIN_SORT_KEYS, DOMAIN_STATUS_FILTERS } from '$lib/platform/query';
+import { ALL_OWNERS, DOMAIN_SORT_KEYS, DOMAIN_STATUS_FILTERS } from '$lib/platform/query';
 
 /**
  * The reusable half of the OpenAPI document: schemas, parameters, security.
@@ -106,6 +106,14 @@ const parameters = {
 		in: 'query',
 		required: false,
 		schema: { type: 'string', enum: [...DOMAIN_STATUS_FILTERS], default: 'all' }
+	},
+	DomainOwner: {
+		name: 'owner',
+		in: 'query',
+		required: false,
+		schema: { type: 'string', maxLength: 120, default: ALL_OWNERS },
+		description:
+			'An owner handle, or `all`. Owners are org data rather than a fixed set — read the current list from the domains they own.'
 	},
 	DomainSort: {
 		name: 'sort',

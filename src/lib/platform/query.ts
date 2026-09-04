@@ -41,6 +41,25 @@ export const DOMAIN_STATUS_FILTER_LABELS: Record<DomainStatusFilter, string> = {
 	unknown: 'Unknown'
 };
 
+/**
+ * The owner filter's "no filter" value.
+ *
+ * A sentinel string rather than an empty string or `undefined`, because it travels
+ * through a URL query string where all three would be indistinguishable from a team
+ * literally called "". Owners are an open set, so this cannot be a picklist member.
+ */
+export const ALL_OWNERS = 'all';
+
+/**
+ * Rows per page the table offers.
+ *
+ * Every value must satisfy the `pageSize` schema's cap, which is what stops one
+ * request asking an adapter for the whole table.
+ */
+export const DOMAIN_PAGE_SIZES = [10, 25, 50] as const;
+
+export type DomainPageSize = (typeof DOMAIN_PAGE_SIZES)[number];
+
 export interface SelectOption<Value extends string> {
 	value: Value;
 	label: string;
@@ -63,10 +82,17 @@ export function domainStatusFilterOptions(): SelectOption<DomainStatusFilter>[] 
 	}));
 }
 
+/** Page-size options, labelled the way the control reads: "10 per page". */
+export function domainPageSizeOptions(): SelectOption<string>[] {
+	return DOMAIN_PAGE_SIZES.map((size) => ({ value: String(size), label: `${size} per page` }));
+}
+
 /** Filter, sort and paging state for one request for domains. Mirrors the toolbar. */
 export interface DomainQuery {
 	search: string;
 	status: DomainStatusFilter;
+	/** An owner id, or `ALL_OWNERS`. Open set, so validated as a bounded string. */
+	owner: string;
 	sort: DomainSortKey;
 	page: number;
 	pageSize: number;

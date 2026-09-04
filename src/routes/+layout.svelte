@@ -3,7 +3,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import AppSidebar from '$lib/components/app/AppSidebar.svelte';
 	import TopBar from '$lib/components/app/TopBar.svelte';
-	import { getShell, getSystemStatus } from './overview.remote';
+	import { getShell, getSystemStatus } from './shell.remote';
 	import { setScope } from '$lib/scope.svelte';
 
 	let { children } = $props();

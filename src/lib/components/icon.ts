@@ -1,5 +1,8 @@
 import type { Component } from 'svelte';
+import Activity from '@lucide/svelte/icons/activity';
+import ArrowDown from '@lucide/svelte/icons/arrow-down';
 import ArrowRight from '@lucide/svelte/icons/arrow-right';
+import ArrowUp from '@lucide/svelte/icons/arrow-up';
 import Bell from '@lucide/svelte/icons/bell';
 import Box from '@lucide/svelte/icons/box';
 import Boxes from '@lucide/svelte/icons/boxes';
@@ -41,6 +44,7 @@ import Server from '@lucide/svelte/icons/server';
 import Settings from '@lucide/svelte/icons/settings';
 import Share2 from '@lucide/svelte/icons/share-2';
 import Shield from '@lucide/svelte/icons/shield';
+import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 import ShieldAlert from '@lucide/svelte/icons/shield-alert';
 import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
 import Sparkles from '@lucide/svelte/icons/sparkles';
@@ -63,7 +67,10 @@ import Warehouse from '@lucide/svelte/icons/warehouse';
  * keeps the bundle to the icons actually used.
  */
 const ICONS = {
+	activity: Activity,
+	'arrow-down': ArrowDown,
 	'arrow-right': ArrowRight,
+	'arrow-up': ArrowUp,
 	bell: Bell,
 	box: Box,
 	boxes: Boxes,
@@ -105,6 +112,7 @@ const ICONS = {
 	settings: Settings,
 	'share-2': Share2,
 	shield: Shield,
+	'sliders-horizontal': SlidersHorizontal,
 	'shield-alert': ShieldAlert,
 	'shopping-cart': ShoppingCart,
 	sparkles: Sparkles,

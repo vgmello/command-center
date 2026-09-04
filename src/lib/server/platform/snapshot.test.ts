@@ -57,6 +57,23 @@ function stubSource(overrides: Partial<PlatformSource> = {}) {
 			calls.push('infrastructure');
 			return [];
 		},
+		async listOwners() {
+			calls.push('owners');
+			return [];
+		},
+		async listRecentChanges(_scope, limit) {
+			calls.push(`changes:${limit}`);
+			return [];
+		},
+		async readActivitySummary() {
+			calls.push('activity');
+			return {
+				activeIncidents: 0,
+				incidentDomains: 0,
+				deploymentsToday: 0,
+				deploymentDomains: 0
+			};
+		},
 		...overrides
 	};
 

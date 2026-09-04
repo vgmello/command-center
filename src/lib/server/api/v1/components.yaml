@@ -3,6 +3,17 @@
 # Merged into the published spec by the openapi plugin in vite.config.ts.
 components:
   parameters:
+    DomainOwner:
+      description: >-
+        An owner handle, or `all`. Owners are org data rather than a fixed set — read the current
+        list from the domains they own.
+      in: query
+      name: owner
+      required: false
+      schema:
+        default: all
+        maxLength: 120
+        type: string
     DomainSort:
       description: '`health-score` orders by criticality tier first, then by the worst score within the tier.'
       in: query
@@ -134,6 +145,10 @@ components:
       properties:
         activeIncidents:
           type: integer
+        availability7dPct:
+          maximum: 100
+          minimum: 0
+          type: number
         criticality:
           enum:
             - mission-critical
@@ -150,6 +165,8 @@ components:
         id:
           type: string
         name:
+          type: string
+        owner:
           type: string
         p95LatencyMs:
           type: number
@@ -172,6 +189,8 @@ components:
         - errorRatePct
         - p95LatencyMs
         - activeIncidents
+        - owner
+        - availability7dPct
       type: object
     DomainPage:
       properties:

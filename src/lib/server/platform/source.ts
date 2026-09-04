@@ -1,6 +1,9 @@
 import type {
+	ActivitySummary,
 	CurrentUser,
 	Deployment,
+	DomainChange,
+	DomainOwner,
 	DomainPage,
 	DomainStatusCounts,
 	FavoriteItem,
@@ -52,6 +55,27 @@ export interface PlatformSource {
 
 	/** Infrastructure counts by kind. */
 	listInfrastructure(scope: PlatformScope): Promise<InfrastructureGroup[]>;
+
+	/**
+	 * The teams that own domains, with how many each owns.
+	 *
+	 * A read rather than a constant because owners are org data: teams are created,
+	 * merged and renamed without a deploy. A hardcoded list would offer a filter that
+	 * matches nothing the week after a reorg.
+	 */
+	listOwners(scope: PlatformScope): Promise<DomainOwner[]>;
+
+	/** Domains whose health score moved most recently, newest first. */
+	listRecentChanges(scope: PlatformScope, limit: number): Promise<DomainChange[]>;
+
+	/**
+	 * Incident and deployment activity as counts.
+	 *
+	 * One call for both because the two tiles it feeds always render together, and
+	 * because a backend answers them from the same activity store. Splitting it would
+	 * buy an adapter nothing and cost it a second round trip.
+	 */
+	readActivitySummary(scope: PlatformScope): Promise<ActivitySummary>;
 }
 
 /**

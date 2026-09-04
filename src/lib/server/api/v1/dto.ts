@@ -61,7 +61,11 @@ export const domainSchema = v.object({
 	serviceCount: v.pipe(v.number(), v.integer()),
 	errorRatePct: v.number(),
 	p95LatencyMs: v.number(),
-	activeIncidents: v.pipe(v.number(), v.integer())
+	activeIncidents: v.pipe(v.number(), v.integer()),
+	/** The accountable team's handle, e.g. `@payments-team`. */
+	owner: v.string(),
+	/** Uptime over the trailing seven days. A fixed window, not the request's range. */
+	availability7dPct: v.pipe(v.number(), v.minValue(0), v.maxValue(100))
 });
 
 export const pageSchema = v.object({
@@ -154,7 +158,9 @@ export function toDomainDto(domain: Domain): DomainDto {
 		serviceCount: domain.serviceCount,
 		errorRatePct: domain.errorRatePct,
 		p95LatencyMs: domain.p95LatencyMs,
-		activeIncidents: domain.activeIncidents
+		activeIncidents: domain.activeIncidents,
+		owner: domain.owner,
+		availability7dPct: domain.availability7dPct
 	};
 }
 

@@ -2,17 +2,68 @@ import { describe, expect, test } from 'bun:test';
 import { queryDomainsInMemory } from './in-memory-query';
 import { listDomains } from './fixtures';
 import { DEFAULT_PAGE_SIZE } from './snapshot';
-import type { DomainQuery } from '$lib/platform/query';
+import { ALL_OWNERS, type DomainQuery } from '$lib/platform/query';
 
 const baseQuery: DomainQuery = {
 	search: '',
 	status: 'all',
+	owner: ALL_OWNERS,
 	sort: 'health-score',
 	page: 1,
 	pageSize: DEFAULT_PAGE_SIZE
 };
 
 const domains = listDomains();
+
+describe('queryDomainsInMemory owner filtering', () => {
+	test('an owner filter narrows to exactly that team', () => {
+		const owner = domains[0].owner;
+		const result = queryDomainsInMemory(domains, { ...baseQuery, owner, pageSize: 100 });
+
+		expect(result.domains.length).toBeGreaterThan(0);
+		expect(result.domains.every((domain) => domain.owner === owner)).toBe(true);
+		expect(result.page.totalItems).toBe(domains.filter((d) => d.owner === owner).length);
+	});
+
+	test('`all` is a sentinel, not a team — it filters nothing out', () => {
+		const result = queryDomainsInMemory(domains, { ...baseQuery, pageSize: 100 });
+
+		expect(result.page.totalItems).toBe(domains.length);
+	});
+
+	test('an owner nobody matches returns an empty page, not every domain', () => {
+		const result = queryDomainsInMemory(domains, { ...baseQuery, owner: '@nobody' });
+
+		expect(result.domains).toEqual([]);
+		expect(result.page.totalItems).toBe(0);
+		expect(result.page.from).toBe(0);
+	});
+
+	test('owner and status compose rather than override each other', () => {
+		const owner = domains.find((domain) => domain.status !== 'healthy')?.owner ?? '';
+		const result = queryDomainsInMemory(domains, {
+			...baseQuery,
+			owner,
+			status: 'healthy',
+			pageSize: 100
+		});
+
+		expect(
+			result.domains.every((domain) => domain.owner === owner && domain.status === 'healthy')
+		).toBe(true);
+	});
+
+	test('search reaches the owner handle, so typing a team name finds its domains', () => {
+		const owner = domains[0].owner;
+		const result = queryDomainsInMemory(domains, {
+			...baseQuery,
+			search: owner.slice(1),
+			pageSize: 100
+		});
+
+		expect(result.domains.some((domain) => domain.owner === owner)).toBe(true);
+	});
+});
 
 describe('queryDomainsInMemory', () => {
 	test('pages without losing or duplicating rows', () => {

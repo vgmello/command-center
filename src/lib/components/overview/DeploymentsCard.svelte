@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Icon from '../Icon.svelte';
 	import RelativeTime from '../RelativeTime.svelte';
-	import SectionCard from './SectionCard.svelte';
+	import SectionCard from '../SectionCard.svelte';
 	import StatusBadge from '../StatusBadge.svelte';
 	import { DEPLOYMENT_LABELS, deploymentTone } from '../tone';
 	import type { Deployment } from '$lib/platform/types';

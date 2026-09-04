@@ -1,6 +1,6 @@
 <script lang="ts">
-	import Icon from '../Icon.svelte';
-	import { statusTone } from '../tone';
+	import Icon from './Icon.svelte';
+	import { statusTone } from './tone';
 	import type { CountTile } from '$lib/platform/types';
 
 	interface Props {

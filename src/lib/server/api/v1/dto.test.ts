@@ -11,6 +11,7 @@ import {
 } from './dto';
 import { listDomains } from '$lib/server/platform/fixtures';
 import { FixturePlatformSource } from '$lib/server/platform/fixture-source';
+import { ALL_OWNERS } from '$lib/platform/query';
 import type { PlatformScope } from '$lib/platform/query';
 
 const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
@@ -30,11 +31,13 @@ describe('v1 domain shape', () => {
 	test('exposes the facts and nothing about how we draw them', () => {
 		expect(Object.keys(toDomainDto(domain)).sort()).toEqual([
 			'activeIncidents',
+			'availability7dPct',
 			'criticality',
 			'errorRatePct',
 			'healthScore',
 			'id',
 			'name',
+			'owner',
 			'p95LatencyMs',
 			'serviceCount',
 			'status'
@@ -50,7 +53,17 @@ describe('v1 domain shape', () => {
 		// Present internally, deliberately absent from the contract.
 		expect(domain.icon).toBeDefined();
 		expect(domain.accent).toBeDefined();
-		for (const field of ['icon', 'accent', 'slug', 'favorite', 'healthTrend', 'errorTrend']) {
+		// `shortName` is how our table abbreviates a domain to fit eleven columns, not a
+		// fact another client needs — it already has `name`.
+		for (const field of [
+			'icon',
+			'accent',
+			'slug',
+			'shortName',
+			'favorite',
+			'healthTrend',
+			'errorTrend'
+		]) {
 			expect(dto[field]).toBeUndefined();
 		}
 	});
@@ -61,6 +74,7 @@ describe('v1 collection shapes', () => {
 		const page = await source.queryDomains(scope, {
 			search: '',
 			status: 'all',
+			owner: ALL_OWNERS,
 			sort: 'health-score',
 			page: 1,
 			pageSize: 2

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { donutSegments } from '$lib/platform/geometry';
-	import { statusTone } from '../tone';
+	import { statusTone } from './tone';
 	import type { HealthDistribution } from '$lib/platform/types';
 
 	interface Props {

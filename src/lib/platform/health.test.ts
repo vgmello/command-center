@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	HEALTH_CHANGE_LABELS,
 	HEALTH_THRESHOLDS,
 	buildDistribution,
 	describeHealthThresholds,
+	healthChangeDirection,
 	rollUpStatus,
 	statusFromScore,
 	statusSeverity
@@ -78,5 +80,23 @@ describe('describeHealthThresholds', () => {
 		expect(statusFromScore(HEALTH_THRESHOLDS.healthy)).toBe('healthy');
 		expect(statusFromScore(HEALTH_THRESHOLDS.healthy - 1)).toBe('degraded');
 		expect(statusFromScore(HEALTH_THRESHOLDS.degraded - 1)).toBe('down');
+	});
+});
+
+describe('health-score changes', () => {
+	test('direction comes from the two scores, so no caller invents its own', () => {
+		expect(healthChangeDirection(58, 72)).toBe('up');
+		expect(healthChangeDirection(72, 58)).toBe('down');
+		expect(healthChangeDirection(72, 72)).toBe('flat');
+	});
+
+	test('every direction has copy, so the feed cannot render a blank line', () => {
+		for (const direction of ['up', 'down', 'flat'] as const) {
+			expect(HEALTH_CHANGE_LABELS[direction].length).toBeGreaterThan(0);
+		}
+	});
+
+	test('improving and degrading do not read the same', () => {
+		expect(HEALTH_CHANGE_LABELS.up).not.toBe(HEALTH_CHANGE_LABELS.down);
 	});
 });

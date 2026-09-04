@@ -3,7 +3,8 @@ import type {
 	DistributionSlice,
 	DomainStatusCounts,
 	HealthDistribution,
-	HealthStatus
+	HealthStatus,
+	TrendDirection
 } from './types';
 
 /** Worst-first. Used for sorting and for rolling many statuses up into one. */
@@ -47,6 +48,27 @@ export function rollUpStatus(statuses: HealthStatus[]): HealthStatus {
 	return statuses.reduce((worst, next) =>
 		statusSeverity(next) < statusSeverity(worst) ? next : worst
 	);
+}
+
+/**
+ * How a health-score move reads.
+ *
+ * Derived from the direction rather than sent as a sentence, for the same reason
+ * `status` is derived from `healthScore`: a server-supplied phrase and a
+ * server-supplied number are two facts that can contradict each other, and the one
+ * the reader believes is the sentence.
+ */
+export const HEALTH_CHANGE_LABELS: Record<TrendDirection, string> = {
+	up: 'Health score improved',
+	down: 'Health score degraded',
+	flat: 'Health score unchanged'
+};
+
+/** Which way a score moved. The single definition, so no caller invents its own. */
+export function healthChangeDirection(previous: number, current: number): TrendDirection {
+	if (current > previous) return 'up';
+	if (current < previous) return 'down';
+	return 'flat';
 }
 
 /** Score bands. Exported so nothing has to restate them — including the UI copy. */

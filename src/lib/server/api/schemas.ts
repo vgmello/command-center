@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { DOMAIN_SORT_KEYS, DOMAIN_STATUS_FILTERS } from '$lib/platform/query';
+import { ALL_OWNERS, DOMAIN_SORT_KEYS, DOMAIN_STATUS_FILTERS } from '$lib/platform/query';
 
 /**
  * The one definition of a valid argument, shared by both transports.
@@ -25,6 +25,13 @@ export const domainQuerySchema = v.object({
 	// Bounded so a long paste cannot turn into an expensive scan.
 	search: v.pipe(v.string(), v.maxLength(120)),
 	status: v.picklist(DOMAIN_STATUS_FILTERS),
+	/*
+	 * A bounded string, not a picklist: owners are org data that changes without a
+	 * deploy, so the valid set is not knowable at schema-compile time. An owner that
+	 * no longer exists simply matches nothing — the same outcome as a stale picklist
+	 * member, without a deploy being required to add a new team.
+	 */
+	owner: v.pipe(v.string(), v.maxLength(120)),
 	sort: v.picklist(DOMAIN_SORT_KEYS),
 	page: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(10_000)),
 	// Capped so one request cannot ask an adapter for the whole table.
@@ -57,6 +64,7 @@ export function parseDomainQuery(params: URLSearchParams) {
 	return v.parse(domainQuerySchema, {
 		search: params.get('search') ?? '',
 		status: params.get('status') ?? 'all',
+		owner: params.get('owner') ?? ALL_OWNERS,
 		sort: params.get('sort') ?? 'health-score',
 		page: toInteger(params.get('page'), 1),
 		pageSize: toInteger(params.get('pageSize'), DEFAULT_API_PAGE_SIZE)

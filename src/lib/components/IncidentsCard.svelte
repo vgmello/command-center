@@ -1,8 +1,8 @@
 <script lang="ts">
-	import RelativeTime from '../RelativeTime.svelte';
+	import RelativeTime from './RelativeTime.svelte';
 	import SectionCard from './SectionCard.svelte';
-	import StatusBadge from '../StatusBadge.svelte';
-	import { SEVERITY_LABELS, severityTone } from '../tone';
+	import StatusBadge from './StatusBadge.svelte';
+	import { SEVERITY_LABELS, severityTone } from './tone';
 	import type { Incident } from '$lib/platform/types';
 
 	interface Props {

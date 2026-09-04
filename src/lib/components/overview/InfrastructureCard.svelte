@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Icon from '../Icon.svelte';
-	import SectionCard from './SectionCard.svelte';
+	import SectionCard from '../SectionCard.svelte';
 	import { statusTone } from '../tone';
 	import type { InfrastructureGroup } from '$lib/platform/types';
 

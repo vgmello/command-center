@@ -290,7 +290,11 @@ the two components that need it.
 
 Remote functions are the default way this app talks to the server. Prefer them over `load` functions and `+server.ts` endpoints. Reach for a `load` function only when SvelteKit genuinely requires it (e.g. route-level redirects/guards before render), and for `+server.ts` only for true external HTTP surfaces (webhooks, OAuth callbacks, RSS/sitemap).
 
-Remote functions live in `*.remote.ts` files, anywhere under `src/` **except** `src/lib/server/`. They are called from anywhere in the app but always run on the server, so they may import server-only modules (env vars, DB clients).
+Remote functions live in `*.remote.ts` files, anywhere under `src/` **except** `src/lib/server/`.
+Name them after what they serve, not the page that first needed them: `shell.remote.ts`
+is the chrome every route renders inside, `domains.remote.ts` the domain table and the
+domains page, `overview.remote.ts` only the overview's own composite. A module named
+after one page is the wrong home for a query two pages call. They are called from anywhere in the app but always run on the server, so they may import server-only modules (env vars, DB clients).
 
 Four flavours from `$app/server`:
 
@@ -431,7 +435,7 @@ Note that `bun test` cannot compile `.svelte` files, so component rendering is o
 
 - Components: `PascalCase.svelte`. Remote modules: `<domain>.remote.ts`. Rune modules: `<name>.svelte.ts`.
 - App components go in `src/lib/components/`; `src/lib/components/ui/` is reserved for shadcn-svelte's vendored output.
-- Component subfolders group by role, not by page: `components/app/` is the shell (sidebar, top bar), `components/overview/` is one screen's panels, and anything reused across screens sits at the top of `components/`.
+- Component subfolders group by role, not by page: `components/app/` is the shell (sidebar, top bar), `components/overview/` and `components/domains/` are one screen's panels, and anything reused across screens sits at the top of `components/`. `DomainToolbar`, `DomainTable` and `DomainPager` live there because two screens compose them differently — the overview into a narrow summary, the domains page into the full table.
 - Server-only code that is not a remote function goes in `src/lib/server/`, grouped by domain (`server/platform/`).
 - Shared types and pure helpers go in `src/lib/<domain>/` — `types.ts` for the contract, one file per concern beside it.
 - Delete vendored components nothing imports. `shadcn-svelte add` brings them back in one command; unused source is not free.
@@ -447,7 +451,7 @@ an `@` costs its full length in every session, whether or not the session touche
 
 ## State
 
-Overview screen built and verified. `bun test` (95 tests), `bun run check`, `bun run lint`,
+Overview and Domains screens built and verified. `bun test` (112 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
@@ -456,11 +460,14 @@ What exists:
   vocabulary shared by the schemas and the toolbar), plus `health.ts`, `format.ts`,
   `geometry.ts` and `pagination.ts`, each with a test file
 - `src/lib/server/platform/` — the `PlatformSource` / `WorkspaceSource` ports, the fixture
-  implementation, the resolver, and the snapshot assembler. **Replacing the fixture with
-  real telemetry is a new file plus a resolver entry**; nothing above the ports changes
+  implementation, the resolver, and one assembler per screen (`snapshot.ts` for the
+  overview, `domains-view.ts` for the domains page). **Replacing the fixture with real
+  telemetry is a new file plus a resolver entry**; nothing above the ports changes
 - `src/lib/server/platform/service.ts` — the in-process API both transports call
-- `src/routes/overview.remote.ts` — `getShell`, `getOverview`, `getSystemStatus`,
-  `getDomainPage`, all Valibot-validated
+- `src/routes/shell.remote.ts` — `getShell`, `getSystemStatus`
+- `src/routes/overview.remote.ts` — `getOverview`
+- `src/routes/domains.remote.ts` — `getDomainPage`, `getDomainsView`. All remote
+  functions are Valibot-validated against the schemas the JSON API shares
 - `src/routes/api/v1/` — public JSON API: `domains`, `domains/summary`, `metrics`,
   `incidents`, `deployments`, `infrastructure`, `status`. Token-authenticated,
   frozen DTOs in `src/lib/server/api/v1/dto.ts` with a shape test
@@ -468,15 +475,25 @@ What exists:
   the Scalar reference that renders it
 - `src/hooks.server.ts` — `handleValidationError`: generic message to the client,
   detail to the log
-- `src/lib/components/` — app shell (`app/`), overview panels (`overview/`), shared
-  primitives, the icon registry and `tone.ts`
+- `src/lib/components/` — app shell (`app/`), one folder per screen (`overview/`,
+  `domains/`), the shared domain table (`DomainToolbar`, `DomainTable`, `DomainPager`)
+  and cards, the icon registry and `tone.ts`
 - `src/lib/scope.svelte.ts` — environment / time range / auto-refresh, held in context
 - `src/routes/status/` — the original health-probe slice, kept as the minimal end-to-end reference
 - Placeholder routes for every nav destination, so the sidebar navigates instead of 404ing
 - `.env.example` — the source selection and the production server's `PORT`/`ORIGIN`
 
 Not yet built: per-domain, per-incident and per-deployment detail routes. Until they exist the
-table's row actions menu and those rows stay non-navigating, by the rule above.
+table's row actions menu and those rows stay non-navigating, by the rule above. The domains
+table's column-settings button is likewise inert — the columns a screen shows are still a
+prop, not a preference, and there is nowhere yet to persist one.
+
+**The domain table is width-budgeted.** Eleven columns fit a 1680px viewport beside the
+368px side column with nothing to spare, which is why the widths are explicit and why the
+compact identity mode exists: `identity="compact"` prints `shortName` alone, and that is
+what buys the other ten columns their room. Adding a column means taking the width from
+somewhere — measure it in a browser rather than estimating, because table auto-layout
+makes cells wider than their `w-[…]` hint whenever content demands it.
 
 **Known behaviour:** with an async `<svelte:boundary>`, SSR renders the `pending` snippet and the
 awaited content resolves on the client. Expect the skeletons in view-source rather than the table.
