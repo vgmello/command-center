@@ -118,9 +118,24 @@ components:
         deployedAt:
           format: date-time
           type: string
+        deployedBy:
+          type: string
         domain:
           $ref: '#/components/schemas/DomainRef'
+        durationSeconds:
+          anyOf:
+            - minimum: 0
+              type: number
+            - type: 'null'
+        environment:
+          enum:
+            - production
+            - staging
+            - development
+          type: string
         id:
+          type: string
+        reference:
           type: string
         service:
           type: string
@@ -131,15 +146,27 @@ components:
             - in-progress
             - rolled-back
           type: string
+        trigger:
+          enum:
+            - ci-cd
+            - gitops
+            - manual
+            - rollback
+          type: string
         version:
           type: string
       required:
         - id
+        - reference
         - service
         - version
         - domain
+        - environment
         - status
+        - trigger
+        - deployedBy
         - deployedAt
+        - durationSeconds
       type: object
     Domain:
       properties:

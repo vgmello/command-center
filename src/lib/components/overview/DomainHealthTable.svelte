@@ -1,5 +1,5 @@
 <script lang="ts">
-	import DomainPager from '../DomainPager.svelte';
+	import TablePager from '../TablePager.svelte';
 	import DomainRowCard from '../DomainRowCard.svelte';
 	import DomainTable from '../DomainTable.svelte';
 	import DomainToolbar from '../DomainToolbar.svelte';
@@ -100,5 +100,5 @@
 		<DomainTable domains={result.domains} trendLabel="Trend (15m)" />
 	{/if}
 
-	<DomainPager page={result.page} {onPageChange} />
+	<TablePager page={result.page} {onPageChange} />
 </section>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
-	import { statusTone } from './tone';
+	import { toneFor } from './tone';
 	import type { CountTile } from '$lib/platform/types';
 
 	interface Props {
@@ -9,7 +9,7 @@
 
 	let { tile }: Props = $props();
 
-	const tone = $derived(tile.status ? statusTone(tile.status) : null);
+	const tone = $derived(tile.tone ? toneFor(tile.tone) : null);
 </script>
 
 <article class="rounded-xl border border-border bg-card px-4 py-2.5">

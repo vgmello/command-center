@@ -1,5 +1,11 @@
 import * as v from 'valibot';
 import { ALL_OWNERS, DOMAIN_SORT_KEYS, DOMAIN_STATUS_FILTERS } from '$lib/platform/query';
+import {
+	ALL_ENVIRONMENTS,
+	DEPLOYMENT_STATES,
+	DEPLOYMENT_WINDOWS,
+	TREND_GRAINS
+} from '$lib/platform/deployments';
 
 /**
  * The one definition of a valid argument, shared by both transports.
@@ -42,6 +48,39 @@ export const domainQuerySchema = v.object({
 export const scopedDomainQuerySchema = v.object({
 	...scopeSchema.entries,
 	...domainQuerySchema.entries
+});
+
+/** Filter and paging for the deployment log. */
+export const deploymentQuerySchema = v.object({
+	search: v.pipe(v.string(), v.maxLength(120)),
+	state: v.picklist(DEPLOYMENT_STATES),
+	// Open sets, so bounded strings rather than picklists — same reasoning as `owner`.
+	domain: v.pipe(v.string(), v.maxLength(120)),
+	environment: v.union([environmentSchema, v.literal(ALL_ENVIRONMENTS)]),
+	window: v.picklist(DEPLOYMENT_WINDOWS),
+	page: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(10_000)),
+	pageSize: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100))
+});
+
+/**
+ * Nested rather than spread, unlike the domain equivalent.
+ *
+ * Both halves carry an `environment` and they mean different things: the scope's is
+ * which environment the whole page reports on, the query's is a further narrowing of
+ * the table below it — the top bar says Production while the toolbar still offers All
+ * Environments. Flattening them would silently drop one.
+ */
+export const scopedDeploymentQuerySchema = v.object({
+	scope: scopeSchema,
+	query: deploymentQuerySchema
+});
+
+export const trendGrainSchema = v.picklist(TREND_GRAINS);
+
+/** The deployments page asks for its scope and the grain its two charts bucket at. */
+export const scopedTrendSchema = v.object({
+	...scopeSchema.entries,
+	grain: trendGrainSchema
 });
 
 export const DEFAULT_API_PAGE_SIZE = 25;

@@ -87,13 +87,20 @@ Everything the UI shows comes from a **source** behind an interface, never from 
 module the UI imports directly:
 
 - `src/lib/server/platform/source.ts` — `PlatformSource` (telemetry: domain counts,
-  the domain page, rates, incidents, deployments, infrastructure) and
-  `WorkspaceSource` (the signed-in user and their pins). Two interfaces, because
-  they will be replaced independently and on different schedules.
+  the domain page, rates, incidents, infrastructure), `DeploymentSource` (the CI/CD
+  feed: the deployment log, its aggregates and its trends) and `WorkspaceSource` (the
+  signed-in user and their pins). Three interfaces, because they are three upstreams
+  that will be replaced independently and on different schedules — and because one
+  interface carrying all of it would stop describing a single responsibility.
+
+  **When to add a port rather than a method.** Deployments got their own the moment
+  they stopped being one method: the data comes from a build system, not a metrics
+  pipeline, so a real adapter for one has nothing to do with the other.
+
 - `src/lib/server/platform/fixture-source.ts` — the seeded stand-in.
-- `src/lib/server/platform/index.ts` — resolves one implementation from
-  `PLATFORM_SOURCE` / `WORKSPACE_SOURCE`, caches the instance, and **throws on an
-  unknown name**. Falling back to fixtures on a typo would serve invented numbers
+- `src/lib/server/platform/index.ts` — resolves one implementation per port from
+  `PLATFORM_SOURCE` / `DEPLOYMENT_SOURCE` / `WORKSPACE_SOURCE`, caches the instance,
+  and **throws on an unknown name**. Falling back to fixtures on a typo would serve invented numbers
   in production with nothing on the page admitting it.
 
 To add a real backend: implement the interface, register it in the resolver, set the
@@ -234,6 +241,19 @@ The plugin emits OpenAPI **3.0.0**, not 3.1. Scalar renders both.
 
 The document is served without a token: it describes the shape of the API, not any
 data, and the reference UI fetches it before anyone has authenticated.
+
+### Charts are arithmetic, not a dependency
+
+`src/lib/platform/chart.ts` holds the layout maths — scales, ticks, point placement,
+bar rectangles — and `LineChart` / `BarChart` turn the results into SVG. No charting
+library, by the API selection order: the requirement is points on a grid and
+rectangles on a baseline, which SVG does natively.
+
+The split matters more than the saving. Because the maths is pure and takes its bounds
+as arguments, an axis can be asserted in a test — and that is how the axis labelled
+0, 12.5, 25 was caught. `niceScale` returns a ceiling **and** its step together for
+that reason: rounding them independently produces numbers each defensible alone and
+unreadable side by side.
 
 ### The client declares no data
 
@@ -451,7 +471,7 @@ an `@` costs its full length in every session, whether or not the session touche
 
 ## State
 
-Overview and Domains screens built and verified. `bun test` (112 tests), `bun run check`, `bun run lint`,
+Overview, Domains and Deployments screens built and verified. `bun test` (148 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
@@ -461,13 +481,14 @@ What exists:
   `geometry.ts` and `pagination.ts`, each with a test file
 - `src/lib/server/platform/` — the `PlatformSource` / `WorkspaceSource` ports, the fixture
   implementation, the resolver, and one assembler per screen (`snapshot.ts` for the
-  overview, `domains-view.ts` for the domains page). **Replacing the fixture with real
+  overview, `domains-view.ts`, `deployments-view.ts`). **Replacing the fixture with real
   telemetry is a new file plus a resolver entry**; nothing above the ports changes
 - `src/lib/server/platform/service.ts` — the in-process API both transports call
 - `src/routes/shell.remote.ts` — `getShell`, `getSystemStatus`
 - `src/routes/overview.remote.ts` — `getOverview`
-- `src/routes/domains.remote.ts` — `getDomainPage`, `getDomainsView`. All remote
-  functions are Valibot-validated against the schemas the JSON API shares
+- `src/routes/domains.remote.ts` — `getDomainPage`, `getDomainsView`
+- `src/routes/deployments.remote.ts` — `getDeploymentPage`, `getDeploymentsView`. All
+  remote functions are Valibot-validated against the schemas the JSON API shares
 - `src/routes/api/v1/` — public JSON API: `domains`, `domains/summary`, `metrics`,
   `incidents`, `deployments`, `infrastructure`, `status`. Token-authenticated,
   frozen DTOs in `src/lib/server/api/v1/dto.ts` with a shape test
@@ -475,13 +496,21 @@ What exists:
   the Scalar reference that renders it
 - `src/hooks.server.ts` — `handleValidationError`: generic message to the client,
   detail to the log
+- `src/lib/platform/chart.ts` — chart layout maths, with a test file
 - `src/lib/components/` — app shell (`app/`), one folder per screen (`overview/`,
-  `domains/`), the shared domain table (`DomainToolbar`, `DomainTable`, `DomainPager`)
-  and cards, the icon registry and `tone.ts`
+  `domains/`, `deployments/`), the shared table pieces (`DomainToolbar`, `DomainTable`,
+  `TablePager`), `LineChart` / `BarChart`, the cards, the icon registry and `tone.ts`
 - `src/lib/scope.svelte.ts` — environment / time range / auto-refresh, held in context
 - `src/routes/status/` — the original health-probe slice, kept as the minimal end-to-end reference
 - Placeholder routes for every nav destination, so the sidebar navigates instead of 404ing
 - `.env.example` — the source selection and the production server's `PORT`/`ORIGIN`
+
+**Deliberate deviations from the deployments mock**, both by the "do not ship a dead
+control" rule: the date filter is a preset window select (Any time / Today / Last 7 /
+Last 30) rather than a calendar, because a real filter with no new dependency beats a
+picker that needs one; and the Filters button reports and clears the active filters
+rather than opening a panel of controls that are already on screen. The insight rows
+have no "View report" link, because those reports do not exist yet.
 
 Not yet built: per-domain, per-incident and per-deployment detail routes. Until they exist the
 table's row actions menu and those rows stay non-navigating, by the rule above. The domains

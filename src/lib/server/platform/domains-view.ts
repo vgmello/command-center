@@ -47,7 +47,7 @@ export function buildDomainCountTiles(
 			value: activity.activeIncidents,
 			percentage: null,
 			caption: acrossDomains(activity.incidentDomains),
-			status: activity.activeIncidents > 0 ? 'down' : 'healthy'
+			tone: activity.activeIncidents > 0 ? 'down' : 'healthy'
 		},
 		{
 			id: 'deployments-today',
@@ -56,7 +56,7 @@ export function buildDomainCountTiles(
 			value: activity.deploymentsToday,
 			percentage: null,
 			caption: acrossDomains(activity.deploymentDomains),
-			status: null
+			tone: null
 		}
 	];
 }

@@ -60,7 +60,7 @@ describe('buildDomainCountTiles', () => {
 			activity({ activeIncidents: 0, incidentDomains: 0 })
 		).slice(-2);
 
-		expect(incidents.status).toBe('healthy');
+		expect(incidents.tone).toBe('healthy');
 	});
 
 	test('every tile names its own icon, so the client picks none', () => {
@@ -97,6 +97,6 @@ describe('buildDomainsSnapshot', () => {
 		const snapshot = await buildDomainsSnapshot(new FixturePlatformSource(), scope);
 
 		expect(snapshot.owners.length).toBeGreaterThan(0);
-		expect(snapshot.owners.every((owner) => owner.domainCount > 0)).toBe(true);
+		expect(snapshot.owners.every((owner) => owner.count > 0)).toBe(true);
 	});
 });

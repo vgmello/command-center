@@ -7,6 +7,8 @@
 
 	interface Props {
 		page: Page;
+		/** What the rows are, for "Showing 1 to 8 of 29 …". Plural. */
+		noun?: string;
 		onPageChange: (value: number) => void;
 		/**
 		 * Page-size choices, when the screen lets the reader change them. Omitted on
@@ -17,7 +19,7 @@
 		onPageSizeChange?: (value: number) => void;
 	}
 
-	let { page, onPageChange, pageSizes, onPageSizeChange }: Props = $props();
+	let { page, noun = 'domains', onPageChange, pageSizes, onPageSizeChange }: Props = $props();
 
 	const pages = $derived(paginationItems(page.page, page.totalPages));
 	const pageSizeLabel = $derived(
@@ -28,11 +30,12 @@
 
 <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
 	<p class="tabular text-[12px] text-muted-foreground">
-		Showing {page.from} to {page.to} of {page.totalItems} domains
+		Showing {page.from} to {page.to} of {page.totalItems}
+		{noun}
 	</p>
 
 	<div class="flex items-center gap-3">
-		<nav class="flex items-center gap-1" aria-label="Domain table pages">
+		<nav class="flex items-center gap-1" aria-label="Table pages">
 			<button
 				type="button"
 				aria-label="Previous page"

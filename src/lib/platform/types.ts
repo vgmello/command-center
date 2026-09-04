@@ -83,6 +83,15 @@ export interface RateMetric {
 	polarity: TrendPolarity;
 }
 
+/**
+ * Which entry of the tone vocabulary tints something.
+ *
+ * The health statuses plus `info`, which is what "in flight" is: a deployment still
+ * running is not healthy, degraded or down, and tinting it as any of those would claim
+ * an outcome it has not reached. `null` renders neutral.
+ */
+export type ToneKey = HealthStatus | 'info';
+
 /** One tile in the counts row: total / healthy / degraded / down. */
 export interface CountTile {
 	id: string;
@@ -93,8 +102,8 @@ export interface CountTile {
 	/** Share of the platform total, 0–100. `null` on the total tile itself. */
 	percentage: number | null;
 	caption: string | null;
-	/** Which status vocabulary entry tints this tile; `null` renders neutral. */
-	status: HealthStatus | null;
+	/** Which tone vocabulary entry tints this tile; `null` renders neutral. */
+	tone: ToneKey | null;
 }
 
 /** A slice of the health distribution donut. */
@@ -199,15 +208,158 @@ export interface Incident {
 	openedAt: string;
 }
 
+/** What put a deployment on the cluster. Drives the sub-label under its reference. */
+export type DeploymentTrigger = 'ci-cd' | 'gitops' | 'manual' | 'rollback';
+
 export interface Deployment {
 	id: string;
+	/** Human-facing reference, e.g. `#17892`. Distinct from `id`, which is ours. */
+	reference: string;
 	service: string;
 	version: string;
 	domainId: string;
 	domainName: string;
 	icon: string;
+	environment: EnvironmentId;
 	status: DeploymentStatus;
+	trigger: DeploymentTrigger;
+	/** Who or what ran it — a pipeline name, or a person. */
+	deployedBy: string;
 	deployedAt: string;
+	/**
+	 * Wall-clock length, or `null` while it is still running.
+	 *
+	 * `null` rather than `0`: a deployment that has not finished has no duration, and
+	 * zero would sort and average as though it were instantaneous.
+	 */
+	durationSeconds: number | null;
+}
+
+/**
+ * One labelled point on a chart's x-axis.
+ *
+ * The label travels with the value because only the source knows what the bucket is —
+ * a clock time, a date, a week number — and a client that formats it from an index
+ * gets a different answer than the query that produced it.
+ */
+export interface TimeSeriesPoint {
+	label: string;
+	value: number;
+}
+
+/**
+ * A named series, with its own bounds precomputed.
+ *
+ * Bounds are per-series so a caller can scale one line on its own; a chart drawing
+ * several together takes the union, which is `seriesBounds()`.
+ */
+export interface TimeSeries {
+	id: string;
+	label: string;
+	points: TimeSeriesPoint[];
+	min: number;
+	max: number;
+}
+
+/** How finely the deployment trend charts bucket time. */
+export type TrendGrain = 'daily' | 'weekly' | 'monthly';
+
+/** One slice of the "Deployments by Domain" donut. */
+export interface DomainShare {
+	domainId: string;
+	label: string;
+	/** Identity tint, so the donut and the legend agree on a domain's colour. */
+	accent: DomainAccent;
+	count: number;
+	percentage: number;
+}
+
+export interface DomainBreakdown {
+	total: number;
+	slices: DomainShare[];
+}
+
+/**
+ * The day's deployment activity, rolled up.
+ *
+ * Counts and the two DORA-style rates arrive together because they come from one
+ * aggregation over the same set of runs — asking for them separately would make an
+ * adapter scan it four times.
+ */
+export interface DeploymentSummary {
+	total: number;
+	domainCount: number;
+	successful: number;
+	inProgress: number;
+	failed: number;
+	/** Mean wall-clock duration of the runs that finished, in seconds. */
+	meanDurationSeconds: number;
+	/** Share of runs that failed or were rolled back, 0–100. */
+	changeFailureRatePct: number;
+	/** Signed change against the previous comparable period, in percent. */
+	meanDurationChangePct: number;
+	changeFailureRateChangePct: number;
+	/** Signed change in deployment count against the previous period, in percent. */
+	totalChangePct: number;
+}
+
+/**
+ * A tile whose headline is a rate rather than a count.
+ *
+ * Separate from `CountTile` because the two differ in what they print underneath — a
+ * share of a total, or a signed change against a previous period. `CountTile.value` is
+ * a number; a duration and a percentage are not, and bending either to fit would make
+ * every consumer branch on which kind it got.
+ */
+export interface RateTile {
+	id: string;
+	label: string;
+	icon: string;
+	/** Already formatted: "6m 42s", "2.1%". The raw figure stays on the summary. */
+	formatted: string;
+	unit: string;
+	changeFormatted: string;
+	comparedToLabel: string;
+	direction: TrendDirection;
+	/** Stated rather than assumed: falling deploy time is good, and the UI cannot infer that. */
+	polarity: TrendPolarity;
+}
+
+/** A flagged pattern in the deployment record, surfaced beside the charts. */
+export interface DeploymentInsight {
+	id: string;
+	title: string;
+	detail: string;
+	/** Reuses the incident vocabulary: this is a severity, not a health state. */
+	severity: IncidentSeverity;
+	icon: string;
+}
+
+/** Server-side paging state for the deployment table. */
+export interface DeploymentPage {
+	deployments: Deployment[];
+	page: Page;
+}
+
+/** Everything the deployments page needs except the paged table. */
+export interface DeploymentsSnapshot {
+	generatedAt: string;
+	environment: EnvironmentId;
+	timeRange: TimeRangeId;
+	counts: CountTile[];
+	/** The two rate tiles, which read differently from a count. */
+	rates: RateTile[];
+	/** Successful / in-progress / failed, plotted across the scope's window. */
+	statusTrend: TimeSeries[];
+	byDomain: DomainBreakdown;
+	insights: DeploymentInsight[];
+	frequency: TimeSeries;
+	meanDuration: TimeSeries;
+	summary: DeploymentSummary;
+	/** The horizontal strip along the bottom. */
+	recent: Deployment[];
+	/** The domain filter's options, read from the source rather than declared by the UI. */
+	domains: FacetOption[];
 }
 
 /** One column of the infrastructure summary: clusters, nodes, databases, queues. */
@@ -244,16 +396,20 @@ export interface DomainPage {
 }
 
 /**
- * One entry in the owner filter.
+ * One entry in a filter that is populated from the data rather than declared.
  *
- * Carries its `domainCount` because the source counted them anyway while grouping,
- * and the UI would otherwise have to load every domain to say "12 domains" beside a
- * team — which is the whole thing pushing the query down was meant to avoid.
+ * Carries its `count` because the source counted while grouping anyway, and the UI
+ * would otherwise have to load every row to say "12" beside a team — which is the
+ * whole reason the query was pushed down.
+ *
+ * One type for owners, domains and anything else facet-shaped: they differ only in
+ * what was grouped, and a second identical interface is a second thing to keep in
+ * step for no gain.
  */
-export interface DomainOwner {
+export interface FacetOption {
 	id: string;
 	label: string;
-	domainCount: number;
+	count: number;
 }
 
 /**
@@ -321,7 +477,7 @@ export interface DomainsSnapshot {
 	incidents: Incident[];
 	changes: DomainChange[];
 	/** The owner filter's options, read from the source rather than declared by the UI. */
-	owners: DomainOwner[];
+	owners: FacetOption[];
 }
 
 /** A sidebar navigation entry. */

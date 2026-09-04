@@ -112,11 +112,18 @@ export const incidentSchema = v.object({
 
 export const deploymentSchema = v.object({
 	id: v.string(),
+	/** The reference a human quotes, e.g. `#17892`. `id` is ours; this is theirs. */
+	reference: v.string(),
 	service: v.string(),
 	version: v.string(),
 	domain: domainRefSchema,
+	environment: v.picklist(['production', 'staging', 'development']),
 	status: v.picklist(['success', 'failed', 'in-progress', 'rolled-back']),
-	deployedAt: v.pipe(v.string(), v.isoTimestamp())
+	trigger: v.picklist(['ci-cd', 'gitops', 'manual', 'rollback']),
+	deployedBy: v.string(),
+	deployedAt: v.pipe(v.string(), v.isoTimestamp()),
+	/** Seconds, or null while the run is still going. Never 0 for "unfinished". */
+	durationSeconds: v.nullable(v.pipe(v.number(), v.minValue(0)))
 });
 
 export const infrastructureSchema = v.object({
@@ -212,11 +219,16 @@ export function toIncidentDto(incident: Incident): IncidentDto {
 export function toDeploymentDto(deployment: Deployment): DeploymentDto {
 	return {
 		id: deployment.id,
+		reference: deployment.reference,
 		service: deployment.service,
 		version: deployment.version,
 		domain: { id: deployment.domainId, name: deployment.domainName },
+		environment: deployment.environment,
 		status: deployment.status,
-		deployedAt: deployment.deployedAt
+		trigger: deployment.trigger,
+		deployedBy: deployment.deployedBy,
+		deployedAt: deployment.deployedAt,
+		durationSeconds: deployment.durationSeconds
 	};
 }
 

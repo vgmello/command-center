@@ -6,7 +6,7 @@ import {
 	buildSystemStatus,
 	toSeries
 } from './snapshot';
-import type { PlatformSource } from './source';
+import type { DeploymentSource, PlatformSource } from './source';
 import type { DomainStatusCounts, RateObservation } from '$lib/platform/types';
 import type { PlatformScope } from '$lib/platform/query';
 
@@ -49,10 +49,6 @@ function stubSource(overrides: Partial<PlatformSource> = {}) {
 			calls.push(`incidents:${limit}`);
 			return [];
 		},
-		async listDeployments(_scope, limit) {
-			calls.push(`deployments:${limit}`);
-			return [];
-		},
 		async listInfrastructure() {
 			calls.push('infrastructure');
 			return [];
@@ -77,7 +73,58 @@ function stubSource(overrides: Partial<PlatformSource> = {}) {
 		...overrides
 	};
 
-	return { source, calls };
+	const deployments: DeploymentSource = {
+		id: 'stub',
+		async listDeployments(_scope, limit) {
+			calls.push(`deployments:${limit}`);
+			return [];
+		},
+		async queryDeployments() {
+			calls.push('deployment-page');
+			return {
+				deployments: [],
+				page: { page: 1, pageSize: 8, totalItems: 0, totalPages: 1, from: 0, to: 0 }
+			};
+		},
+		async readSummary() {
+			calls.push('deployment-summary');
+			return {
+				total: 0,
+				domainCount: 0,
+				successful: 0,
+				inProgress: 0,
+				failed: 0,
+				meanDurationSeconds: 0,
+				changeFailureRatePct: 0,
+				meanDurationChangePct: 0,
+				changeFailureRateChangePct: 0,
+				totalChangePct: 0
+			};
+		},
+		async readDomainBreakdown() {
+			calls.push('deployment-breakdown');
+			return { total: 0, slices: [] };
+		},
+		async readStatusTrend() {
+			calls.push('deployment-status-trend');
+			return [];
+		},
+		async readTrends() {
+			calls.push('deployment-trends');
+			const empty = { id: 'x', label: 'x', points: [], min: 0, max: 0 };
+			return { frequency: empty, meanDuration: empty };
+		},
+		async listInsights() {
+			calls.push('deployment-insights');
+			return [];
+		},
+		async listDeployingDomains() {
+			calls.push('deploying-domains');
+			return [];
+		}
+	};
+
+	return { source, deployments, calls };
 }
 
 describe('buildCountTiles', () => {
@@ -193,8 +240,13 @@ describe('buildSystemStatus', () => {
 
 describe('buildOverview', () => {
 	test('assembles from the interface alone, with no knowledge of the fixtures', async () => {
-		const { source } = stubSource();
-		const snapshot = await buildOverview(source, scope, new Date('2026-09-03T12:00:00.000Z'));
+		const { source, deployments } = stubSource();
+		const snapshot = await buildOverview(
+			source,
+			deployments,
+			scope,
+			new Date('2026-09-03T12:00:00.000Z')
+		);
 
 		expect(snapshot.counts[0].value).toBe(5);
 		expect(snapshot.distribution.total).toBe(5);
@@ -204,8 +256,8 @@ describe('buildOverview', () => {
 	});
 
 	test('the tiles and the donut are built from the same counts', async () => {
-		const { source } = stubSource();
-		const snapshot = await buildOverview(source, scope);
+		const { source, deployments } = stubSource();
+		const snapshot = await buildOverview(source, deployments, scope);
 
 		const healthyTile = snapshot.counts.find((tile) => tile.id === 'healthy');
 		const healthySlice = snapshot.distribution.slices.find((slice) => slice.status === 'healthy');
@@ -215,27 +267,29 @@ describe('buildOverview', () => {
 	});
 
 	test('asks the source for the panel limits rather than trimming afterwards', async () => {
-		const { source, calls } = stubSource();
-		await buildOverview(source, scope);
+		const { source, deployments, calls } = stubSource();
+		await buildOverview(source, deployments, scope);
 
 		expect(calls).toContain('incidents:5');
 		expect(calls).toContain('deployments:5');
 	});
 
 	test('does not fetch the domain table; that is a separate query', async () => {
-		const { source, calls } = stubSource();
-		await buildOverview(source, scope);
+		const { source, deployments, calls } = stubSource();
+		await buildOverview(source, deployments, scope);
 
 		expect(calls).not.toContain('domains');
 	});
 
 	test('propagates a source failure instead of serving a half-built page', async () => {
-		const { source } = stubSource({
+		const { source, deployments } = stubSource({
 			async readRates() {
 				throw new Error('metrics backend unreachable');
 			}
 		});
 
-		expect(buildOverview(source, scope)).rejects.toThrow('metrics backend unreachable');
+		expect(buildOverview(source, deployments, scope)).rejects.toThrow(
+			'metrics backend unreachable'
+		);
 	});
 });

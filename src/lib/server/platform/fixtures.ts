@@ -2,15 +2,22 @@ import type {
 	ActivitySummary,
 	CurrentUser,
 	Deployment,
+	DeploymentInsight,
+	DeploymentSummary,
+	DeploymentTrigger,
 	Domain,
+	DomainBreakdown,
 	DomainChange,
-	DomainOwner,
+	EnvironmentId,
 	EnvironmentOption,
+	FacetOption,
 	FavoriteItem,
 	Incident,
 	InfrastructureGroup,
 	NavItem,
-	TimeRangeOption
+	TimeRangeOption,
+	TimeSeries,
+	TrendGrain
 } from '$lib/platform/types';
 import { healthChangeDirection, statusFromScore } from '$lib/platform/health';
 import { buildSeries } from './series';
@@ -72,7 +79,7 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 	{
 		name: 'User Domain',
 		icon: 'users',
-		accent: 'slate',
+		accent: 'violet',
 		criticality: 'business-critical',
 		healthScore: 92,
 		serviceCount: 22,
@@ -99,7 +106,7 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 	{
 		name: 'Notification Domain',
 		icon: 'bell',
-		accent: 'slate',
+		accent: 'amber',
 		criticality: 'important',
 		healthScore: 45,
 		serviceCount: 16,
@@ -112,7 +119,7 @@ const DOMAIN_SEEDS: DomainSeed[] = [
 	{
 		name: 'Shared Domain',
 		icon: 'share-2',
-		accent: 'green',
+		accent: 'slate',
 		criticality: 'important',
 		healthScore: 90,
 		serviceCount: 34,
@@ -477,41 +484,365 @@ export function listIncidents(now: Date): Incident[] {
 	}));
 }
 
-export function listDeployments(now: Date): Deployment[] {
-	const seeds: Array<[string, string, string, string, Deployment['status'], number]> = [
-		['payment-api', 'v2.4.1', 'Payment Domain', 'landmark', 'success', 2],
-		['order-service', 'v1.8.3', 'Order Domain', 'shopping-cart', 'success', 15],
-		['user-profile', 'v1.9.0', 'User Domain', 'users', 'success', 22],
-		['notification-worker', 'v1.2.7', 'Notification Domain', 'bell', 'failed', 60],
-		['inventory-service', 'v1.6.3', 'Inventory Domain', 'package', 'success', 37]
-	];
+/**
+ * The day's deployment log.
+ *
+ * Twenty-nine runs so the page's paging, tabs and per-domain donut all have something
+ * real to divide up — a five-row fixture makes every one of those look correct by
+ * accident. Each seed is `[service, version, domain, environment, status, trigger,
+ * minutes ago, duration seconds]`; `null` duration means it is still running.
+ */
+type DeploymentSeed = [
+	string,
+	string,
+	string,
+	EnvironmentId,
+	Deployment['status'],
+	DeploymentTrigger,
+	number,
+	number | null
+];
 
-	return seeds.map(([service, version, domainName, icon, status, minutes]) => ({
-		id: `${service}@${version}`,
-		service,
-		version,
-		domainId: slugify(domainName),
-		domainName,
-		icon,
-		status,
-		deployedAt: minutesAgo(now, minutes)
-	}));
+const DEPLOYMENT_SEEDS: DeploymentSeed[] = [
+	['payment-api', 'v2.4.2', 'Payment Domain', 'production', 'success', 'ci-cd', 2, 204],
+	['order-service', 'v1.8.4', 'Order Domain', 'production', 'success', 'ci-cd', 15, 138],
+	['user-profile', 'v1.9.1', 'User Domain', 'staging', 'success', 'ci-cd', 22, 165],
+	[
+		'inventory-service',
+		'v1.6.4',
+		'Inventory Domain',
+		'production',
+		'in-progress',
+		'ci-cd',
+		25,
+		null
+	],
+	['notification-worker', 'v1.2.8', 'Notification Domain', 'production', 'failed', 'ci-cd', 35, 72],
+	['payment-gateway', 'v1.6.3', 'Payment Domain', 'production', 'success', 'gitops', 45, 242],
+	['email-service', 'v2.1.0', 'Shared Domain', 'production', 'success', 'ci-cd', 60, 125],
+	['order-worker', 'v1.3.6', 'Order Domain', 'staging', 'failed', 'ci-cd', 75, 58],
+	['payment-reconciler', 'v3.0.1', 'Payment Domain', 'production', 'success', 'ci-cd', 92, 311],
+	['user-auth', 'v2.2.0', 'User Domain', 'production', 'success', 'gitops', 108, 187],
+	['inventory-sync', 'v1.1.9', 'Inventory Domain', 'staging', 'success', 'ci-cd', 121, 96],
+	['order-api', 'v1.8.4', 'Order Domain', 'production', 'in-progress', 'ci-cd', 134, null],
+	['payment-ledger', 'v2.0.5', 'Payment Domain', 'staging', 'success', 'ci-cd', 150, 221],
+	['notification-api', 'v1.4.2', 'Notification Domain', 'staging', 'success', 'manual', 168, 143],
+	['user-preferences', 'v1.0.7', 'User Domain', 'development', 'success', 'ci-cd', 185, 88],
+	['order-events', 'v2.3.1', 'Order Domain', 'production', 'success', 'gitops', 201, 176],
+	['payment-webhooks', 'v1.9.4', 'Payment Domain', 'production', 'success', 'ci-cd', 218, 154],
+	['inventory-api', 'v1.6.4', 'Inventory Domain', 'production', 'success', 'ci-cd', 236, 209],
+	['shared-config', 'v4.1.0', 'Shared Domain', 'production', 'success', 'gitops', 255, 64],
+	['user-sessions', 'v2.2.1', 'User Domain', 'staging', 'success', 'ci-cd', 271, 118],
+	['payment-api', 'v2.4.1', 'Payment Domain', 'staging', 'success', 'ci-cd', 288, 198],
+	['order-fulfilment', 'v1.5.2', 'Order Domain', 'production', 'success', 'ci-cd', 305, 262],
+	[
+		'payment-fraud-check',
+		'v1.2.0',
+		'Payment Domain',
+		'production',
+		'in-progress',
+		'ci-cd',
+		322,
+		null
+	],
+	['user-profile', 'v1.9.0', 'User Domain', 'production', 'success', 'ci-cd', 340, 171],
+	['inventory-reserve', 'v1.0.3', 'Inventory Domain', 'development', 'success', 'manual', 358, 79],
+	['order-service', 'v1.8.3', 'Order Domain', 'development', 'success', 'ci-cd', 372, 131],
+	['payment-refunds', 'v1.7.8', 'Payment Domain', 'production', 'success', 'gitops', 390, 233],
+	['payment-settlements', 'v2.1.4', 'Payment Domain', 'production', 'success', 'ci-cd', 408, 285],
+	['order-pricing', 'v1.4.0', 'Order Domain', 'staging', 'success', 'ci-cd', 425, 147]
+];
+
+/** Who ran it. A pipeline for automated triggers, a person for a manual one. */
+const TRIGGER_ACTORS: Record<DeploymentTrigger, string> = {
+	'ci-cd': 'CI/CD Pipeline',
+	gitops: 'GitOps',
+	manual: 'Alex Morgan',
+	rollback: 'CI/CD Pipeline'
+};
+
+/**
+ * Materialise the seeds into full deployments.
+ *
+ * References count down from a fixed number in the same order as the seeds, so
+ * `#17892` is always the newest run and the list reads like a real build log.
+ */
+function listDeploymentLog(now: Date): Deployment[] {
+	const icons = new Map(listDomains().map((domain) => [domain.id, domain.icon]));
+
+	return DEPLOYMENT_SEEDS.map(
+		([service, version, domainName, environment, status, trigger, minutes, duration], index) => {
+			const domainId = slugify(domainName);
+
+			return {
+				id: `dep-${17892 - index}`,
+				reference: `#${17892 - index}`,
+				service,
+				version,
+				domainId,
+				domainName,
+				icon: icons.get(domainId) ?? 'package',
+				environment,
+				status,
+				trigger,
+				deployedBy: TRIGGER_ACTORS[trigger],
+				deployedAt: minutesAgo(now, minutes),
+				durationSeconds: duration
+			};
+		}
+	);
+}
+
+/** Newest first, which is the only order a deployment log is ever read in. */
+export function listDeployments(now: Date): Deployment[] {
+	return listDeploymentLog(now).sort((a, b) => Date.parse(b.deployedAt) - Date.parse(a.deployedAt));
 }
 
 /**
- * The owner filter's options, grouped out of the domain list.
+ * Points for the status-over-time chart.
  *
- * A real adapter answers this with `GROUP BY owner`; doing it here keeps the shape
- * of that answer — id, label, count — rather than making the caller group rows.
+ * Seeded like every other fixture: a chart that redraws differently on each refresh
+ * reports change that did not happen, which undermines the numbers printed beside it.
  */
-export function listOwners(): DomainOwner[] {
+export function buildStatusTrend(now: Date, buckets = 16): TimeSeries[] {
+	const shapes: Array<[string, string, number, number]> = [
+		['successful', 'Successful', 24, 0.14],
+		['in-progress', 'In Progress', 8, 0.3],
+		['failed', 'Failed', 2, 0.5]
+	];
+
+	return shapes.map(([id, label, centre, volatility]) => {
+		const values = buildSeries(`deploy:${id}`, centre, { volatility, floor: 0 }).values.slice(
+			0,
+			buckets
+		);
+
+		return {
+			id,
+			label,
+			points: values.map((value, index) => ({
+				label: clockLabel(now, (buckets - 1 - index) * 5),
+				value: Math.round(value)
+			})),
+			min: Math.min(...values),
+			max: Math.max(...values)
+		};
+	});
+}
+
+/** "09:15" for a point five-minute buckets back. */
+function clockLabel(now: Date, minutesBack: number): string {
+	const at = new Date(now.getTime() - minutesBack * 60_000);
+	return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+}
+
+/** "May 14" for a whole day back. */
+function dayLabel(now: Date, daysBack: number): string {
+	const at = new Date(now.getTime() - daysBack * 86_400_000);
+	return at.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+}
+
+const GRAIN_DAYS: Record<TrendGrain, number> = { daily: 1, weekly: 7, monthly: 30 };
+
+/**
+ * Deployment count and mean duration bucketed at the requested grain.
+ *
+ * The newest bucket is pinned to today's actual totals so the charts and the tiles
+ * above them cannot print different numbers for the same day.
+ */
+export function buildDeploymentTrends(
+	now: Date,
+	grain: TrendGrain,
+	buckets = 7
+): { frequency: TimeSeries; meanDuration: TimeSeries } {
+	const log = listDeploymentLog(now);
+	const today = log.length;
+	const finished = log.filter((one) => one.durationSeconds !== null);
+	const meanToday = Math.round(
+		finished.reduce((sum, one) => sum + (one.durationSeconds ?? 0), 0) / (finished.length || 1)
+	);
+
+	const counts = buildSeries(`deploy:frequency:${grain}`, today, {
+		volatility: 0.18,
+		floor: 1
+	}).values.slice(0, buckets);
+	const durations = buildSeries(`deploy:duration:${grain}`, meanToday, {
+		volatility: 0.12,
+		drift: -0.2,
+		floor: 30
+	}).values.slice(0, buckets);
+
+	const step = GRAIN_DAYS[grain];
+	const labels = Array.from({ length: buckets }, (_, index) =>
+		dayLabel(now, (buckets - 1 - index) * step)
+	);
+
+	const frequency = toTrend('frequency', 'Deployments', labels, counts.map(Math.round));
+	const meanDuration = toTrend('mean-duration', 'Mean time', labels, durations.map(Math.round));
+
+	// Pin the last bucket so the chart agrees with the tiles above it.
+	frequency.points[frequency.points.length - 1].value = today;
+	meanDuration.points[meanDuration.points.length - 1].value = meanToday;
+
+	return { frequency: rebound(frequency), meanDuration: rebound(meanDuration) };
+}
+
+function toTrend(id: string, label: string, labels: string[], values: number[]): TimeSeries {
+	return {
+		id,
+		label,
+		points: labels.map((point, index) => ({ label: point, value: values[index] ?? 0 })),
+		min: 0,
+		max: 0
+	};
+}
+
+/** Recompute bounds after a point was pinned, so the chart still scales to fit. */
+function rebound(series: TimeSeries): TimeSeries {
+	const values = series.points.map((point) => point.value);
+	return { ...series, min: Math.min(...values), max: Math.max(...values) };
+}
+
+/**
+ * The day's counts and rates, computed off the log.
+ *
+ * Derived rather than seeded so the six tiles cannot disagree with the twenty-nine
+ * rows below them — the commonest way a dashboard tells two stories at once.
+ *
+ * The against-yesterday figures are seeded, because a one-day fixture has no
+ * yesterday to compare with. They are the only invented numbers here.
+ */
+export function readDeploymentSummary(now: Date): DeploymentSummary {
+	const log = listDeploymentLog(now);
+	const count = (...statuses: Deployment['status'][]) =>
+		log.filter((one) => statuses.includes(one.status)).length;
+
+	const finished = log.filter((one) => one.durationSeconds !== null);
+	const failed = count('failed', 'rolled-back');
+
+	return {
+		total: log.length,
+		domainCount: new Set(log.map((one) => one.domainId)).size,
+		successful: count('success'),
+		inProgress: count('in-progress'),
+		failed,
+		meanDurationSeconds: Math.round(
+			finished.reduce((sum, one) => sum + (one.durationSeconds ?? 0), 0) / (finished.length || 1)
+		),
+		changeFailureRatePct: log.length === 0 ? 0 : (failed / log.length) * 100,
+		meanDurationChangePct: -18,
+		changeFailureRateChangePct: -0.6,
+		totalChangePct: 26
+	};
+}
+
+/**
+ * Deployments per domain, worst-represented last.
+ *
+ * The accent comes from the domain itself, so the donut and the legend cannot tint
+ * the same domain differently — identity, not health, exactly as on the domain table.
+ */
+export function readDeploymentBreakdown(now: Date): DomainBreakdown {
+	const accents = new Map(listDomains().map((domain) => [domain.id, domain.accent]));
+	const log = listDeploymentLog(now);
+
+	const grouped = new Map<string, { label: string; count: number }>();
+	for (const one of log) {
+		const entry = grouped.get(one.domainId) ?? { label: one.domainName, count: 0 };
+		entry.count += 1;
+		grouped.set(one.domainId, entry);
+	}
+
+	const slices = [...grouped.entries()]
+		.map(([domainId, entry]) => ({
+			domainId,
+			label: entry.label,
+			accent: accents.get(domainId) ?? 'slate',
+			count: entry.count,
+			// One decimal: with 29 runs, whole percents put two different counts on the
+			// same number and the legend stops adding up.
+			percentage: log.length === 0 ? 0 : Math.round((entry.count / log.length) * 1000) / 10
+		}))
+		.sort((a, b) => b.count - a.count);
+
+	return { total: log.length, slices };
+}
+
+/**
+ * The domain filter's options, counted over deployments rather than domains.
+ *
+ * A domain with no deployments today is deliberately absent: an option that always
+ * returns an empty table is a dead control.
+ */
+export function listDeployingDomains(now: Date): FacetOption[] {
+	return readDeploymentBreakdown(now)
+		.slices.map((slice) => ({ id: slice.domainId, label: slice.label, count: slice.count }))
+		.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
+ * Patterns worth a reader's attention.
+ *
+ * Each is derived from the log and states the number that triggered it, so an
+ * insight cannot outlive the condition it describes.
+ */
+export function listDeploymentInsights(now: Date): DeploymentInsight[] {
+	const log = listDeploymentLog(now);
+	const summary = readDeploymentSummary(now);
+	const insights: DeploymentInsight[] = [];
+
+	const FAILURE_THRESHOLD_PCT = 1;
+	if (summary.changeFailureRatePct > FAILURE_THRESHOLD_PCT) {
+		insights.push({
+			id: 'change-failure-rate',
+			title: 'High Change Failure Rate',
+			detail: `${summary.changeFailureRatePct.toFixed(1)}% failure rate is above the ${FAILURE_THRESHOLD_PCT}% threshold`,
+			severity: 'critical',
+			icon: 'shield-alert'
+		});
+	}
+
+	const SLOW_SECONDS = 300;
+	const slow = new Set(
+		log.filter((one) => (one.durationSeconds ?? 0) > SLOW_SECONDS).map((one) => one.service)
+	);
+	if (slow.size > 0) {
+		insights.push({
+			id: 'slow-deployments',
+			title: 'Slowest Deployments',
+			detail: `${slow.size} service${slow.size === 1 ? ' has' : 's have'} deployment time > ${SLOW_SECONDS / 60}m`,
+			severity: 'warning',
+			icon: 'gauge'
+		});
+	}
+
+	const failures = new Map<string, number>();
+	for (const one of log) {
+		if (one.status !== 'failed') continue;
+		failures.set(one.service, (failures.get(one.service) ?? 0) + 1);
+	}
+	const repeat = [...failures.values()].filter((count) => count >= 1).length;
+	if (repeat > 0) {
+		insights.push({
+			id: 'frequent-failures',
+			title: 'Frequent Failures',
+			detail: `${repeat} service${repeat === 1 ? '' : 's'} failed today`,
+			severity: 'info',
+			icon: 'repeat'
+		});
+	}
+
+	return insights;
+}
+
+export function listOwners(): FacetOption[] {
 	const counts = new Map<string, number>();
 	for (const domain of listDomains()) {
 		counts.set(domain.owner, (counts.get(domain.owner) ?? 0) + 1);
 	}
 
 	return [...counts.entries()]
-		.map(([owner, domainCount]) => ({ id: owner, label: owner, domainCount }))
+		.map(([owner, count]) => ({ id: owner, label: owner, count }))
 		.sort((a, b) => a.label.localeCompare(b.label));
 }
 

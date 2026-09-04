@@ -1,10 +1,10 @@
 <script lang="ts">
-	import DomainPager from '../DomainPager.svelte';
+	import TablePager from '../TablePager.svelte';
 	import DomainRowCard from '../DomainRowCard.svelte';
 	import DomainTable from '../DomainTable.svelte';
 	import DomainToolbar from '../DomainToolbar.svelte';
 	import type { ViewMode } from '../DomainToolbar.svelte';
-	import type { DomainOwner, DomainPage } from '$lib/platform/types';
+	import type { FacetOption, DomainPage } from '$lib/platform/types';
 	import type { DomainSortKey, DomainStatusFilter, SelectOption } from '$lib/platform/query';
 
 	/**
@@ -21,7 +21,7 @@
 		statusOptions: SelectOption<DomainStatusFilter>[];
 		sortOptions: SelectOption<DomainSortKey>[];
 		pageSizes: SelectOption<string>[];
-		owners: DomainOwner[];
+		owners: FacetOption[];
 		search: string;
 		status: DomainStatusFilter;
 		owner: string;
@@ -95,5 +95,5 @@
 		</div>
 	{/if}
 
-	<DomainPager page={result.page} {onPageChange} {pageSizes} {onPageSizeChange} />
+	<TablePager page={result.page} {onPageChange} {pageSizes} {onPageSizeChange} />
 </section>

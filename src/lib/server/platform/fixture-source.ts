@@ -2,29 +2,42 @@ import type {
 	ActivitySummary,
 	CurrentUser,
 	Deployment,
+	DeploymentInsight,
+	DeploymentPage,
+	DeploymentSummary,
+	DomainBreakdown,
 	DomainChange,
-	DomainOwner,
 	DomainPage,
 	DomainStatusCounts,
+	FacetOption,
 	FavoriteItem,
 	Incident,
 	InfrastructureGroup,
-	RateObservation
+	RateObservation,
+	TimeSeries,
+	TrendGrain
 } from '$lib/platform/types';
 import type { DomainQuery, PlatformScope } from '$lib/platform/query';
-import type { PlatformSource, WorkspaceSource } from './source';
+import type { DeploymentQuery } from '$lib/platform/deployments';
+import type { DeploymentSource, PlatformSource, WorkspaceSource } from './source';
 import {
 	CURRENT_USER,
+	buildDeploymentTrends,
+	buildStatusTrend,
 	listActivitySummary,
+	listDeployingDomains,
+	listDeploymentInsights,
 	listDeployments,
 	listDomains,
 	listFavorites,
 	listIncidents,
 	listInfrastructure,
 	listOwners,
-	listRecentChanges
+	listRecentChanges,
+	readDeploymentBreakdown,
+	readDeploymentSummary
 } from './fixtures';
-import { queryDomainsInMemory } from './in-memory-query';
+import { queryDeploymentsInMemory, queryDomainsInMemory } from './in-memory-query';
 import { buildSeries } from './series';
 
 /**
@@ -107,17 +120,11 @@ export class FixturePlatformSource implements PlatformSource {
 			.slice(0, limit);
 	}
 
-	async listDeployments(_scope: PlatformScope, limit: number): Promise<Deployment[]> {
-		return listDeployments(new Date())
-			.sort((a, b) => Date.parse(b.deployedAt) - Date.parse(a.deployedAt))
-			.slice(0, limit);
-	}
-
 	async listInfrastructure(_scope: PlatformScope): Promise<InfrastructureGroup[]> {
 		return listInfrastructure();
 	}
 
-	async listOwners(_scope: PlatformScope): Promise<DomainOwner[]> {
+	async listOwners(_scope: PlatformScope): Promise<FacetOption[]> {
 		return listOwners();
 	}
 
@@ -129,6 +136,51 @@ export class FixturePlatformSource implements PlatformSource {
 
 	async readActivitySummary(_scope: PlatformScope): Promise<ActivitySummary> {
 		return listActivitySummary();
+	}
+}
+
+/**
+ * The stand-in CI/CD feed.
+ *
+ * Separate from the platform source in the same way the interfaces are, so replacing
+ * one with a real Argo or GitHub Actions adapter does not touch the other.
+ */
+export class FixtureDeploymentSource implements DeploymentSource {
+	readonly id = 'fixture';
+
+	async queryDeployments(_scope: PlatformScope, query: DeploymentQuery): Promise<DeploymentPage> {
+		return queryDeploymentsInMemory(listDeployments(new Date()), query, new Date());
+	}
+
+	async listDeployments(_scope: PlatformScope, limit: number): Promise<Deployment[]> {
+		return listDeployments(new Date()).slice(0, limit);
+	}
+
+	async readSummary(_scope: PlatformScope): Promise<DeploymentSummary> {
+		return readDeploymentSummary(new Date());
+	}
+
+	async readDomainBreakdown(_scope: PlatformScope): Promise<DomainBreakdown> {
+		return readDeploymentBreakdown(new Date());
+	}
+
+	async readStatusTrend(_scope: PlatformScope): Promise<TimeSeries[]> {
+		return buildStatusTrend(new Date());
+	}
+
+	async readTrends(
+		_scope: PlatformScope,
+		grain: TrendGrain
+	): Promise<{ frequency: TimeSeries; meanDuration: TimeSeries }> {
+		return buildDeploymentTrends(new Date(), grain);
+	}
+
+	async listInsights(_scope: PlatformScope): Promise<DeploymentInsight[]> {
+		return listDeploymentInsights(new Date());
+	}
+
+	async listDeployingDomains(_scope: PlatformScope): Promise<FacetOption[]> {
+		return listDeployingDomains(new Date());
 	}
 }
 

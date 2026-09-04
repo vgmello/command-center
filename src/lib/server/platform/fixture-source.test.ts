@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { FixturePlatformSource, FixtureWorkspaceSource } from './fixture-source';
+import {
+	FixtureDeploymentSource,
+	FixturePlatformSource,
+	FixtureWorkspaceSource
+} from './fixture-source';
 import { listDomains } from './fixtures';
 import { statusFromScore } from '$lib/platform/health';
 import { ALL_OWNERS } from '$lib/platform/query';
@@ -7,6 +11,7 @@ import type { PlatformScope } from '$lib/platform/query';
 
 const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
 const source = new FixturePlatformSource();
+const deployments = new FixtureDeploymentSource();
 
 describe('the fixture domain set', () => {
 	const domains = listDomains();
@@ -60,10 +65,10 @@ describe('FixturePlatformSource', () => {
 	});
 
 	test('honours the deployment limit and returns the newest first', async () => {
-		const deployments = await source.listDeployments(scope, 3);
-		const times = deployments.map((deployment) => Date.parse(deployment.deployedAt));
+		const log = await deployments.listDeployments(scope, 3);
+		const times = log.map((deployment) => Date.parse(deployment.deployedAt));
 
-		expect(deployments).toHaveLength(3);
+		expect(log).toHaveLength(3);
 		expect(times).toEqual([...times].sort((a, b) => b - a));
 	});
 

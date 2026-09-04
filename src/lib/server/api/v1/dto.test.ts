@@ -10,12 +10,16 @@ import {
 	toSystemStatusDto
 } from './dto';
 import { listDomains } from '$lib/server/platform/fixtures';
-import { FixturePlatformSource } from '$lib/server/platform/fixture-source';
+import {
+	FixtureDeploymentSource,
+	FixturePlatformSource
+} from '$lib/server/platform/fixture-source';
 import { ALL_OWNERS } from '$lib/platform/query';
 import type { PlatformScope } from '$lib/platform/query';
 
 const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
 const source = new FixturePlatformSource();
+const deployments = new FixtureDeploymentSource();
 
 /**
  * These assert the wire shape *literally*, key by key.
@@ -116,9 +120,35 @@ describe('v1 collection shapes', () => {
 		expect(toMetricDto(percent!).unit).toBe('%');
 	});
 
+	test('a deployment publishes its whole shape, key by key', async () => {
+		const [deployment] = await deployments.listDeployments(scope, 1);
+
+		expect(Object.keys(toDeploymentDto(deployment)).sort()).toEqual([
+			'deployedAt',
+			'deployedBy',
+			'domain',
+			'durationSeconds',
+			'environment',
+			'id',
+			'reference',
+			'service',
+			'status',
+			'trigger',
+			'version'
+		]);
+	});
+
+	test('a running deployment reports no duration rather than a zero one', async () => {
+		const log = await deployments.listDeployments(scope, 50);
+		const running = log.find((one) => one.status === 'in-progress');
+
+		expect(running).toBeDefined();
+		expect(toDeploymentDto(running!).durationSeconds).toBeNull();
+	});
+
 	test('incidents and deployments nest the domain as a reference', async () => {
 		const [incident] = await source.listIncidents(scope, 1);
-		const [deployment] = await source.listDeployments(scope, 1);
+		const [deployment] = await deployments.listDeployments(scope, 1);
 
 		expect(toIncidentDto(incident).domain).toEqual({
 			id: incident.domainId,

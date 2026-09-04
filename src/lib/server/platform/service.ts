@@ -2,20 +2,25 @@ import type { PlatformScope, DomainQuery } from '$lib/platform/query';
 import type {
 	ActivitySummary,
 	Deployment,
+	DeploymentPage,
+	DeploymentsSnapshot,
 	DomainChange,
-	DomainOwner,
 	DomainPage,
 	DomainStatusCounts,
 	DomainsSnapshot,
+	FacetOption,
 	Incident,
 	InfrastructureGroup,
 	OverviewSnapshot,
 	RateObservation,
-	SystemStatus
+	SystemStatus,
+	TrendGrain
 } from '$lib/platform/types';
-import { platformSource } from './index';
+import type { DeploymentQuery } from '$lib/platform/deployments';
+import { deploymentSource, platformSource } from './index';
 import { DEPLOYMENT_LIMIT, INCIDENT_LIMIT, buildOverview, buildSystemStatus } from './snapshot';
 import { RECENT_CHANGE_LIMIT, buildDomainsSnapshot } from './domains-view';
+import { buildDeploymentsSnapshot } from './deployments-view';
 
 /**
  * The application's in-process API: one function per thing a caller can ask for.
@@ -54,14 +59,21 @@ export function readDeployments(
 	scope: PlatformScope,
 	limit = DEPLOYMENT_LIMIT
 ): Promise<Deployment[]> {
-	return platformSource().listDeployments(scope, limit);
+	return deploymentSource().listDeployments(scope, limit);
+}
+
+export function readDeploymentPage(
+	scope: PlatformScope,
+	query: DeploymentQuery
+): Promise<DeploymentPage> {
+	return deploymentSource().queryDeployments(scope, query);
 }
 
 export function readInfrastructure(scope: PlatformScope): Promise<InfrastructureGroup[]> {
 	return platformSource().listInfrastructure(scope);
 }
 
-export function readDomainOwners(scope: PlatformScope): Promise<DomainOwner[]> {
+export function readFacetOptions(scope: PlatformScope): Promise<FacetOption[]> {
 	return platformSource().listOwners(scope);
 }
 
@@ -88,7 +100,7 @@ export async function readSystemStatus(scope: PlatformScope): Promise<SystemStat
  * resources it is composed from, which stay stable while the screen changes.
  */
 export function readOverview(scope: PlatformScope): Promise<OverviewSnapshot> {
-	return buildOverview(platformSource(), scope);
+	return buildOverview(platformSource(), deploymentSource(), scope);
 }
 
 /**
@@ -98,4 +110,12 @@ export function readOverview(scope: PlatformScope): Promise<OverviewSnapshot> {
  */
 export function readDomainsView(scope: PlatformScope): Promise<DomainsSnapshot> {
 	return buildDomainsSnapshot(platformSource(), scope);
+}
+
+/** The deployments page's aggregate. Screen-shaped, and unexposed for the same reason. */
+export function readDeploymentsView(
+	scope: PlatformScope,
+	grain: TrendGrain = 'daily'
+): Promise<DeploymentsSnapshot> {
+	return buildDeploymentsSnapshot(deploymentSource(), scope, grain);
 }

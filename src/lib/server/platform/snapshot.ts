@@ -9,7 +9,7 @@ import type {
 	SystemStatus
 } from '$lib/platform/types';
 import type { PlatformScope } from '$lib/platform/query';
-import type { PlatformSource } from './source';
+import type { DeploymentSource, PlatformSource } from './source';
 import { STATUS_LABELS, buildDistribution } from '$lib/platform/health';
 import { formatChange, formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
 
@@ -49,7 +49,7 @@ export function buildCountTiles(counts: DomainStatusCounts): CountTile[] {
 			value: total,
 			percentage: null,
 			caption: 'Across platform',
-			status: null
+			tone: null
 		},
 		...(['healthy', 'degraded', 'down'] as const).map((status) => ({
 			id: status,
@@ -58,7 +58,7 @@ export function buildCountTiles(counts: DomainStatusCounts): CountTile[] {
 			value: counts[status],
 			percentage: share(counts[status]),
 			caption: null,
-			status
+			tone: status
 		}))
 	];
 }
@@ -154,19 +154,24 @@ export function buildSystemStatus(counts: DomainStatusCounts): SystemStatus {
 /**
  * Everything the overview page needs except the paged domain table.
  *
+ * Takes both ports it needs rather than reaching for a resolver: the assembler is
+ * pure orchestration, and a function that fetches its own collaborators cannot be
+ * handed a stub in a test.
+ *
  * The reads run concurrently: they are independent, and issuing them in sequence
  * would make the page as slow as the sum of its panels rather than its slowest one.
  */
 export async function buildOverview(
 	source: PlatformSource,
+	deployments: DeploymentSource,
 	scope: PlatformScope,
 	now: Date = new Date()
 ): Promise<OverviewSnapshot> {
-	const [counts, rates, incidents, deployments, infrastructure] = await Promise.all([
+	const [counts, rates, incidents, recentDeployments, infrastructure] = await Promise.all([
 		source.readDomainStatusCounts(scope),
 		source.readRates(scope),
 		source.listIncidents(scope, INCIDENT_LIMIT),
-		source.listDeployments(scope, DEPLOYMENT_LIMIT),
+		deployments.listDeployments(scope, DEPLOYMENT_LIMIT),
 		source.listInfrastructure(scope)
 	]);
 
@@ -178,7 +183,7 @@ export async function buildOverview(
 		metrics: buildMetrics(rates, scope.timeRange),
 		distribution: buildDistribution(counts),
 		incidents,
-		deployments,
+		deployments: recentDeployments,
 		infrastructure,
 		system: buildSystemStatus(counts)
 	};

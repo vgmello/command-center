@@ -3,7 +3,7 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { ALL_OWNERS } from '$lib/platform/query';
-	import type { DomainOwner } from '$lib/platform/types';
+	import type { FacetOption } from '$lib/platform/types';
 	import type { DomainSortKey, DomainStatusFilter, SelectOption } from '$lib/platform/query';
 
 	export type ViewMode = 'grid' | 'list';
@@ -16,7 +16,7 @@
 		 * Owners, when the screen offers that filter. Omitted rather than passed empty
 		 * on screens that do not: an empty list would render a select with nothing in it.
 		 */
-		owners?: DomainOwner[];
+		owners?: FacetOption[];
 		search: string;
 		status: DomainStatusFilter;
 		owner?: string;
@@ -106,7 +106,7 @@
 					<Select.Item value={option.id} label={option.label}>
 						<span class="flex w-full items-center justify-between gap-4">
 							<span>{option.label}</span>
-							<span class="tabular text-[11px] text-muted-foreground">{option.domainCount}</span>
+							<span class="tabular text-[11px] text-muted-foreground">{option.count}</span>
 						</span>
 					</Select.Item>
 				{/each}

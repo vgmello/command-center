@@ -1,17 +1,24 @@
 import type {
 	ActivitySummary,
 	CurrentUser,
+	DeploymentInsight,
+	DeploymentPage,
+	DeploymentSummary,
 	Deployment,
+	DomainBreakdown,
 	DomainChange,
-	DomainOwner,
 	DomainPage,
 	DomainStatusCounts,
+	FacetOption,
 	FavoriteItem,
 	Incident,
 	InfrastructureGroup,
-	RateObservation
+	RateObservation,
+	TimeSeries,
+	TrendGrain
 } from '$lib/platform/types';
 import type { DomainQuery, PlatformScope } from '$lib/platform/query';
+import type { DeploymentQuery } from '$lib/platform/deployments';
 
 /**
  * The seam between this app and wherever the observations actually come from.
@@ -50,9 +57,6 @@ export interface PlatformSource {
 	/** Most recent open incidents, worst first. */
 	listIncidents(scope: PlatformScope, limit: number): Promise<Incident[]>;
 
-	/** Most recent deployments, newest first. */
-	listDeployments(scope: PlatformScope, limit: number): Promise<Deployment[]>;
-
 	/** Infrastructure counts by kind. */
 	listInfrastructure(scope: PlatformScope): Promise<InfrastructureGroup[]>;
 
@@ -63,7 +67,7 @@ export interface PlatformSource {
 	 * merged and renamed without a deploy. A hardcoded list would offer a filter that
 	 * matches nothing the week after a reorg.
 	 */
-	listOwners(scope: PlatformScope): Promise<DomainOwner[]>;
+	listOwners(scope: PlatformScope): Promise<FacetOption[]>;
 
 	/** Domains whose health score moved most recently, newest first. */
 	listRecentChanges(scope: PlatformScope, limit: number): Promise<DomainChange[]>;
@@ -76,6 +80,60 @@ export interface PlatformSource {
 	 * buy an adapter nothing and cost it a second round trip.
 	 */
 	readActivitySummary(scope: PlatformScope): Promise<ActivitySummary>;
+}
+
+/**
+ * What has shipped, and how it went.
+ *
+ * A third port rather than more methods on `PlatformSource`, for the same reason
+ * `WorkspaceSource` is separate: this data comes from a CI/CD system, which is a
+ * different upstream on a different release cycle from the telemetry pipeline and
+ * will be replaced independently of it. Folding the two together would force a
+ * change to either to move both, and would push `PlatformSource` past the point
+ * where its method list still describes one responsibility.
+ *
+ * The same two rules shape it: ask for the answer rather than the rows, and push
+ * filtering and paging down.
+ */
+export interface DeploymentSource {
+	readonly id: string;
+
+	/** One page of deployments, already filtered and sliced by the source. */
+	queryDeployments(scope: PlatformScope, query: DeploymentQuery): Promise<DeploymentPage>;
+
+	/** Most recent deployments, newest first. Feeds the overview and the recent strip. */
+	listDeployments(scope: PlatformScope, limit: number): Promise<Deployment[]>;
+
+	/**
+	 * The period's counts and rates in one call.
+	 *
+	 * One aggregation over one set of runs. Six separate reads would make an adapter
+	 * scan the same rows six times to answer questions that always render together.
+	 */
+	readSummary(scope: PlatformScope): Promise<DeploymentSummary>;
+
+	/** Deployments per domain, for the donut and its legend. */
+	readDomainBreakdown(scope: PlatformScope): Promise<DomainBreakdown>;
+
+	/** Successful / in-progress / failed plotted across the scope's window. */
+	readStatusTrend(scope: PlatformScope): Promise<TimeSeries[]>;
+
+	/**
+	 * Deployment count and mean duration over time, at the requested grain.
+	 *
+	 * Both in one call because they are the same bucketing of the same runs, differing
+	 * only in what is measured per bucket.
+	 */
+	readTrends(
+		scope: PlatformScope,
+		grain: TrendGrain
+	): Promise<{ frequency: TimeSeries; meanDuration: TimeSeries }>;
+
+	/** Patterns worth flagging: failure rate, slow services, repeat offenders. */
+	listInsights(scope: PlatformScope): Promise<DeploymentInsight[]>;
+
+	/** The domain filter's options, counted over deployments rather than domains. */
+	listDeployingDomains(scope: PlatformScope): Promise<FacetOption[]>;
 }
 
 /**

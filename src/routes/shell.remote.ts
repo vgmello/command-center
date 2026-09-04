@@ -4,12 +4,19 @@ import {
 	domainSortOptions,
 	domainStatusFilterOptions
 } from '$lib/platform/query';
+import {
+	deploymentPageSizeOptions,
+	deploymentStateOptions,
+	deploymentWindowOptions,
+	trendGrainOptions
+} from '$lib/platform/deployments';
 import { describeHealthThresholds } from '$lib/platform/health';
 import { ENVIRONMENTS, NAV_ITEMS, TIME_RANGES } from '$lib/server/platform/fixtures';
 import { scopeSchema } from '$lib/server/api/schemas';
 import { workspaceSource } from '$lib/server/platform';
 import { DEFAULT_PAGE_SIZE } from '$lib/server/platform/snapshot';
 import { DOMAINS_PAGE_SIZE } from '$lib/server/platform/domains-view';
+import { DEPLOYMENTS_PAGE_SIZE } from '$lib/server/platform/deployments-view';
 import { readSystemStatus } from '$lib/server/platform/service';
 
 /*
@@ -48,11 +55,16 @@ export const getShell = query(async () => {
 		domainStatusFilters: domainStatusFilterOptions(),
 		domainSortOptions: domainSortOptions(),
 		domainPageSizes: domainPageSizeOptions(),
+		deploymentStates: deploymentStateOptions(),
+		deploymentWindows: deploymentWindowOptions(),
+		deploymentPageSizes: deploymentPageSizeOptions(),
+		trendGrains: trendGrainOptions(),
 		healthThresholds: describeHealthThresholds(),
 		/** The overview's compact summary of the table. */
 		defaultPageSize: DEFAULT_PAGE_SIZE,
 		/** The domains page's full table, which has room for more rows. */
-		domainsPageSize: DOMAINS_PAGE_SIZE
+		domainsPageSize: DOMAINS_PAGE_SIZE,
+		deploymentsPageSize: DEPLOYMENTS_PAGE_SIZE
 	};
 });
 

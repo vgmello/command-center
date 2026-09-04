@@ -15,11 +15,14 @@ import CircleCheck from '@lucide/svelte/icons/circle-check';
 import CircleHelp from '@lucide/svelte/icons/circle-help';
 import CircleX from '@lucide/svelte/icons/circle-x';
 import ClipboardCheck from '@lucide/svelte/icons/clipboard-check';
+import Clock from '@lucide/svelte/icons/clock';
+import Calendar from '@lucide/svelte/icons/calendar';
 import Cloud from '@lucide/svelte/icons/cloud';
 import Database from '@lucide/svelte/icons/database';
 import Ellipsis from '@lucide/svelte/icons/ellipsis';
 import FileChartColumn from '@lucide/svelte/icons/file-chart-column';
 import FileText from '@lucide/svelte/icons/file-text';
+import Funnel from '@lucide/svelte/icons/funnel';
 import Gauge from '@lucide/svelte/icons/gauge';
 import Gift from '@lucide/svelte/icons/gift';
 import GitBranch from '@lucide/svelte/icons/git-branch';
@@ -83,11 +86,14 @@ const ICONS = {
 	'circle-help': CircleHelp,
 	'circle-x': CircleX,
 	'clipboard-check': ClipboardCheck,
+	calendar: Calendar,
+	clock: Clock,
 	cloud: Cloud,
 	database: Database,
 	ellipsis: Ellipsis,
 	'file-chart-column': FileChartColumn,
 	'file-text': FileText,
+	funnel: Funnel,
 	gauge: Gauge,
 	gift: Gift,
 	'git-branch': GitBranch,
