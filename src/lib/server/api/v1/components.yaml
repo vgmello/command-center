@@ -78,6 +78,17 @@ components:
         default: all
         maxLength: 120
         type: string
+    DomainSlug:
+      description: >-
+        The domain identifier, as returned by the domains collection. Static sub-paths such as
+        `summary` take precedence, so a domain may not be identified by one of those words.
+      in: path
+      name: slug
+      required: true
+      schema:
+        maxLength: 120
+        pattern: ^[a-z0-9][a-z0-9-]*$
+        type: string
     DomainSort:
       description: '`health-score` orders by criticality tier first, then by the worst score within the tier.'
       in: query
@@ -207,6 +218,97 @@ components:
         - incidentDomains
         - deploymentsToday
         - deploymentDomains
+      type: object
+    Cluster:
+      properties:
+        cpuPct:
+          maximum: 100
+          minimum: 0
+          type: number
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          enum:
+            - healthy
+            - degraded
+            - down
+            - unknown
+          type: string
+      required:
+        - id
+        - name
+        - cpuPct
+        - status
+      type: object
+    Cost:
+      properties:
+        categories:
+          items:
+            properties:
+              amount:
+                type: number
+              daily:
+                items:
+                  type: number
+                type: array
+              id:
+                type: string
+              label:
+                type: string
+            required:
+              - id
+              - label
+              - amount
+              - daily
+            type: object
+          type: array
+        days:
+          items:
+            type: string
+          type: array
+        forecast:
+          type: number
+        total:
+          type: number
+      required:
+        - days
+        - categories
+        - total
+        - forecast
+      type: object
+    Database:
+      properties:
+        connectionLimit:
+          type: integer
+        connections:
+          type: integer
+        cpuPct:
+          maximum: 100
+          minimum: 0
+          type: number
+        engine:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          enum:
+            - healthy
+            - degraded
+            - down
+            - unknown
+          type: string
+      required:
+        - id
+        - name
+        - engine
+        - status
+        - cpuPct
+        - connections
+        - connectionLimit
       type: object
     Dependencies:
       properties:
@@ -434,6 +536,57 @@ components:
         - direction
         - changedAt
       type: object
+    DomainDependencies:
+      properties:
+        criticalPath:
+          items:
+            type: string
+          type: array
+        downstream:
+          items:
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              status:
+                enum:
+                  - healthy
+                  - degraded
+                  - down
+                  - unknown
+                type: string
+            required:
+              - id
+              - name
+              - status
+            type: object
+          type: array
+        upstream:
+          items:
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              status:
+                enum:
+                  - healthy
+                  - degraded
+                  - down
+                  - unknown
+                type: string
+            required:
+              - id
+              - name
+              - status
+            type: object
+          type: array
+      required:
+        - upstream
+        - downstream
+        - criticalPath
+      type: object
     DomainPage:
       properties:
         data:
@@ -474,6 +627,41 @@ components:
         - degraded
         - down
         - unknown
+      type: object
+    DomainVitals:
+      properties:
+        errorRate:
+          $ref: '#/components/schemas/Series'
+        p95Latency:
+          $ref: '#/components/schemas/Series'
+        requestRate:
+          $ref: '#/components/schemas/Series'
+        services:
+          properties:
+            degraded:
+              type: integer
+            down:
+              type: integer
+            healthy:
+              type: integer
+          required:
+            - healthy
+            - degraded
+            - down
+          type: object
+        sloCompliancePct:
+          maximum: 100
+          minimum: 0
+          type: number
+        sloWindow:
+          type: string
+      required:
+        - requestRate
+        - errorRate
+        - p95Latency
+        - services
+        - sloCompliancePct
+        - sloWindow
       type: object
     Endpoint:
       properties:
@@ -593,6 +781,30 @@ components:
         - state
         - openedAt
       type: object
+    InfraAlert:
+      properties:
+        id:
+          type: string
+        raisedAt:
+          format: date-time
+          type: string
+        severity:
+          enum:
+            - critical
+            - warning
+            - info
+          type: string
+        subject:
+          type: string
+        title:
+          type: string
+      required:
+        - id
+        - severity
+        - title
+        - subject
+        - raisedAt
+      type: object
     Infrastructure:
       properties:
         count:
@@ -647,6 +859,52 @@ components:
         - change
         - polarity
       type: object
+    MetricInsight:
+      properties:
+        affects:
+          type: string
+        detail:
+          type: string
+        id:
+          type: string
+        kind:
+          enum:
+            - anomaly
+            - insight
+          type: string
+        severity:
+          enum:
+            - critical
+            - warning
+            - info
+          type: string
+        startedAt:
+          format: date-time
+          type: string
+        title:
+          type: string
+      required:
+        - id
+        - kind
+        - severity
+        - title
+        - detail
+        - affects
+        - startedAt
+      type: object
+    NodeCounts:
+      properties:
+        down:
+          type: integer
+        healthy:
+          type: integer
+        warning:
+          type: integer
+      required:
+        - healthy
+        - warning
+        - down
+      type: object
     NotFoundError:
       properties:
         error:
@@ -672,6 +930,106 @@ components:
         - pageSize
         - totalItems
         - totalPages
+      type: object
+    Queue:
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        lag:
+          type: integer
+        messages:
+          type: integer
+        name:
+          type: string
+        status:
+          enum:
+            - healthy
+            - degraded
+            - down
+            - unknown
+          type: string
+      required:
+        - id
+        - name
+        - kind
+        - status
+        - messages
+        - lag
+      type: object
+    Region:
+      properties:
+        id:
+          type: string
+        latitude:
+          maximum: 90
+          minimum: -90
+          type: number
+        longitude:
+          maximum: 180
+          minimum: -180
+          type: number
+        name:
+          type: string
+        nodeCount:
+          type: integer
+        status:
+          enum:
+            - healthy
+            - degraded
+            - down
+            - unknown
+          type: string
+      required:
+        - id
+        - name
+        - status
+        - latitude
+        - longitude
+        - nodeCount
+      type: object
+    ResourceUsage:
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        series:
+          $ref: '#/components/schemas/Series'
+        unit:
+          type: string
+        value:
+          type: number
+      required:
+        - id
+        - label
+        - value
+        - unit
+        - series
+      type: object
+    Series:
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        points:
+          items:
+            properties:
+              label:
+                type: string
+              value:
+                type: number
+            required:
+              - label
+              - value
+            type: object
+          type: array
+      required:
+        - id
+        - label
+        - points
       type: object
     Service:
       properties:
@@ -767,6 +1125,128 @@ components:
         - instancesHealthy
         - instancesTotal
         - activeAlerts
+      type: object
+    ServiceMetrics:
+      properties:
+        byEndpoint:
+          items:
+            $ref: '#/components/schemas/Series'
+          type: array
+        byInstance:
+          items:
+            $ref: '#/components/schemas/Series'
+          type: array
+        errorRate:
+          $ref: '#/components/schemas/Series'
+        p95Latency:
+          $ref: '#/components/schemas/Series'
+        requestRate:
+          $ref: '#/components/schemas/Series'
+        saturation:
+          items:
+            $ref: '#/components/schemas/Series'
+          type: array
+      required:
+        - requestRate
+        - p95Latency
+        - errorRate
+        - saturation
+        - byEndpoint
+        - byInstance
+      type: object
+    ServiceVitals:
+      properties:
+        errorRatePct:
+          minimum: 0
+          type: number
+        id:
+          type: string
+        instancesHealthy:
+          type: integer
+        instancesTotal:
+          type: integer
+        kind:
+          type: string
+        name:
+          type: string
+        p95LatencyMs:
+          minimum: 0
+          type: number
+        requestsPerSecond:
+          minimum: 0
+          type: number
+        status:
+          enum:
+            - healthy
+            - degraded
+            - down
+            - unknown
+          type: string
+      required:
+        - id
+        - name
+        - kind
+        - status
+        - requestsPerSecond
+        - errorRatePct
+        - p95LatencyMs
+        - instancesHealthy
+        - instancesTotal
+      type: object
+    SloBudget:
+      properties:
+        achievedPct:
+          maximum: 100
+          minimum: 0
+          type: number
+        burnPct:
+          minimum: 0
+          type: number
+        remainingMinutes:
+          minimum: 0
+          type: number
+        remainingPct:
+          maximum: 100
+          minimum: 0
+          type: number
+        targetPct:
+          maximum: 100
+          minimum: 0
+          type: number
+        window:
+          type: string
+      required:
+        - window
+        - achievedPct
+        - targetPct
+        - remainingPct
+        - remainingMinutes
+        - burnPct
+      type: object
+    Storage:
+      properties:
+        classes:
+          items:
+            properties:
+              bytes:
+                minimum: 0
+                type: number
+              id:
+                type: string
+              label:
+                type: string
+            required:
+              - id
+              - label
+              - bytes
+            type: object
+          type: array
+        totalBytes:
+          minimum: 0
+          type: number
+      required:
+        - totalBytes
+        - classes
       type: object
     SystemStatus:
       properties:

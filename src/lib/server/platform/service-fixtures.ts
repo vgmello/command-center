@@ -712,6 +712,7 @@ export function readSloBudget(slug: string, now: Date): SloBudget {
 		achievedPct,
 		targetPct,
 		remainingPct,
+		remainingMinutes: Math.floor(remainingMinutes),
 		remainingLabel: formatMinutes(remainingMinutes),
 		burnPct: Math.round((spentMinutes / allowanceMinutes) * 1000) / 10,
 		burnWindowLabel: `of the ${windowDays}-day budget`,

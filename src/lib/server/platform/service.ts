@@ -8,7 +8,10 @@ import type {
 	DomainChange,
 	DomainPage,
 	DomainStatusCounts,
+	Domain,
+	DomainDependencies,
 	DomainSnapshot,
+	DomainVitals,
 	DomainsSnapshot,
 	FacetOption,
 	Incident,
@@ -20,7 +23,10 @@ import type {
 	Service,
 	ServiceDependencies,
 	ServiceEndpoint,
+	MetricInsight,
 	ServiceMetricsSnapshot,
+	ServiceVitals,
+	SloBudget,
 	ServiceSnapshot,
 	SystemStatus,
 	TrendGrain
@@ -200,6 +206,108 @@ export function readServiceMetrics(
 /** The infrastructure page's aggregate. Screen-shaped, and unexposed for the same reason. */
 export function readInfrastructureView(scope: PlatformScope): Promise<InfrastructureSnapshot> {
 	return buildInfrastructureSnapshot(infrastructureSource(), scope);
+}
+
+/*
+ * The per-domain and per-infrastructure reads the public API exposes.
+ *
+ * Each returns `null` for an identifier that matches nothing, so an endpoint can answer
+ * 404 rather than an empty 200 — "there is no such domain" and "the domain has no
+ * dependencies" are different facts.
+ */
+
+export async function readDomainVitals(
+	scope: PlatformScope,
+	slug: string
+): Promise<DomainVitals | null> {
+	return platformSource().readDomainVitals(scope, slug);
+}
+
+export async function readDomainDependencies(
+	scope: PlatformScope,
+	slug: string
+): Promise<DomainDependencies | null> {
+	const source = platformSource();
+	if (!(await source.findDomain(scope, slug))) return null;
+	return source.readDomainDependencies(scope, slug);
+}
+
+export async function readDomainServices(
+	scope: PlatformScope,
+	slug: string
+): Promise<ServiceVitals[] | null> {
+	const platform = platformSource();
+	const domain = await platform.findDomain(scope, slug);
+	if (!domain) return null;
+
+	const vitals = await platform.readDomainVitals(scope, slug);
+	if (!vitals) return null;
+
+	return serviceSource().listServiceVitals(scope, domain.id, vitals, domain.serviceCount);
+}
+
+export function readDomain(scope: PlatformScope, slug: string): Promise<Domain | null> {
+	return platformSource().findDomain(scope, slug);
+}
+
+export async function readServiceMetricSeries(scope: PlatformScope, slug: string) {
+	const source = serviceSource();
+	if (!(await source.findService(scope, slug))) return null;
+	return source.readMetricSeries(scope, slug);
+}
+
+export async function readServiceSlo(
+	scope: PlatformScope,
+	slug: string
+): Promise<SloBudget | null> {
+	const source = serviceSource();
+	if (!(await source.findService(scope, slug))) return null;
+	return source.readSloBudget(scope, slug);
+}
+
+export async function readServiceInsights(
+	scope: PlatformScope,
+	slug: string
+): Promise<MetricInsight[] | null> {
+	const source = serviceSource();
+	if (!(await source.findService(scope, slug))) return null;
+	return source.listMetricInsights(scope, slug);
+}
+
+export function readRegions(scope: PlatformScope) {
+	return infrastructureSource().listRegions(scope);
+}
+
+export function readNodeCounts(scope: PlatformScope) {
+	return infrastructureSource().readNodeCounts(scope);
+}
+
+export function readClusters(scope: PlatformScope, limit: number) {
+	return infrastructureSource().listClusters(scope, limit);
+}
+
+export function readUtilization(scope: PlatformScope) {
+	return infrastructureSource().readUtilization(scope);
+}
+
+export function readStorage(scope: PlatformScope) {
+	return infrastructureSource().readStorage(scope);
+}
+
+export function readDatabases(scope: PlatformScope, limit: number) {
+	return infrastructureSource().listDatabases(scope, limit);
+}
+
+export function readQueues(scope: PlatformScope, limit: number) {
+	return infrastructureSource().listQueues(scope, limit);
+}
+
+export function readInfraAlerts(scope: PlatformScope, limit: number) {
+	return infrastructureSource().listAlerts(scope, limit);
+}
+
+export function readCost(scope: PlatformScope) {
+	return infrastructureSource().readCost(scope);
 }
 
 /**

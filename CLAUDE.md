@@ -198,6 +198,20 @@ one that exists. Two rules the service endpoints settled:
 - **A query key means one thing.** The deployment log's environment filter is
   `deployedTo`, not a second `environment`, because the scope already owns that key and
   the two are different axes — what the view reports on, and what a run targeted.
+- **Publish the measurement, not the rendering.** A health check travels as
+  `{value, unit}` rather than `"517 ms"`; storage as bytes rather than `"5.1 TB"`; an
+  error budget as minutes rather than `"21m"`; spend as numbers rather than `"$28,540"`.
+  Bar widths never travel at all — `latencySharePct` and `requestSharePct` are computed
+  against whichever rows we happened to return, so a caller with a different `limit`
+  would get different percentages for identical traffic.
+- **Publish the unit the number is actually in.** `ResourceUsage.unit` is the unit its
+  _headline_ is printed in: the network tile says "1.2 Gbps" while its series carries
+  bits per second. The DTO states the base unit, because pairing the two would label
+  1,200,000,000 as gigabits.
+
+**Static sub-paths win over `{slug}`.** `/api/v1/domains/summary` resolves to the
+aggregate, not to a domain called "summary" — which is fine here and worth knowing
+before a slug is ever allowed to be one of those words.
 
 **With `API_TOKENS` unset the API is closed, not open** — every request gets 401. A
 data API that serves everything because someone forgot an environment variable is not
@@ -546,7 +560,7 @@ an `@` costs its full length in every session, whether or not the session touche
 ## State
 
 Overview, Domains, Deployments, the Service detail view and Infrastructure built and
-verified, plus the service Metrics tab and the Domain detail view. `bun test` (244 tests), `bun run check`, `bun run lint`,
+verified, plus the service Metrics tab and the Domain detail view. `bun test` (252 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
@@ -571,11 +585,13 @@ What exists:
   every panel reflects the same estate at the same moment. All remote
   functions are Valibot-validated against the schemas the JSON API shares, the service
   slug included: it arrives from a URL anyone can edit
-- `src/routes/api/v1/` — public JSON API, sixteen paths: `domains` (+ `summary`,
-  `owners`, `changes`), `services` (+ `{slug}` and its `health`, `dependencies`,
-  `endpoints`), `deployments` (+ `summary`), `activity`, `metrics`, `incidents`,
-  `infrastructure`, `status`. Token-authenticated, frozen DTOs in
-  `src/lib/server/api/v1/dto.ts` with a shape test per resource
+- `src/routes/api/v1/` — public JSON API, thirty-two paths: `domains` (+ `summary`,
+  `owners`, `changes`, `{slug}` and its `vitals`, `dependencies`, `services`),
+  `services` (+ `{slug}` and its `health`, `dependencies`, `endpoints`, `metrics`,
+  `slo`, `insights`), `deployments` (+ `summary`), `infrastructure` (+ `regions`,
+  `nodes`, `clusters`, `utilization`, `storage`, `databases`, `queues`, `alerts`,
+  `cost`), `activity`, `metrics`, `incidents`, `status`. Token-authenticated, frozen
+  DTOs in `src/lib/server/api/v1/dto.ts` with a shape test per resource
 - `/api/v1/openapi.json` and `/api` — the generated OpenAPI document and
   the Scalar reference that renders it
 - `src/hooks.server.ts` — `handleValidationError`: generic message to the client,

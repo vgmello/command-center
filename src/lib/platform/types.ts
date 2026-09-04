@@ -545,6 +545,14 @@ export interface SloBudget {
 	targetPct: number;
 	/** How much of the objective's allowance is intact, 0–100 — what the bar draws. */
 	remainingPct: number;
+	/**
+	 * Minutes of the allowance still unspent.
+	 *
+	 * The number and its label both travel, and the label is derived from the number —
+	 * so the panel printing "21m" and an API reporting the minutes cannot round the
+	 * same figure two different ways.
+	 */
+	remainingMinutes: number;
 	remainingLabel: string;
 	burnPct: number;
 	burnWindowLabel: string;
@@ -792,8 +800,17 @@ export interface CostBreakdown {
 	/** One label per day, shared by every category so the columns stay aligned. */
 	labels: string[];
 	categories: CostCategory[];
+	/**
+	 * The raw figures alongside their formatted forms.
+	 *
+	 * The strings are derived from these, not the other way round, so carrying both is
+	 * not two sources of truth — and it stops every consumer that wants a number from
+	 * re-deriving one the assembler already computed.
+	 */
+	total: number;
 	totalFormatted: string;
 	changePct: number;
+	forecast: number;
 	forecastFormatted: string;
 	forecastChangePct: number;
 }

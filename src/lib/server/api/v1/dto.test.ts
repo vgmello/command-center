@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	toActivitySummaryDto,
+	toCostDto,
+	toDomainDependenciesDto,
+	toDomainVitalsDto,
+	toResourceUsageDto,
+	toServiceVitalsDto,
+	toSloBudgetDto,
+	toStorageDto,
 	toDependenciesDto,
 	toDeploymentDto,
 	toDeploymentSummaryDto,
@@ -31,6 +38,7 @@ const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
 const source = new FixturePlatformSource();
 const deployments = new FixtureDeploymentSource();
 const estate = new FixtureInfrastructureSource();
+const catalogSource = new FixtureServiceSource();
 
 /**
  * These assert the wire shape *literally*, key by key.
@@ -313,5 +321,109 @@ describe('v1 aggregate shapes', () => {
 			'deploymentsToday',
 			'incidentDomains'
 		]);
+	});
+});
+
+describe('v1 domain detail shapes', () => {
+	const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
+
+	test('a domain vitals payload drops the precomputed chart bounds', async () => {
+		const vitals = await source.readDomainVitals(scope, 'payment-domain');
+		const dto = toDomainVitalsDto(vitals!);
+
+		expect(vitals!.requestRate.min).toBeDefined();
+		expect(Object.keys(dto.requestRate).sort()).toEqual(['id', 'label', 'points']);
+		expect(Object.keys(dto).sort()).toEqual([
+			'errorRate',
+			'p95Latency',
+			'requestRate',
+			'services',
+			'sloCompliancePct',
+			'sloWindow'
+		]);
+	});
+
+	test('the service split it reports is the one the domain row implies', async () => {
+		const domain = await source.findDomain(scope, 'payment-domain');
+		const dto = toDomainVitalsDto((await source.readDomainVitals(scope, 'payment-domain'))!);
+		const counted = dto.services.healthy + dto.services.degraded + dto.services.down;
+
+		expect(counted).toBe(domain!.serviceCount);
+	});
+
+	test('a service row drops the icon, the accent and the sparkline', async () => {
+		const vitals = (await source.readDomainVitals(scope, 'payment-domain'))!;
+		const domain = (await source.findDomain(scope, 'payment-domain'))!;
+		const rows = await catalogSource.listServiceVitals(
+			scope,
+			domain.id,
+			vitals,
+			domain.serviceCount
+		);
+		const dto = toServiceVitalsDto(rows[0]) as unknown as Record<string, unknown>;
+
+		expect(rows[0].icon).toBeDefined();
+		for (const field of ['icon', 'accent', 'trend', 'slug']) {
+			expect(dto[field]).toBeUndefined();
+		}
+	});
+
+	test('the critical path travels as names, in order', async () => {
+		const dto = toDomainDependenciesDto(
+			await source.readDomainDependencies(scope, 'payment-domain')
+		);
+
+		expect(dto.criticalPath).toHaveLength(3);
+		expect(dto.criticalPath[1]).toBe('Payment Domain');
+	});
+});
+
+describe('v1 metric and estate shapes', () => {
+	const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
+
+	test('the error budget publishes minutes, not the string the panel prints', async () => {
+		const slo = await catalogSource.readSloBudget(scope, 'payment-api');
+		const dto = toSloBudgetDto(slo);
+
+		// The same figure the label is built from, so the two surfaces cannot round it
+		// two different ways.
+		expect(dto.remainingMinutes).toBe(slo.remainingMinutes);
+		expect(slo.remainingLabel).toContain(String(slo.remainingMinutes));
+		expect((dto as unknown as Record<string, unknown>).burn).toBeUndefined();
+	});
+
+	test('a utilisation reading publishes a number in the unit its series uses', async () => {
+		const usages = await estate.readUtilization(scope);
+		const cpu = toResourceUsageDto(usages.find((one) => one.id === 'cpu')!);
+		const network = toResourceUsageDto(usages.find((one) => one.id === 'network')!);
+		const dto = cpu;
+
+		expect(typeof dto.value).toBe('number');
+		expect(cpu.unit).toBe('percent');
+		expect(cpu.value).toBeLessThanOrEqual(100);
+		// The tile prints "1.2 Gbps"; the series is bits per second, and that is what
+		// travels — labelling 1.2e9 as gigabits would be off by a billion.
+		expect(network.unit).toBe('bits_per_second');
+		expect(network.value).toBeGreaterThan(1_000_000);
+		// `formatted` and `axisMax` are how a tile draws it.
+		for (const field of ['formatted', 'axisMax', 'changeFormatted']) {
+			expect((dto as unknown as Record<string, unknown>)[field]).toBeUndefined();
+		}
+	});
+
+	test('storage publishes bytes, and the parts still sum to the total', async () => {
+		const dto = toStorageDto(await estate.readStorage(scope));
+		const summed = dto.classes.reduce((sum, one) => sum + one.bytes, 0);
+
+		expect(Math.abs(summed - dto.totalBytes)).toBeLessThan(2);
+	});
+
+	test('cost publishes figures rather than formatted money', async () => {
+		const dto = toCostDto(await estate.readCost(scope));
+		const summed = dto.categories.reduce((sum, one) => sum + one.amount, 0);
+
+		expect(dto.total).toBeCloseTo(summed, 6);
+		expect(dto.categories.every((one) => one.daily.length === dto.days.length)).toBe(true);
+		expect((dto as unknown as Record<string, unknown>).totalFormatted).toBeUndefined();
 	});
 });

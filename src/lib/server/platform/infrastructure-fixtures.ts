@@ -338,16 +338,20 @@ export function readCost(now: Date): CostBreakdown {
 	const total = categories.reduce((sum, category) => sum + category.amount, 0);
 	const runRate = total / days;
 
+	// Straight-line from the run rate so far. Stated as a forecast, not a promise.
+	const forecast = runRate * daysInMonth(now);
+
 	return {
 		labels,
 		categories: categories.map(({ dailyRate: _rate, ...category }) => ({
 			...category,
 			percentage: Math.round((category.amount / total) * 1000) / 10
 		})),
+		total,
 		totalFormatted: formatMoney(total),
 		changePct: 6.2,
-		// Straight-line from the run rate so far. Stated as a forecast, not a promise.
-		forecastFormatted: formatMoney(runRate * daysInMonth(now)),
+		forecast,
+		forecastFormatted: formatMoney(forecast),
 		forecastChangePct: -5.8
 	};
 }

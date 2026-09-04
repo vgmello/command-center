@@ -175,8 +175,10 @@ function stubSource(overrides: Partial<PlatformSource> = {}) {
 			return {
 				labels: [],
 				categories: [],
+				total: 0,
 				totalFormatted: '$0',
 				changePct: 0,
+				forecast: 0,
 				forecastFormatted: '$0',
 				forecastChangePct: 0
 			};
