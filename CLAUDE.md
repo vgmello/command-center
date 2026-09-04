@@ -173,10 +173,16 @@ a failure mode worth having.
 
 ### The API reference is generated, not maintained
 
-`/api/v1/reference` renders an interactive reference from `/api/v1/openapi.json`, via
+`/api` renders an interactive reference from `/api/v1/openapi.json`, via
 `@scalar/sveltekit`. The document itself is assembled by
 `sveltekit-openapi-generator`, a Vite plugin that collects `@swagger` JSDoc blocks
 from the route files. Both are devDependencies; neither ships to the client.
+
+**The reference is not versioned; the document is.** `/api` is the entry point to the
+API as a whole — the URL that ends up in a README or a bookmark — so it must survive a
+v2. The document it loads, `/api/v1/openapi.json`, describes exactly one version and is
+versioned accordingly. When a v2 lands, the page gains a second document to switch
+between rather than a second address.
 
 **The document has two halves, kept apart on purpose:**
 
@@ -458,7 +464,7 @@ What exists:
 - `src/routes/api/v1/` — public JSON API: `domains`, `domains/summary`, `metrics`,
   `incidents`, `deployments`, `infrastructure`, `status`. Token-authenticated,
   frozen DTOs in `src/lib/server/api/v1/dto.ts` with a shape test
-- `/api/v1/openapi.json` and `/api/v1/reference` — the generated OpenAPI document and
+- `/api/v1/openapi.json` and `/api` — the generated OpenAPI document and
   the Scalar reference that renders it
 - `src/hooks.server.ts` — `handleValidationError`: generic message to the client,
   detail to the log

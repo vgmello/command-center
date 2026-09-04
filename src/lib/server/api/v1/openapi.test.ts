@@ -18,7 +18,7 @@ import { renderComponents } from '../../../../../scripts/generate-openapi-compon
 const COMPONENTS_PATH = 'src/lib/server/api/v1/components.yaml';
 
 /** Routes that serve the documentation itself are not part of the documented API. */
-const UNDOCUMENTED = new Set(['/api/v1/openapi.json', '/api/v1/reference']);
+const UNDOCUMENTED = new Set(['/api/v1/openapi.json']);
 
 interface Operation {
 	summary?: string;
