@@ -26,6 +26,20 @@ function ttlFor(deps: RouterDeps, capability: Capability): number {
 }
 
 /**
+ * The cache key's argument half, scope included.
+ *
+ * A capability's answer depends on which environment and which window were asked about,
+ * so two scopes must be two entries. Leaving scope out is not a crash — it is one
+ * environment's numbers served under another environment's heading, which is worse.
+ *
+ * Nested JSON rather than a joined string, for the same reason the key itself is JSON:
+ * an args string is free-form and could otherwise spell a different scope's key.
+ */
+function scopedArgs(scope: PlatformScope, args: string): string {
+	return JSON.stringify([scope.environment, scope.timeRange, args]);
+}
+
+/**
  * An aggregate read whose answer is a list: fan out, concatenate, cache.
  *
  * Shared by every router, because what differs between them is which capability answers
@@ -39,7 +53,12 @@ export async function fanOut<T>(
 	call: (client: unknown, ctx: SourceContext) => Promise<T[]>
 ): Promise<T[]> {
 	const { data } = await deps.cache.read(
-		{ connectionId: 'fan-out', capability, args, ttlSeconds: ttlFor(deps, capability) },
+		{
+			connectionId: 'fan-out',
+			capability,
+			args: scopedArgs(scope, args),
+			ttlSeconds: ttlFor(deps, capability)
+		},
 		async () => (await deps.dispatcher.all<T>({ capability, scope, call })).data
 	);
 
@@ -63,7 +82,12 @@ export async function fanOutSingle<T>(
 	call: (client: unknown, ctx: SourceContext) => Promise<T>
 ): Promise<T> {
 	const { data } = await deps.cache.read(
-		{ connectionId: 'fan-out', capability, args, ttlSeconds: ttlFor(deps, capability) },
+		{
+			connectionId: 'fan-out',
+			capability,
+			args: scopedArgs(scope, args),
+			ttlSeconds: ttlFor(deps, capability)
+		},
 		// `all` deals in lists, so a single-valued aggregate is wrapped into a
 		// one-element list and unwrapped again below. The alternative is a third
 		// dispatch rule, and two is the number this design deliberately stopped at.

@@ -6,6 +6,7 @@ import { SourceRegistry } from '../registry';
 import { CapabilityUnavailableError } from '../errors';
 import { FIXTURE_CONNECTIONS, FIXTURE_PROVIDERS } from '../fixtures';
 import type { PlatformScope } from '$lib/platform/query';
+import type { NodeCounts } from '$lib/platform/types';
 
 const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
 
@@ -89,5 +90,49 @@ describe('the infrastructure router', () => {
 
 		expect(await source.listClusters(scope, 2)).toHaveLength(2);
 		expect(await source.listClusters(scope, 4)).toHaveLength(4);
+	});
+
+	test('different environments are cached separately', async () => {
+		const { registry, source } = build();
+		const client = registry.connection('fixture-cloud')!.client as {
+			readNodeCounts: () => Promise<NodeCounts>;
+		};
+		let calls = 0;
+		const original = client.readNodeCounts.bind(client);
+		client.readNodeCounts = async () => {
+			calls++;
+			return { ...(await original()), healthy: calls };
+		};
+
+		const production = await source.readNodeCounts({ environment: 'production', timeRange: '15m' });
+		const staging = await source.readNodeCounts({ environment: 'staging', timeRange: '15m' });
+
+		expect(calls).toBe(2);
+		expect(production).not.toEqual(staging);
+	});
+
+	test('different time ranges are cached separately', async () => {
+		const { registry, source } = build();
+		const client = registry.connection('fixture-cloud')!.client as {
+			readNodeCounts: () => Promise<NodeCounts>;
+		};
+		let calls = 0;
+		const original = client.readNodeCounts.bind(client);
+		client.readNodeCounts = async () => {
+			calls++;
+			return { ...(await original()), healthy: calls };
+		};
+
+		const fifteenMinutes = await source.readNodeCounts({
+			environment: 'production',
+			timeRange: '15m'
+		});
+		const twentyFourHours = await source.readNodeCounts({
+			environment: 'production',
+			timeRange: '24h'
+		});
+
+		expect(calls).toBe(2);
+		expect(fifteenMinutes).not.toEqual(twentyFourHours);
 	});
 });
