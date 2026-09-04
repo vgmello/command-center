@@ -2282,7 +2282,10 @@ export class SourceCache {
 	}
 
 	async read<T>(key: CacheKey, load: () => Promise<T>): Promise<{ data: T; stale?: true }> {
-		const id = `${key.connectionId} ${key.capability} ${key.args}`;
+		// JSON, not a space-joined string: a connection id and an args string are both
+		// free-form, so concatenating them lets one pair spell another pair's key — and a
+		// cache collision means one connection served from another's entry.
+		const id = JSON.stringify([key.connectionId, key.capability, key.args]);
 		const cached = this.entries.get(id);
 
 		if (cached && this.now() - cached.at < key.ttlSeconds * 1000) {
