@@ -20,7 +20,7 @@ function registryWith(regions: (id: string) => Promise<unknown[]>, ids = ['a', '
 			capabilities: ['cloud.regions'],
 			settings: v.object({ id: v.string() }),
 			connect: (settings) => ({
-				listRegions: async () => regions((settings as { id: string }).id) as never,
+				listRegions: async (_opts) => regions((settings as { id: string }).id) as never,
 				resourceLink: () => ({
 					label: 'open',
 					href: `https://x.invalid/${(settings as { id: string }).id}`
@@ -41,7 +41,8 @@ describe('dispatch.all — the aggregate rule', () => {
 		const { data } = await dispatcher.all<string>({
 			capability: 'cloud.regions',
 			scope,
-			call: (client) => (client as CloudProvider).listRegions!({} as never) as never
+			call: (client, ctx) =>
+				(client as CloudProvider).listRegions!(ctx) as unknown as Promise<string[]>
 		});
 
 		expect(data).toEqual(['a-1', 'a-2', 'b-1', 'b-2']);
@@ -63,7 +64,8 @@ describe('dispatch.one — the resource rule', () => {
 			capability: 'cloud.regions',
 			scope,
 			binding: { kind: 'cloud', connectionId: 'b', externalId: 'r-9' },
-			call: (client) => (client as CloudProvider).listRegions!({} as never) as never
+			call: (client, ctx) =>
+				(client as CloudProvider).listRegions!(ctx) as unknown as Promise<string[]>
 		});
 
 		expect(data).toEqual(['b']);
@@ -132,7 +134,7 @@ describe('dispatch.one — the resource rule', () => {
 			capability: 'cloud.regions',
 			scope,
 			binding: { kind: 'cloud', connectionId: 'a', externalId: 'r' },
-			call: (client) => (client as CloudProvider).listRegions!({} as never) as never
+			call: (client, ctx) => (client as CloudProvider).listRegions!(ctx)
 		});
 
 		expect(failure).rejects.toThrow(SourceFailedError);
@@ -149,7 +151,8 @@ describe('dispatch.one — the resource rule', () => {
 		const { data } = await dispatcher.all<string>({
 			capability: 'cloud.regions',
 			scope,
-			call: (client) => (client as CloudProvider).listRegions!({} as never) as never
+			call: (client, ctx) =>
+				(client as CloudProvider).listRegions!(ctx) as unknown as Promise<string[]>
 		});
 
 		// A partial estate is more useful than none; the failure is not silent because the
@@ -168,7 +171,7 @@ describe('dispatch.one — the resource rule', () => {
 			dispatcher.all({
 				capability: 'cloud.regions',
 				scope,
-				call: (client) => (client as CloudProvider).listRegions!({} as never) as never
+				call: (client, ctx) => (client as CloudProvider).listRegions!(ctx)
 			})
 		).rejects.toThrow(SourceFailedError);
 	});

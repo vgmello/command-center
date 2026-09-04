@@ -4,16 +4,21 @@ import { CapabilityUnavailableError, SourceFailedError } from './errors';
 import type { ConnectedSource, SourceRegistry } from './registry';
 import type { LinkView, SourceBinding, SourceContext } from './provider';
 
-interface Call<T> {
+interface CallBase {
 	capability: Capability;
 	scope: PlatformScope;
 	/** Which view a link from this panel should open. Defaults to the overview. */
 	view?: LinkView;
+}
+
+interface OneCall<T> extends CallBase {
+	binding: SourceBinding | undefined;
 	call: (client: unknown, ctx: SourceContext) => Promise<T>;
 }
 
-interface OneCall<T> extends Call<T> {
-	binding: SourceBinding | undefined;
+/** An aggregate call answers with this connection's list; `all` concatenates them. */
+interface AllCall<T> extends CallBase {
+	call: (client: unknown, ctx: SourceContext) => Promise<T[]>;
 }
 
 export interface Dispatcher {
@@ -26,7 +31,7 @@ export interface Dispatcher {
 	 */
 	one<T>(options: OneCall<T>): Promise<{ data: T; source: SourceRef }>;
 	/** Aggregate: fan out across every capable connection and concatenate. */
-	all<T>(options: Call<T>): Promise<{ data: T[]; source: SourceRef }>;
+	all<T>(options: AllCall<T>): Promise<{ data: T[]; source: SourceRef }>;
 }
 
 /**
@@ -46,11 +51,29 @@ export function createDispatcher(registry: SourceRegistry): Dispatcher {
 			).resourceLink?.(binding, view) ?? null
 		);
 
-	async function invoke<T>(
+	async function invokeOne<T>(
 		connection: ConnectedSource,
-		options: Call<T>,
+		options: OneCall<T>,
 		binding: SourceBinding | undefined
 	): Promise<T> {
+		const ctx: SourceContext = { scope: options.scope, connection: connection.ref, binding };
+
+		try {
+			return await options.call(connection.client, ctx);
+		} catch (cause) {
+			throw new SourceFailedError(
+				options.capability,
+				refOf(connection, binding, options.view ?? 'overview'),
+				cause
+			);
+		}
+	}
+
+	async function invokeAll<T>(
+		connection: ConnectedSource,
+		options: AllCall<T>,
+		binding: SourceBinding | undefined
+	): Promise<T[]> {
 		const ctx: SourceContext = { scope: options.scope, connection: connection.ref, binding };
 
 		try {
@@ -82,12 +105,12 @@ export function createDispatcher(registry: SourceRegistry): Dispatcher {
 			}
 
 			return {
-				data: await invoke(connection, options, binding),
+				data: await invokeOne(connection, options, binding),
 				source: refOf(connection, binding, options.view ?? 'overview')
 			};
 		},
 
-		async all<T>(options: Call<T>) {
+		async all<T>(options: AllCall<T>) {
 			const connections = registry.supporting(options.capability);
 
 			if (connections.length === 0) {
@@ -101,7 +124,7 @@ export function createDispatcher(registry: SourceRegistry): Dispatcher {
 			}
 
 			const settled = await Promise.allSettled(
-				connections.map((connection) => invoke(connection, options, undefined))
+				connections.map((connection) => invokeAll(connection, options, undefined))
 			);
 
 			const answered = settled.flatMap((result, index) =>
