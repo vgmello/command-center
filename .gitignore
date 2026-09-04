@@ -24,3 +24,7 @@ vite.config.ts.timestamp-*
 
 # Playwright MCP scratch output
 .playwright-mcp/
+
+# Subagent-driven development scratch: ledgers, briefs, review packages.
+# The git history is the record; this is working memory.
+.superpowers/
