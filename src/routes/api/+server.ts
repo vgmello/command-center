@@ -23,14 +23,21 @@ export const GET = ScalarApiReference({
 
 	// Matches the dashboard's dark-first look rather than Scalar's default.
 	theme: 'bluePlanet',
-	darkMode: true,
 
 	/**
-	 * The reference renders one fixed way. `darkMode` above is only the *initial*
-	 * state, so hiding the toggle also fixes it — nobody lands on a light page that
-	 * clashes with the dashboard and has no control to change it back.
+	 * The reference renders dark, always, with no control to change it.
+	 *
+	 * All three are needed, and they are not redundant. `darkMode` is documented as
+	 * the *initial* state only, so on its own a stored preference could still land a
+	 * visitor in light mode. `hideDarkModeToggle` removes the control but not the
+	 * stored preference. `forceDarkModeState` is the one that actually pins it —
+	 * "makes it always this state no matter what", in Scalar's own words — and
+	 * without hiding the toggle it would leave a control on the page that does
+	 * nothing when clicked.
 	 */
+	darkMode: true,
 	hideDarkModeToggle: true,
+	forceDarkModeState: 'dark',
 
 	/**
 	 * Scalar defaults `telemetry` to true, which reports usage back to Scalar from
