@@ -1,4 +1,11 @@
 import { env } from '$env/dynamic/private';
+import { buildSources, readSourceConfig } from '../sources/boot';
+import {
+	FixturePlatformSource,
+	FixtureServiceSource,
+	FixtureWorkspaceSource
+} from './fixture-source';
+import { selectSource } from './select-source';
 import type {
 	DeploymentSource,
 	InfrastructureSource,
@@ -6,72 +13,50 @@ import type {
 	ServiceSource,
 	WorkspaceSource
 } from './source';
-import {
-	FixtureDeploymentSource,
-	FixtureInfrastructureSource,
-	FixturePlatformSource,
-	FixtureServiceSource,
-	FixtureWorkspaceSource
-} from './fixture-source';
-import { selectSource } from './select-source';
 
 /**
- * Resolves which implementation the app runs against.
+ * Resolves which implementations the app runs against.
  *
- * One place decides, and it decides from configuration rather than from an import —
- * so adding a real backend is a new file plus a case here, and no consumer learns
- * about it. `$env/dynamic/private` rather than `process.env`, and private rather
- * than public: a source URL and its credentials must never reach the client bundle.
+ * Every read now goes through a router, whatever is configured. With `SOURCES_CONFIG`
+ * unset the routers dispatch to fixture providers and the app behaves exactly as it did
+ * — but the routed path is the only path, so it cannot rot while nobody is looking.
  *
- * Instances are created once and reused. A real adapter will hold a connection pool
- * or an HTTP client, and building one per request is how you exhaust both.
+ * The catalog half — which domains and services exist — is still served by the fixture
+ * implementations, because that is app-owned data and no data source knows it. It is
+ * what a real database will replace, separately from any of this.
+ *
+ * Read once at module load with a top-level `await`, so the port accessors below stay
+ * plain and synchronous — every caller and every test expects that. The alternative is a
+ * lazy `Proxy` that resolves on first use; a synchronous boot is simpler to reason about
+ * and the config is only ever read once, so there is nothing to gain by deferring it.
  */
+const routers = buildSources({
+	config: await readSourceConfig(env.SOURCES_CONFIG),
+	env,
+	catalog: { platform: new FixturePlatformSource(), service: new FixtureServiceSource() }
+});
 
-const platformSources: Record<string, () => PlatformSource> = {
-	fixture: () => new FixturePlatformSource()
-};
+export function platformSource(): PlatformSource {
+	return routers.platform;
+}
 
-const deploymentSources: Record<string, () => DeploymentSource> = {
-	fixture: () => new FixtureDeploymentSource()
-};
+export function deploymentSource(): DeploymentSource {
+	return routers.deployment;
+}
 
-const infrastructureSources: Record<string, () => InfrastructureSource> = {
-	fixture: () => new FixtureInfrastructureSource()
-};
+export function serviceSource(): ServiceSource {
+	return routers.service;
+}
 
-const serviceSources: Record<string, () => ServiceSource> = {
-	fixture: () => new FixtureServiceSource()
-};
+export function infrastructureSource(): InfrastructureSource {
+	return routers.infrastructure;
+}
 
 const workspaceSources: Record<string, () => WorkspaceSource> = {
 	fixture: () => new FixtureWorkspaceSource()
 };
 
-let platform: PlatformSource | undefined;
-let deployment: DeploymentSource | undefined;
-let service: ServiceSource | undefined;
-let infrastructure: InfrastructureSource | undefined;
 let workspace: WorkspaceSource | undefined;
-
-export function platformSource(): PlatformSource {
-	platform ??= resolve('PLATFORM_SOURCE', platformSources);
-	return platform;
-}
-
-export function deploymentSource(): DeploymentSource {
-	deployment ??= resolve('DEPLOYMENT_SOURCE', deploymentSources);
-	return deployment;
-}
-
-export function infrastructureSource(): InfrastructureSource {
-	infrastructure ??= resolve('INFRASTRUCTURE_SOURCE', infrastructureSources);
-	return infrastructure;
-}
-
-export function serviceSource(): ServiceSource {
-	service ??= resolve('SERVICE_SOURCE', serviceSources);
-	return service;
-}
 
 export function workspaceSource(): WorkspaceSource {
 	workspace ??= resolve('WORKSPACE_SOURCE', workspaceSources);

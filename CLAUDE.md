@@ -134,6 +134,23 @@ Sources return **facts**. Formatting, deriving status from a score, turning coun
 percentages — all of that stays in the pure layer above, so a new adapter cannot
 accidentally ship its own opinion about how a number should read.
 
+### Data sources sit beneath the ports
+
+`src/lib/server/sources/` is where data comes from; `src/lib/server/platform/` is what
+the app asks for. Providers declare a kind (`cloud`, `apm`, `deployment`) and the
+capabilities they implement; connections are configured instances of them, listed in the
+file `SOURCES_CONFIG` names. Routers implement each port by serving app-owned methods
+from the catalog and dispatching the rest to whichever connection owns the resource.
+
+**Every read goes through a router, always.** With `SOURCES_CONFIG` unset the routers
+dispatch to fixture providers, so the routed path is the only path and cannot rot while
+nobody is looking.
+
+**A capability nobody implements is stated, never faked.** The router throws
+`CapabilityUnavailableError`; assemblers turn that into a `Panel<T>` the UI renders as an
+explicit empty state. Serving zeros instead would reproduce exactly the failure the
+resolver's throw-on-unknown-name exists to prevent.
+
 ### Two transports, one service
 
 The data is reachable two ways, and both go through the same in-process service:
