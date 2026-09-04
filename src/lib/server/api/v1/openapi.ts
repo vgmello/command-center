@@ -32,19 +32,36 @@ import { DOMAIN_SORT_KEYS, DOMAIN_STATUS_FILTERS } from '$lib/platform/query';
  * schemas belong wherever they are already defined once.
  */
 
-const schemas = toJsonSchemaDefs({
-	Domain: domainSchema,
-	DomainRef: domainRefSchema,
-	Page: pageSchema,
-	DomainPage: domainPageSchema,
-	DomainSummary: domainSummarySchema,
-	Metric: metricSchema,
-	Incident: incidentSchema,
-	Deployment: deploymentSchema,
-	Infrastructure: infrastructureSchema,
-	SystemStatus: systemStatusSchema,
-	Error: errorSchema
-});
+const schemas = toJsonSchemaDefs(
+	{
+		Domain: domainSchema,
+		DomainRef: domainRefSchema,
+		Page: pageSchema,
+		DomainPage: domainPageSchema,
+		DomainSummary: domainSummarySchema,
+		Metric: metricSchema,
+		Incident: incidentSchema,
+		Deployment: deploymentSchema,
+		Infrastructure: infrastructureSchema,
+		SystemStatus: systemStatusSchema,
+		Error: errorSchema
+	},
+	{
+		/**
+		 * Point cross-schema references at where they actually land.
+		 *
+		 * `toJsonSchemaDefs` writes plain JSON Schema, so it emits `#/$defs/Domain`.
+		 * These definitions are merged into `components.schemas`, where that pointer
+		 * resolves to nothing: Scalar logs "invalid reference" and a generated client
+		 * would produce an untyped hole wherever one schema embeds another.
+		 *
+		 * Despite the doc comment saying it returns a reference *ID*, the return value
+		 * is assigned straight to `$ref` (`convertSchema`, index.mjs) — so it is the
+		 * whole pointer, and the prefix belongs here.
+		 */
+		overrideRef: ({ referenceId }) => `#/components/schemas/${referenceId}`
+	}
+);
 
 /** Scope parameters every endpoint accepts, referenced from the JSDoc blocks. */
 const parameters = {

@@ -161,9 +161,17 @@ describe('the endpoint annotations', () => {
 			...Object.keys(components.components.responses).map((n) => `#/components/responses/${n}`)
 		]);
 
+		// Both halves of the document, and every `$ref` shape rather than only the ones
+		// that already start `#/components/`. The components half refers to itself —
+		// DomainPage embeds Domain — and `toJsonSchemaDefs` writes those as plain JSON
+		// Schema `#/$defs/…` pointers, which resolve to nothing once the definitions are
+		// merged under `components.schemas`. Matching only the well-formed prefix made
+		// exactly the broken pointers invisible.
 		const used = new Set(
 			[
-				...JSON.stringify([...(await annotations()).values()]).matchAll(/"(#\/components\/[^"]+)"/g)
+				...JSON.stringify([[...(await annotations()).values()], components]).matchAll(
+					/"\$ref":"([^"]+)"/g
+				)
 			].map((match) => match[1])
 		);
 

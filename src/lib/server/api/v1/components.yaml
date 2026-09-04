@@ -108,7 +108,7 @@ components:
           format: date-time
           type: string
         domain:
-          $ref: '#/$defs/DomainRef'
+          $ref: '#/components/schemas/DomainRef'
         id:
           type: string
         service:
@@ -177,10 +177,10 @@ components:
       properties:
         data:
           items:
-            $ref: '#/$defs/Domain'
+            $ref: '#/components/schemas/Domain'
           type: array
         page:
-          $ref: '#/$defs/Page'
+          $ref: '#/components/schemas/Page'
       required:
         - data
         - page
@@ -237,7 +237,7 @@ components:
     Incident:
       properties:
         domain:
-          $ref: '#/$defs/DomainRef'
+          $ref: '#/components/schemas/DomainRef'
         id:
           type: string
         openedAt:
