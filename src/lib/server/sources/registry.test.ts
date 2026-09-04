@@ -102,4 +102,19 @@ describe('SourceRegistry', () => {
 			link: null
 		});
 	});
+
+	test('providers() returns a copy, not the live map', () => {
+		const registry = loaded();
+		const map1 = registry.providers() as Map<string, never>;
+
+		expect(map1.size).toBe(2);
+
+		map1.delete('stub-cloud');
+		expect(map1.size).toBe(1);
+		expect(registry.providers().size).toBe(2);
+
+		const map2 = registry.providers();
+		expect(map2.has('stub-cloud')).toBe(true);
+		expect(map2.has('stub-apm')).toBe(true);
+	});
 });

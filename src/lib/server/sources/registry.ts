@@ -31,8 +31,9 @@ export class SourceRegistry {
 		this.#providers.set(definition.id, definition);
 	}
 
-	providers(): Map<string, ProviderDefinition<unknown>> {
-		return this.#providers;
+	/** A copy: nothing may add a provider past register()'s duplicate guard. */
+	providers(): ReadonlyMap<string, ProviderDefinition<unknown>> {
+		return new Map(this.#providers);
 	}
 
 	/** Validate the config and connect everything in it, or throw. */
