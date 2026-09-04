@@ -33,7 +33,7 @@ export class SourceFailedError extends Error {
 	constructor(
 		readonly capability: Capability,
 		readonly source: SourceRef,
-		readonly cause: unknown
+		readonly sourceCause: unknown
 	) {
 		super(`${source.name} could not answer ${capability}.`);
 		this.name = 'SourceFailedError';

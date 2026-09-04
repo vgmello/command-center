@@ -4,7 +4,7 @@ import { buildSources } from './boot';
 import { SourceCache } from './cache';
 import type { CloudProvider } from './contracts';
 import { createDispatcher } from './dispatch';
-import { FIXTURE_CONNECTIONS } from './fixtures';
+import { FIXTURE_CONNECTIONS, FIXTURE_PROVIDERS } from './fixtures';
 import { defineProvider } from './provider';
 import { SourceRegistry } from './registry';
 import { createInfrastructureRouter, createRouters } from './routers';
@@ -23,7 +23,12 @@ describe('buildSources', () => {
 	});
 
 	test('an explicit config is used instead of the fixtures', async () => {
-		const routers = buildSources({ config: FIXTURE_CONNECTIONS, env: {}, catalog });
+		const routers = buildSources({
+			config: FIXTURE_CONNECTIONS,
+			providers: FIXTURE_PROVIDERS,
+			env: {},
+			catalog
+		});
 
 		expect((await routers.infrastructure.readNodeCounts(scope)).healthy).toBeGreaterThan(0);
 	});
@@ -32,6 +37,7 @@ describe('buildSources', () => {
 		expect(() =>
 			buildSources({
 				config: { connections: [{ id: 'x', provider: 'azure', label: 'X', settings: {} }] },
+				providers: FIXTURE_PROVIDERS,
 				env: {},
 				catalog
 			})
@@ -39,7 +45,26 @@ describe('buildSources', () => {
 	});
 
 	test('a malformed config refuses to start rather than silently serving nothing', () => {
-		expect(() => buildSources({ config: { nope: true }, env: {}, catalog })).toThrow();
+		expect(() =>
+			buildSources({
+				config: { nope: true },
+				providers: FIXTURE_PROVIDERS,
+				env: {},
+				catalog
+			})
+		).toThrow();
+	});
+
+	test('a real config naming a fixture provider refuses to start, rather than serving seeded numbers', () => {
+		expect(() =>
+			buildSources({
+				config: {
+					connections: [{ id: 'x', provider: 'fixture-cloud', label: 'X', settings: {} }]
+				},
+				env: {},
+				catalog
+			})
+		).toThrow(/fixture-cloud/);
 	});
 
 	test('the four routers share one cache, so one capability is fetched once', async () => {

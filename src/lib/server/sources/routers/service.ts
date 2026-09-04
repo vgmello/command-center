@@ -17,7 +17,7 @@ const apmBinding = (slug: string) => ({
  */
 export function createServiceRouter(deps: RouterDeps, catalog: ServiceSource): ServiceSource {
 	const source: ServiceSource = {
-		id: 'routed',
+		id: 'routed-service',
 
 		// App-owned.
 		listServices: (scope, domainId) => catalog.listServices(scope, domainId),

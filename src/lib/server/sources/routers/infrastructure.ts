@@ -13,7 +13,7 @@ import { fanOut, fanOutSingle, type RouterDeps } from './shared';
  */
 export function createInfrastructureRouter(deps: RouterDeps): InfrastructureSource {
 	const source: InfrastructureSource = {
-		id: 'routed',
+		id: 'routed-infrastructure',
 
 		listRegions: (scope) =>
 			fanOut(deps, 'cloud.regions', scope, '', (client, ctx) =>

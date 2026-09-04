@@ -108,14 +108,21 @@ module the UI imports directly:
   on its own terms, that is when it earns a seam.
 
 - `src/lib/server/platform/fixture-source.ts` — the seeded stand-in.
-- `src/lib/server/platform/index.ts` — resolves one implementation per port from
-  `PLATFORM_SOURCE` / `DEPLOYMENT_SOURCE` / `SERVICE_SOURCE` /
-  `INFRASTRUCTURE_SOURCE` / `WORKSPACE_SOURCE`, caches the instance, and **throws on
-  an unknown name**. Falling back to fixtures on a typo would serve invented numbers
-  in production with nothing on the page admitting it.
+- `src/lib/server/platform/index.ts` — resolves `WorkspaceSource` from `WORKSPACE_SOURCE`,
+  caches the instance, and **throws on an unknown name**. Falling back to fixtures on a
+  typo would serve invented numbers in production with nothing on the page admitting it.
+  The other four ports are no longer resolved by a per-port env var here: `index.ts`
+  hands `buildSources()` whatever `SOURCES_CONFIG` names (or nothing) and gets back
+  `PlatformSource`, `DeploymentSource`, `ServiceSource` and `InfrastructureSource`
+  already wired to routers — see "Data sources sit beneath the ports" below for how
+  those routers work.
 
-To add a real backend: implement the interface, register it in the resolver, set the
-env var. Nothing above the interface changes.
+To add a real backend for the workspace port: implement `WorkspaceSource`, register it
+in the resolver, set `WORKSPACE_SOURCE`. For the other four: write a provider
+(`defineProvider`, under `src/lib/server/sources/`) and list a connection in the file
+`SOURCES_CONFIG` names — there is no per-port env var to set, and a connection naming an
+unregistered or misspelled provider still fails at boot rather than serving nothing, for
+the same reason a bad `WORKSPACE_SOURCE` does. Nothing above the interface changes.
 
 Two rules the interface encodes, and that a new implementation must honour:
 

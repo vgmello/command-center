@@ -38,7 +38,7 @@ import type { LinkView, SourceBinding, SourceContext } from './provider';
  * Capability-backed methods are optional: Azure implements nine cloud methods and none
  * of the APM ones, and a contract that required all of them would force every provider
  * to write stubs it can never answer. `capabilities` on the definition is the declared
- * truth, and `assertCapabilityAgreement` (Task 6) checks the two match — so a provider
+ * truth, and `capabilityDrift` (Task 6) checks the two match — so a provider
  * that declares `cloud.cost` and forgets `readCost` is a red test, not a runtime hole.
  */
 export interface CloudProvider {

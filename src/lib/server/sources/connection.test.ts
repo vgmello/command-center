@@ -65,7 +65,42 @@ describe('loadConnections', () => {
 			]
 		};
 
-		expect(() => loadConnections(bad, providers, env)).toThrow();
+		expect(() => loadConnections(bad, providers, env)).toThrow(/invalid settings: clientSecret/);
+	});
+
+	test('an invalid settings error names the failing key, never the resolved secret value', () => {
+		const guarded = defineProvider<CloudProvider>({
+			id: 'guarded',
+			kind: 'cloud',
+			name: 'Guarded Cloud',
+			icon: 'cloud',
+			capabilities: ['cloud.regions'],
+			settings: v.object({ apiKey: v.pipe(v.string(), v.regex(/^sk-/)) }),
+			connect: () => ({ resourceLink: () => null })
+		});
+
+		const guardedProviders = new Map([['guarded', guarded as never]]);
+		const guardedEnv = { GUARDED_KEY: 'super-secret-value' };
+		const bad = {
+			connections: [
+				{
+					id: 'guarded-1',
+					provider: 'guarded',
+					label: 'Guarded',
+					settings: { apiKey: { $env: 'GUARDED_KEY' } }
+				}
+			]
+		};
+
+		let message = '';
+		try {
+			loadConnections(bad, guardedProviders, guardedEnv);
+		} catch (error) {
+			message = (error as Error).message;
+		}
+
+		expect(message).toContain('apiKey');
+		expect(message).not.toContain('super-secret-value');
 	});
 
 	test('two connections may not share an id', () => {

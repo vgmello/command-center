@@ -1037,8 +1037,6 @@ export function listActivitySummary(now: Date = new Date()): ActivitySummary {
  * it. When a metrics backend replaces this, that division already holds.
  */
 export function readPlatformRates(timeRange: TimeRangeId): RateObservation[] {
-	const window = timeRange;
-
 	return [
 		{
 			id: 'request-rate',
@@ -1046,7 +1044,7 @@ export function readPlatformRates(timeRange: TimeRangeId): RateObservation[] {
 			value: 18_700,
 			kind: 'rate',
 			unit: 'req/s',
-			samples: buildSeries(`request-rate:${window}`, 18_700, {
+			samples: buildSeries(`request-rate:${timeRange}`, 18_700, {
 				volatility: 0.08,
 				drift: 0.12
 			}).values,
@@ -1059,7 +1057,8 @@ export function readPlatformRates(timeRange: TimeRangeId): RateObservation[] {
 			value: 1.38,
 			kind: 'percent',
 			unit: '',
-			samples: buildSeries(`error-rate:${window}`, 1.38, { volatility: 0.2, drift: 0.35 }).values,
+			samples: buildSeries(`error-rate:${timeRange}`, 1.38, { volatility: 0.2, drift: 0.35 })
+				.values,
 			change: 0.32,
 			polarity: 'lower-is-better'
 		},
@@ -1069,7 +1068,7 @@ export function readPlatformRates(timeRange: TimeRangeId): RateObservation[] {
 			value: 412,
 			kind: 'duration-ms',
 			unit: 'ms',
-			samples: buildSeries(`p95:${window}`, 412, { volatility: 0.12, drift: -0.15 }).values,
+			samples: buildSeries(`p95:${timeRange}`, 412, { volatility: 0.12, drift: -0.15 }).values,
 			change: -28,
 			polarity: 'lower-is-better'
 		}

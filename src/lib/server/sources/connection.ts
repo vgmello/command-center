@@ -19,7 +19,7 @@ export const connectionFileSchema = v.object({
 	)
 });
 
-const envReferenceSchema = v.object({ $env: v.pipe(v.string(), v.minLength(1)) });
+const envReferenceSchema = v.strictObject({ $env: v.pipe(v.string(), v.minLength(1)) });
 
 /**
  * Replace `{ "$env": "NAME" }` with the environment's value.
@@ -53,6 +53,17 @@ export function resolveSecrets(
 	);
 }
 
+/**
+ * Turn a valibot issue's `path` into a dotted string.
+ *
+ * Used only to name the failing key — never the value, which is what carries the
+ * secret. `'(root)'` covers the case where the schema itself is not an object.
+ */
+function pathOf(issue: { path?: readonly { key?: unknown }[] }): string {
+	if (!issue.path || issue.path.length === 0) return '(root)';
+	return issue.path.map((segment) => String(segment.key)).join('.');
+}
+
 /** Parse, resolve and validate every connection, or refuse to start. */
 export function loadConnections(
 	raw: unknown,
@@ -76,6 +87,14 @@ export function loadConnections(
 			);
 		}
 
+		const result = v.safeParse(definition.settings, resolveSecrets(entry.settings, env));
+		if (!result.success) {
+			// The issues carry the received value verbatim, and a resolved setting is a
+			// secret — so the keys travel and the values never do.
+			const keys = [...new Set(result.issues.map((issue) => pathOf(issue)))].join(', ');
+			throw new Error(`Connection "${entry.id}" has invalid settings: ${keys}.`);
+		}
+
 		return {
 			id: entry.id,
 			providerId: definition.id,
@@ -84,7 +103,7 @@ export function loadConnections(
 			// The connection inherits the provider's icon: a connection is an instance of
 			// a provider, and two Azure subscriptions should not be drawn differently.
 			icon: definition.icon,
-			settings: v.parse(definition.settings, resolveSecrets(entry.settings, env))
+			settings: result.output
 		};
 	});
 }

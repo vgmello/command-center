@@ -2,6 +2,7 @@ import type { PlatformSource, ServiceSource } from '../platform/source';
 import { SourceCache } from './cache';
 import { createDispatcher } from './dispatch';
 import { FIXTURE_CONNECTIONS, FIXTURE_PROVIDERS } from './fixtures';
+import type { ProviderDefinition } from './provider';
 import { SourceRegistry } from './registry';
 import { createRouters } from './routers';
 
@@ -36,9 +37,16 @@ export function buildSources(options: {
 	config: unknown;
 	env: Record<string, string | undefined>;
 	catalog: { platform: PlatformSource; service: ServiceSource };
+	/**
+	 * Which providers may be named. Defaults to the fixtures, and ONLY when no config
+	 * was supplied — a real connections file naming "fixture-cloud" would otherwise be
+	 * a valid configuration serving seeded numbers with nothing on the page admitting it.
+	 */
+	providers?: readonly ProviderDefinition<unknown>[];
 }) {
 	const registry = new SourceRegistry();
-	for (const provider of FIXTURE_PROVIDERS) registry.register(provider);
+	const providers = options.providers ?? (options.config == null ? FIXTURE_PROVIDERS : []);
+	for (const provider of providers) registry.register(provider);
 
 	registry.load(options.config ?? FIXTURE_CONNECTIONS, options.env);
 

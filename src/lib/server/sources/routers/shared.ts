@@ -52,6 +52,9 @@ export async function fanOut<T>(
 	args: string,
 	call: (client: unknown, ctx: SourceContext) => Promise<T[]>
 ): Promise<T[]> {
+	// `stale` is dropped here: the ports this feeds return plain data (`listRegions`
+	// returns `InfraRegion[]`), so there is nowhere for a staleness marker to travel
+	// without changing the port interfaces. It lands once the panel types carry it.
 	const { data } = await deps.cache.read(
 		{
 			connectionId: 'fan-out',
@@ -81,6 +84,9 @@ export async function fanOutSingle<T>(
 	args: string,
 	call: (client: unknown, ctx: SourceContext) => Promise<T>
 ): Promise<T> {
+	// Same trade-off as fanOut() above: `stale` is dropped because the single-value
+	// ports this feeds (e.g. `readNodeCounts` returning `NodeCounts`) have nowhere to
+	// carry it without changing the port interfaces, which this work must not touch.
 	const { data } = await deps.cache.read(
 		{
 			connectionId: 'fan-out',

@@ -1,5 +1,3 @@
-'use strict';
-
 import * as v from 'valibot';
 import { kindOf, type Capability, type SourceKind } from '$lib/platform/sources';
 import type { PlatformScope } from '$lib/platform/query';
@@ -96,7 +94,6 @@ export function defineProvider<Client>(input: ProviderInput<Client>): ProviderDe
 
 	const frozen = new FrozenSet(input.capabilities);
 	frozen.seal();
-	Object.freeze(frozen);
 
 	return {
 		...input,

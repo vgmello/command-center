@@ -5,7 +5,7 @@ import { fanOut, fanOutSingle, type RouterDeps } from './shared';
 /** `DeploymentSource` has no catalog side: every method is a deployment source's answer. */
 export function createDeploymentRouter(deps: RouterDeps): DeploymentSource {
 	const source: DeploymentSource = {
-		id: 'routed',
+		id: 'routed-deployment',
 
 		queryDeployments: (scope, query) =>
 			fanOutSingle(deps, 'deployment.log', scope, JSON.stringify(query), (client, ctx) =>

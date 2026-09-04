@@ -64,8 +64,8 @@ describe('the infrastructure router', () => {
 	test('with no cloud connection every method is unavailable rather than empty', async () => {
 		const { source } = build({ connections: [] });
 
-		expect(source.listRegions(scope)).rejects.toThrow(CapabilityUnavailableError);
-		expect(source.readCost(scope)).rejects.toThrow(CapabilityUnavailableError);
+		await expect(source.listRegions(scope)).rejects.toThrow(CapabilityUnavailableError);
+		await expect(source.readCost(scope)).rejects.toThrow(CapabilityUnavailableError);
 	});
 
 	test('repeated reads inside the TTL reach the provider once', async () => {

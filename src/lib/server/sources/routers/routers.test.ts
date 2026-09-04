@@ -61,8 +61,8 @@ describe('the platform router', () => {
 	test('without an APM connection the APM-backed methods are unavailable', async () => {
 		const { platform } = build({ connections: [] });
 
-		expect(platform.readRates(scope)).rejects.toThrow(CapabilityUnavailableError);
-		expect(platform.listIncidents(scope, 2)).rejects.toThrow(CapabilityUnavailableError);
+		await expect(platform.readRates(scope)).rejects.toThrow(CapabilityUnavailableError);
+		await expect(platform.listIncidents(scope, 2)).rejects.toThrow(CapabilityUnavailableError);
 	});
 });
 
@@ -123,6 +123,6 @@ describe('the deployment router', () => {
 	test('without a deployment connection every method is unavailable', async () => {
 		const { deployment } = build({ connections: [] });
 
-		expect(deployment.readSummary(scope)).rejects.toThrow(CapabilityUnavailableError);
+		await expect(deployment.readSummary(scope)).rejects.toThrow(CapabilityUnavailableError);
 	});
 });

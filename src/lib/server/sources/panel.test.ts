@@ -49,7 +49,7 @@ describe('panel', () => {
 	test('an unexpected error is not swallowed', async () => {
 		const boom = new TypeError('bug in the mapper');
 
-		expect(
+		await expect(
 			panel('cloud.cost', async () => {
 				throw boom;
 			})

@@ -51,7 +51,7 @@ describe('dispatch.all — the aggregate rule', () => {
 	test('with no connection of that kind it is unavailable, not empty', async () => {
 		const dispatcher = createDispatcher(new SourceRegistry());
 
-		expect(
+		await expect(
 			dispatcher.all({ capability: 'cloud.regions', scope, call: async () => [] })
 		).rejects.toThrow(CapabilityUnavailableError);
 	});
@@ -75,7 +75,7 @@ describe('dispatch.one — the resource rule', () => {
 	test('an unbound resource is unavailable with the reason that says so', async () => {
 		const dispatcher = createDispatcher(registryWith(async () => []));
 
-		expect(
+		await expect(
 			dispatcher.one({
 				capability: 'cloud.regions',
 				scope,
@@ -88,7 +88,7 @@ describe('dispatch.one — the resource rule', () => {
 	test('a binding naming a connection that is gone is unavailable, not a crash', async () => {
 		const dispatcher = createDispatcher(registryWith(async () => []));
 
-		expect(
+		await expect(
 			dispatcher.one({
 				capability: 'cloud.regions',
 				scope,
@@ -113,7 +113,7 @@ describe('dispatch.one — the resource rule', () => {
 		);
 		registry.load({ connections: [{ id: 'a', provider: 'p', label: 'A', settings: {} }] }, {});
 
-		expect(
+		await expect(
 			createDispatcher(registry).one({
 				capability: 'cloud.regions',
 				scope,
@@ -137,8 +137,8 @@ describe('dispatch.one — the resource rule', () => {
 			call: (client, ctx) => (client as CloudProvider).listRegions!(ctx)
 		});
 
-		expect(failure).rejects.toThrow(SourceFailedError);
-		expect(failure).rejects.toMatchObject({ source: { connectionId: 'a' } });
+		await expect(failure).rejects.toThrow(SourceFailedError);
+		await expect(failure).rejects.toMatchObject({ source: { connectionId: 'a' } });
 	});
 
 	test('one failing connection does not lose the others in a fan-out', async () => {
@@ -167,7 +167,7 @@ describe('dispatch.one — the resource rule', () => {
 			})
 		);
 
-		expect(
+		await expect(
 			dispatcher.all({
 				capability: 'cloud.regions',
 				scope,

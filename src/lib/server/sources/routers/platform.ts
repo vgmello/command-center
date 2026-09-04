@@ -12,7 +12,7 @@ import { fanOut, fanOutSingle, type RouterDeps } from './shared';
  */
 export function createPlatformRouter(deps: RouterDeps, catalog: PlatformSource): PlatformSource {
 	const source: PlatformSource = {
-		id: 'routed',
+		id: 'routed-platform',
 
 		// App-owned: delegated to the catalog unchanged.
 		queryDomains: (scope, query) => catalog.queryDomains(scope, query),
