@@ -20,8 +20,33 @@ import { ScalarApiReference } from '@scalar/sveltekit';
  */
 export const GET = ScalarApiReference({
 	url: '/api/v1/openapi.json',
+
 	// Matches the dashboard's dark-first look rather than Scalar's default.
 	theme: 'bluePlanet',
 	darkMode: true,
+
+	/**
+	 * The reference renders one fixed way. `darkMode` above is only the *initial*
+	 * state, so hiding the toggle also fixes it — nobody lands on a light page that
+	 * clashes with the dashboard and has no control to change it back.
+	 */
+	hideDarkModeToggle: true,
+
+	/**
+	 * Scalar defaults `telemetry` to true, which reports usage back to Scalar from
+	 * every visitor's browser. This page describes an internal platform API; its
+	 * traffic is not theirs to measure.
+	 */
+	telemetry: false,
+
+	/**
+	 * The document is generated from the annotations and the Valibot schemas, so an
+	 * edit made in the browser could only ever be thrown away on reload. Both of
+	 * these are already Scalar's defaults — stated here so a version bump that
+	 * changes a default cannot quietly turn the reference into an editor.
+	 */
+	layout: 'modern',
+	isEditable: false,
+
 	hideDownloadButton: false
 });
