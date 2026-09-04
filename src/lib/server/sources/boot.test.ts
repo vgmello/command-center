@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
+import * as v from 'valibot';
 import { buildSources } from './boot';
+import { SourceCache } from './cache';
+import type { CloudProvider } from './contracts';
+import { createDispatcher } from './dispatch';
 import { FIXTURE_CONNECTIONS } from './fixtures';
+import { defineProvider } from './provider';
+import { SourceRegistry } from './registry';
+import { createInfrastructureRouter, createRouters } from './routers';
 import { FixturePlatformSource, FixtureServiceSource } from '../platform/fixture-source';
 import type { PlatformScope } from '$lib/platform/query';
 
@@ -36,12 +43,45 @@ describe('buildSources', () => {
 	});
 
 	test('the four routers share one cache, so one capability is fetched once', async () => {
-		const routers = buildSources({ config: FIXTURE_CONNECTIONS, env: {}, catalog });
+		// A provider that counts its own invocations, rather than asserting on a value
+		// that would be the same whether or not the cache is shared.
+		let calls = 0;
+		const countingCloud = defineProvider<CloudProvider>({
+			id: 'counting-cloud',
+			kind: 'cloud',
+			name: 'Counting Cloud',
+			icon: 'cloud',
+			capabilities: ['cloud.nodes'],
+			settings: v.object({}),
+			connect: () => ({
+				async readNodeCounts() {
+					calls += 1;
+					return { healthy: 10, warning: 0, down: 0 };
+				},
+				resourceLink: () => null
+			})
+		});
 
-		// listGroups reads node counts internally; a direct read must hit the same entry.
-		await routers.infrastructure.listGroups(scope);
-		const counts = await routers.infrastructure.readNodeCounts(scope);
+		const registry = new SourceRegistry();
+		registry.register(countingCloud);
+		registry.load(
+			{ connections: [{ id: 'c', provider: 'counting-cloud', label: 'C', settings: {} }] },
+			{}
+		);
 
-		expect(counts.healthy).toBeGreaterThan(0);
+		// One `deps`, holding one cache — exactly what buildSources() builds and hands to
+		// createRouters(). `routers.infrastructure` is one InfrastructureSource built from
+		// it; `anotherInfrastructureRouter` is a second, independently constructed one,
+		// standing in for a different port that happened to ask for the same capability.
+		// If createRouters() gave either of them a private cache instead of passing this
+		// `deps` straight through, they would stop sharing an entry.
+		const deps = { registry, dispatcher: createDispatcher(registry), cache: new SourceCache() };
+		const routers = createRouters(deps, catalog);
+		const anotherInfrastructureRouter = createInfrastructureRouter(deps);
+
+		await routers.infrastructure.readNodeCounts(scope);
+		await anotherInfrastructureRouter.readNodeCounts(scope);
+
+		expect(calls).toBe(1);
 	});
 });

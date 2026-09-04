@@ -147,9 +147,11 @@ dispatch to fixture providers, so the routed path is the only path and cannot ro
 nobody is looking.
 
 **A capability nobody implements is stated, never faked.** The router throws
-`CapabilityUnavailableError`; assemblers turn that into a `Panel<T>` the UI renders as an
-explicit empty state. Serving zeros instead would reproduce exactly the failure the
-resolver's throw-on-unknown-name exists to prevent.
+`CapabilityUnavailableError` rather than returning zeros, which would reproduce exactly
+the failure the resolver's throw-on-unknown-name exists to prevent. `panel()` and
+`Panel<T>` are the contract that turns one of those into a rendered empty state; the
+assemblers adopt them in the increment that gives the panel components their
+`unavailable` and `failed` states, and until then nothing calls `panel()`.
 
 ### Two transports, one service
 
