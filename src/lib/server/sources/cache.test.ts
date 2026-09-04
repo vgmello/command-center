@@ -63,23 +63,26 @@ describe('SourceCache', () => {
 		const cache = new SourceCache();
 		const load = async () => ++calls;
 
-		// These would collide with space-joined key format:
-		// "a cloud.nodes x y" vs "a x cloud.nodes y"
-		// but not with JSON format.
+		// A collision in the old space-joined format requires the pair to straddle the
+		// capability, which sits between id and args: "id capability args"
+		// connectionId='a', args='b cloud.nodes c' -> "a cloud.nodes b cloud.nodes c"
+		// connectionId='a cloud.nodes b', args='c' -> "a cloud.nodes b cloud.nodes c" (collision!)
+		// JSON format prevents this: ["a", "cloud.nodes", "b cloud.nodes c"] vs
+		// ["a cloud.nodes b", "cloud.nodes", "c"] are distinct.
 		const result1 = await cache.read(
 			{
 				connectionId: 'a',
 				capability: 'cloud.nodes' as const,
-				args: 'x y',
+				args: 'b cloud.nodes c',
 				ttlSeconds: 60
 			},
 			load
 		);
 		const result2 = await cache.read(
 			{
-				connectionId: 'a x',
+				connectionId: 'a cloud.nodes b',
 				capability: 'cloud.nodes' as const,
-				args: 'y',
+				args: 'c',
 				ttlSeconds: 60
 			},
 			load
