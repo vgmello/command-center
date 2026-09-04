@@ -48,7 +48,22 @@ const SERVICES: ReadonlyArray<readonly [string, string, string]> = [
 	['catalogue-api', 'catalogue', 'Catalogue']
 ];
 
-const ROUTES = ['/v1/charge', '/v1/refund', '/v1/status', '/health'];
+/**
+ * Routes, each with how slow it is relative to the others.
+ *
+ * The factor bends the latency distribution rather than scaling the traffic. A quantile
+ * is scale-invariant, so routes sharing one distribution shape report an identical p95
+ * however much traffic each carries — which made every row of the endpoint table read
+ * 643ms and every latency share 100%.
+ *
+ * Below 1 is faster (more mass in the low buckets); above 1 is slower.
+ */
+const ROUTES: ReadonlyArray<readonly [string, number]> = [
+	['/v1/charge', 1.9],
+	['/v1/refund', 1.35],
+	['/v1/status', 0.7],
+	['/health', 0.35]
+];
 const ENVIRONMENTS = ['production', 'staging', 'development'];
 
 /** OTel histogram buckets, in seconds, as a real exporter emits them. */
@@ -95,7 +110,7 @@ export function buildEstate(
 			const scale = environment === 'production' ? 1 : environment === 'staging' ? 0.2 : 0.05;
 			const instances = environment === 'production' ? 3 : 1;
 
-			for (const route of ROUTES) {
+			for (const [route, slowness] of ROUTES) {
 				const base = (8 + random() * 40) * scale;
 				const ok = walk(random, base, points, base * 0.3);
 
@@ -171,7 +186,9 @@ export function buildEstate(
 								instance: `${service}-${replica}`,
 								le: LE_BUCKETS[bucket]
 							},
-							values: totals.map((total) => total * CDF[bucket])
+							// The exponent bends the curve: a slower route holds less of its mass
+							// in the low buckets, which pushes its 95th percentile up.
+							values: totals.map((total) => total * CDF[bucket] ** slowness)
 						});
 					}
 				}

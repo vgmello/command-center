@@ -259,3 +259,15 @@ describe('the seeded error rate stays plausible', () => {
 		}
 	});
 });
+
+describe('routes have distinguishable latency', () => {
+	test('a slow route’s p95 is higher than a fast one’s', () => {
+		// A quantile is scale-invariant, so routes sharing one distribution report the
+		// same p95 whatever their traffic — which made every endpoint row read alike.
+		const series = evaluator.evaluateAt(p95ByRoute(DEFAULT_METRICS, production, '1h'), at);
+		const byRoute = new Map(series.map((one) => [one.labels.http_route, one.points[0].value]));
+
+		expect(byRoute.get('/v1/charge')!).toBeGreaterThan(byRoute.get('/health')!);
+		expect(new Set([...byRoute.values()].map((one) => Math.round(one))).size).toBe(byRoute.size);
+	});
+});
