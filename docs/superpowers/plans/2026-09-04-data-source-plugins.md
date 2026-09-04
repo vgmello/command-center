@@ -2018,7 +2018,10 @@ export function createDispatcher(registry: SourceRegistry): Dispatcher {
 			}
 
 			return {
-				data: answered.map((one) => one.value),
+				// flatMap, not map: a connection answers with its own list, and the caller
+				// asked one question, so the lists concatenate. `map` would hand back one
+				// array per connection and fail the aggregate test above.
+				data: answered.flatMap((one) => one.value),
 				// The first connection that answered stands for the panel. With several
 				// sources a panel names one console to open; picking the first that
 				// answered is arbitrary but stable, and never names one that failed.
@@ -2510,11 +2513,12 @@ export async function fanOut<T>(
 ): Promise<T[]> {
 	const { data } = await deps.cache.read(
 		{ connectionId: 'fan-out', capability, args, ttlSeconds: ttlFor(deps, capability) },
-		async () => (await deps.dispatcher.all<T[]>({ capability, scope, call })).data
+		async () => (await deps.dispatcher.all<T>({ capability, scope, call })).data
 	);
 
-	// `all` returns one array per connection; the port wants one list.
-	return (data as T[][]).flat();
+	// `all` already concatenates each connection's list into one, which is what the port
+	// wants. Nothing to flatten here — see the dispatcher's flatMap.
+	return data as T[];
 }
 
 /**
