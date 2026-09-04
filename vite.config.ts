@@ -25,8 +25,8 @@ export default defineConfig({
 				title: 'Command Center API',
 				version: '1.0.0',
 				description:
-					'Read access to platform health: domains, headline metrics, incidents, ' +
-					'deployments and infrastructure.\n\n' +
+					'Read access to platform health: domains, services, headline metrics, ' +
+					'incidents, deployments and infrastructure.\n\n' +
 					'Every endpoint is scoped by `environment` and `timeRange`, and every ' +
 					'response is a fact rather than a rendering — statuses and units are ' +
 					'returned, never colours or pre-formatted strings.\n\n' +

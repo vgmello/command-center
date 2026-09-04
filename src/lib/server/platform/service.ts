@@ -3,6 +3,7 @@ import type {
 	ActivitySummary,
 	Deployment,
 	DeploymentPage,
+	DeploymentSummary,
 	DeploymentsSnapshot,
 	DomainChange,
 	DomainPage,
@@ -13,7 +14,10 @@ import type {
 	InfrastructureGroup,
 	OverviewSnapshot,
 	RateObservation,
+	HealthCheck,
 	Service,
+	ServiceDependencies,
+	ServiceEndpoint,
 	ServiceSnapshot,
 	SystemStatus,
 	TrendGrain
@@ -63,6 +67,10 @@ export function readDeployments(
 	limit = DEPLOYMENT_LIMIT
 ): Promise<Deployment[]> {
 	return deploymentSource().listDeployments(scope, limit);
+}
+
+export function readDeploymentSummary(scope: PlatformScope): Promise<DeploymentSummary> {
+	return deploymentSource().readSummary(scope);
 }
 
 export function readDeploymentPage(
@@ -121,6 +129,40 @@ export function readServices(scope: PlatformScope): Promise<Service[]> {
 
 export function readService(scope: PlatformScope, slug: string): Promise<Service | null> {
 	return serviceSource().findService(scope, slug);
+}
+
+/*
+ * The per-service reads each answer `null` for an unknown slug rather than an empty
+ * list. "There is no such service" and "the service has no dependencies" are different
+ * facts, and only one of them is a 404.
+ */
+
+export async function readServiceHealthChecks(
+	scope: PlatformScope,
+	slug: string
+): Promise<HealthCheck[] | null> {
+	const source = serviceSource();
+	if (!(await source.findService(scope, slug))) return null;
+	return source.listHealthChecks(scope, slug);
+}
+
+export async function readServiceDependencies(
+	scope: PlatformScope,
+	slug: string
+): Promise<ServiceDependencies | null> {
+	const source = serviceSource();
+	if (!(await source.findService(scope, slug))) return null;
+	return source.readDependencies(scope, slug);
+}
+
+export async function readServiceEndpoints(
+	scope: PlatformScope,
+	slug: string,
+	limit: number
+): Promise<ServiceEndpoint[] | null> {
+	const source = serviceSource();
+	if (!(await source.findService(scope, slug))) return null;
+	return source.listEndpoints(scope, slug, limit);
 }
 
 /**

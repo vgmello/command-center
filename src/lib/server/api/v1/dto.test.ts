@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	toActivitySummaryDto,
+	toDependenciesDto,
 	toDeploymentDto,
+	toDeploymentSummaryDto,
+	toDomainChangeDto,
+	toEndpointDto,
+	toFacetDto,
+	toHealthCheckDto,
+	toServiceDto,
 	toDomainDto,
 	toDomainPageDto,
 	toDomainSummaryDto,
@@ -12,7 +20,8 @@ import {
 import { listDomains } from '$lib/server/platform/fixtures';
 import {
 	FixtureDeploymentSource,
-	FixturePlatformSource
+	FixturePlatformSource,
+	FixtureServiceSource
 } from '$lib/server/platform/fixture-source';
 import { ALL_OWNERS } from '$lib/platform/query';
 import type { PlatformScope } from '$lib/platform/query';
@@ -173,5 +182,127 @@ describe('v1 collection shapes', () => {
 		expect(
 			Object.keys(toSystemStatusDto({ status: 'down', label: 'L', detail: 'D' })).sort()
 		).toEqual(['detail', 'label', 'status']);
+	});
+});
+
+describe('v1 service shapes', () => {
+	const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
+	const catalog = new FixtureServiceSource();
+
+	test('a service publishes its whole shape, key by key', async () => {
+		const service = await catalog.findService(scope, 'payment-api');
+
+		expect(Object.keys(toServiceDto(service!)).sort()).toEqual([
+			'activeAlerts',
+			'chatChannel',
+			'dashboard',
+			'description',
+			'domain',
+			'id',
+			'instancesHealthy',
+			'instancesTotal',
+			'language',
+			'name',
+			'owner',
+			'repository',
+			'runbook',
+			'runtime',
+			'serviceType',
+			'status'
+		]);
+	});
+
+	test('drops the presentation fields the catalog carries internally', async () => {
+		const service = await catalog.findService(scope, 'payment-api');
+		const dto = toServiceDto(service!) as unknown as Record<string, unknown>;
+
+		expect(service!.icon).toBeDefined();
+		expect(service!.accent).toBeDefined();
+		for (const field of ['icon', 'accent', 'slug', 'domainId', 'domainName']) {
+			expect(dto[field]).toBeUndefined();
+		}
+	});
+
+	test('a health check publishes a number and its unit, not a rendered string', async () => {
+		const checks = await catalog.listHealthChecks(scope, 'payment-api');
+		const dtos = checks.map(toHealthCheckDto);
+
+		expect(dtos.every((one) => typeof one.value === 'number')).toBe(true);
+		expect(new Set(dtos.map((one) => one.unit))).toEqual(new Set(['percent', 'milliseconds']));
+		// The sparkline is how we draw a check; it is not part of the contract.
+		expect((dtos[0] as unknown as Record<string, unknown>).series).toBeUndefined();
+	});
+
+	test('an endpoint drops the bar width, which is a fact about our table', async () => {
+		const endpoints = await catalog.listEndpoints(scope, 'payment-api', 5);
+		const dto = toEndpointDto(endpoints[0]) as unknown as Record<string, unknown>;
+
+		expect(endpoints[0].sharePct).toBeDefined();
+		expect(dto.sharePct).toBeUndefined();
+		expect(Object.keys(dto).sort()).toEqual(['method', 'p95LatencyMs', 'path', 'status']);
+	});
+
+	test('dependencies keep both directions and every protocol', async () => {
+		const dto = toDependenciesDto(await catalog.readDependencies(scope, 'payment-api'));
+
+		expect(Object.keys(dto).sort()).toEqual(['downstream', 'upstream']);
+		expect([...dto.upstream, ...dto.downstream].every((one) => one.protocol.length > 0)).toBe(true);
+	});
+});
+
+describe('v1 aggregate shapes', () => {
+	const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
+
+	test('the deployment summary omits the comparisons the dashboard chose to draw', async () => {
+		const summary = await deployments.readSummary(scope);
+		const dto = toDeploymentSummaryDto(summary) as unknown as Record<string, unknown>;
+
+		expect(summary.meanDurationChangePct).toBeDefined();
+		for (const field of ['meanDurationChangePct', 'changeFailureRateChangePct', 'totalChangePct']) {
+			expect(dto[field]).toBeUndefined();
+		}
+	});
+
+	test('a facet publishes id, label and count', () => {
+		expect(Object.keys(toFacetDto({ id: 'a', label: 'A', count: 2 })).sort()).toEqual([
+			'count',
+			'id',
+			'label'
+		]);
+	});
+
+	test('a domain change nests the domain and keeps both scores', () => {
+		const dto = toDomainChangeDto({
+			id: 'x',
+			domainId: 'billing-domain',
+			name: 'Billing Domain',
+			icon: 'receipt',
+			accent: 'blue',
+			healthScore: 83,
+			previousScore: 58,
+			direction: 'up',
+			changedAt: '2026-09-04T00:00:00.000Z'
+		});
+
+		expect(dto.domain).toEqual({ id: 'billing-domain', name: 'Billing Domain' });
+		expect(dto.previousScore).toBe(58);
+		// Icon and accent are how our feed draws a row.
+		expect((dto as unknown as Record<string, unknown>).icon).toBeUndefined();
+	});
+
+	test('the activity summary publishes four counts and nothing else', () => {
+		const dto = toActivitySummaryDto({
+			activeIncidents: 7,
+			incidentDomains: 5,
+			deploymentsToday: 29,
+			deploymentDomains: 6
+		});
+
+		expect(Object.keys(dto).sort()).toEqual([
+			'activeIncidents',
+			'deploymentDomains',
+			'deploymentsToday',
+			'incidentDomains'
+		]);
 	});
 });

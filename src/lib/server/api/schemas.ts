@@ -1,7 +1,9 @@
 import * as v from 'valibot';
 import { ALL_OWNERS, DOMAIN_SORT_KEYS, DOMAIN_STATUS_FILTERS } from '$lib/platform/query';
 import {
+	ALL_DOMAINS,
 	ALL_ENVIRONMENTS,
+	ALL_SERVICES,
 	DEPLOYMENT_STATES,
 	DEPLOYMENT_WINDOWS,
 	TREND_GRAINS
@@ -125,6 +127,25 @@ export function parseDomainQuery(params: URLSearchParams) {
 		status: params.get('status') ?? 'all',
 		owner: params.get('owner') ?? ALL_OWNERS,
 		sort: params.get('sort') ?? 'health-score',
+		page: toInteger(params.get('page'), 1),
+		pageSize: toInteger(params.get('pageSize'), DEFAULT_API_PAGE_SIZE)
+	});
+}
+
+/**
+ * Parse a deployment query out of a URL's query string.
+ *
+ * `deployedTo` rather than `environment`: the scope already owns that key, and the two
+ * are different axes — what the platform view reports on, and what a run targeted.
+ */
+export function parseDeploymentQuery(params: URLSearchParams) {
+	return v.parse(deploymentQuerySchema, {
+		search: params.get('search') ?? '',
+		state: params.get('state') ?? 'all',
+		domain: params.get('domain') ?? ALL_DOMAINS,
+		service: params.get('service') ?? ALL_SERVICES,
+		environment: params.get('deployedTo') ?? ALL_ENVIRONMENTS,
+		window: params.get('window') ?? 'any',
 		page: toInteger(params.get('page'), 1),
 		pageSize: toInteger(params.get('pageSize'), DEFAULT_API_PAGE_SIZE)
 	});

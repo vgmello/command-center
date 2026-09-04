@@ -3,6 +3,70 @@
 # Merged into the published spec by the openapi plugin in vite.config.ts.
 components:
   parameters:
+    DeployedTo:
+      description: >-
+        The environment a run targeted. A different axis from the `environment` scope parameter,
+        which says what the platform view reports on — hence the separate name rather than a second
+        `environment` key.
+      in: query
+      name: deployedTo
+      required: false
+      schema:
+        default: all
+        enum:
+          - production
+          - staging
+          - development
+          - all
+        type: string
+    DeploymentDomain:
+      description: A domain id, or `all`.
+      in: query
+      name: domain
+      required: false
+      schema:
+        default: all
+        maxLength: 120
+        type: string
+    DeploymentService:
+      description: >-
+        An exact service name, or `all`. Exact rather than a substring, so a service is not matched
+        by a longer name containing it.
+      in: query
+      name: service
+      required: false
+      schema:
+        default: all
+        maxLength: 120
+        type: string
+    DeploymentState:
+      description: >-
+        Which outcomes to include. `completed` covers everything that finished, which is a success
+        or a rollback.
+      in: query
+      name: state
+      required: false
+      schema:
+        default: all
+        enum:
+          - all
+          - in-progress
+          - failed
+          - completed
+        type: string
+    DeploymentWindow:
+      description: How far back to look. `any` applies no bound.
+      in: query
+      name: window
+      required: false
+      schema:
+        default: any
+        enum:
+          - any
+          - today
+          - 7d
+          - 30d
+        type: string
     DomainOwner:
       description: >-
         An owner handle, or `all`. Owners are org data rather than a fixed set — read the current
@@ -88,6 +152,15 @@ components:
       schema:
         maxLength: 120
         type: string
+    ServiceSlug:
+      description: The service identifier, as returned by the services collection.
+      in: path
+      name: slug
+      required: true
+      schema:
+        maxLength: 120
+        pattern: ^[a-z0-9][a-z0-9-]*$
+        type: string
     TimeRange:
       description: Lookback window for every metric and trend in the response.
       in: query
@@ -110,9 +183,83 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
       description: The request could not be parsed or failed validation.
+    NotFound:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/NotFoundError'
+      description: No resource with that identifier.
     Unauthorized:
       description: Missing or invalid bearer token.
   schemas:
+    ActivitySummary:
+      properties:
+        activeIncidents:
+          type: integer
+        deploymentDomains:
+          type: integer
+        deploymentsToday:
+          type: integer
+        incidentDomains:
+          type: integer
+      required:
+        - activeIncidents
+        - incidentDomains
+        - deploymentsToday
+        - deploymentDomains
+      type: object
+    Dependencies:
+      properties:
+        downstream:
+          items:
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              protocol:
+                type: string
+              status:
+                enum:
+                  - healthy
+                  - degraded
+                  - down
+                  - unknown
+                type: string
+            required:
+              - id
+              - name
+              - protocol
+              - status
+            type: object
+          type: array
+        upstream:
+          items:
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              protocol:
+                type: string
+              status:
+                enum:
+                  - healthy
+                  - degraded
+                  - down
+                  - unknown
+                type: string
+            required:
+              - id
+              - name
+              - protocol
+              - status
+            type: object
+          type: array
+      required:
+        - upstream
+        - downstream
+      type: object
     Deployment:
       properties:
         deployedAt:
@@ -168,6 +315,46 @@ components:
         - deployedAt
         - durationSeconds
       type: object
+    DeploymentPage:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/Deployment'
+          type: array
+        page:
+          $ref: '#/components/schemas/Page'
+      required:
+        - data
+        - page
+      type: object
+    DeploymentSummary:
+      properties:
+        changeFailureRatePct:
+          maximum: 100
+          minimum: 0
+          type: number
+        domainCount:
+          type: integer
+        failed:
+          type: integer
+        inProgress:
+          type: integer
+        meanDurationSeconds:
+          minimum: 0
+          type: number
+        successful:
+          type: integer
+        total:
+          type: integer
+      required:
+        - total
+        - domainCount
+        - successful
+        - inProgress
+        - failed
+        - meanDurationSeconds
+        - changeFailureRatePct
+      type: object
     Domain:
       properties:
         activeIncidents:
@@ -219,6 +406,34 @@ components:
         - owner
         - availability7dPct
       type: object
+    DomainChange:
+      properties:
+        changedAt:
+          format: date-time
+          type: string
+        direction:
+          enum:
+            - up
+            - down
+            - flat
+          type: string
+        domain:
+          $ref: '#/components/schemas/DomainRef'
+        healthScore:
+          maximum: 100
+          minimum: 0
+          type: number
+        previousScore:
+          maximum: 100
+          minimum: 0
+          type: number
+      required:
+        - domain
+        - healthScore
+        - previousScore
+        - direction
+        - changedAt
+      type: object
     DomainPage:
       properties:
         data:
@@ -260,6 +475,28 @@ components:
         - down
         - unknown
       type: object
+    Endpoint:
+      properties:
+        method:
+          type: string
+        p95LatencyMs:
+          minimum: 0
+          type: number
+        path:
+          type: string
+        status:
+          enum:
+            - healthy
+            - degraded
+            - down
+            - unknown
+          type: string
+      required:
+        - method
+        - path
+        - p95LatencyMs
+        - status
+      type: object
     Error:
       properties:
         error:
@@ -279,6 +516,46 @@ components:
       required:
         - error
         - issues
+      type: object
+    Facet:
+      properties:
+        count:
+          type: integer
+        id:
+          type: string
+        label:
+          type: string
+      required:
+        - id
+        - label
+        - count
+      type: object
+    HealthCheck:
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        status:
+          enum:
+            - healthy
+            - degraded
+            - down
+            - unknown
+          type: string
+        unit:
+          enum:
+            - percent
+            - milliseconds
+          type: string
+        value:
+          type: number
+      required:
+        - id
+        - label
+        - status
+        - value
+        - unit
       type: object
     Incident:
       properties:
@@ -366,6 +643,16 @@ components:
         - change
         - polarity
       type: object
+    NotFoundError:
+      properties:
+        error:
+          const: not_found
+        message:
+          type: string
+      required:
+        - error
+        - message
+      type: object
     Page:
       properties:
         page:
@@ -381,6 +668,101 @@ components:
         - pageSize
         - totalItems
         - totalPages
+      type: object
+    Service:
+      properties:
+        activeAlerts:
+          type: integer
+        chatChannel:
+          properties:
+            href:
+              format: uri
+              type: string
+            label:
+              type: string
+          required:
+            - label
+            - href
+          type: object
+        dashboard:
+          anyOf:
+            - properties:
+                href:
+                  format: uri
+                  type: string
+                label:
+                  type: string
+              required:
+                - label
+                - href
+              type: object
+            - type: 'null'
+        description:
+          type: string
+        domain:
+          $ref: '#/components/schemas/DomainRef'
+        id:
+          type: string
+        instancesHealthy:
+          type: integer
+        instancesTotal:
+          type: integer
+        language:
+          type: string
+        name:
+          type: string
+        owner:
+          type: string
+        repository:
+          properties:
+            href:
+              format: uri
+              type: string
+            label:
+              type: string
+          required:
+            - label
+            - href
+          type: object
+        runbook:
+          properties:
+            href:
+              format: uri
+              type: string
+            label:
+              type: string
+          required:
+            - label
+            - href
+          type: object
+        runtime:
+          type: string
+        serviceType:
+          type: string
+        status:
+          enum:
+            - healthy
+            - degraded
+            - down
+            - unknown
+          type: string
+      required:
+        - id
+        - name
+        - description
+        - domain
+        - status
+        - owner
+        - serviceType
+        - language
+        - runtime
+        - repository
+        - chatChannel
+        - runbook
+        - dashboard
+        - instancesHealthy
+        - instancesTotal
+        - activeAlerts
       type: object
     SystemStatus:
       properties:

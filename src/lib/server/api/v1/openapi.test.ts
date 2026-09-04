@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { Glob } from 'bun';
+import { API_TAG_NAMES } from './tags';
 import * as yaml from 'js-yaml';
 import { renderComponents } from '../../../../../scripts/generate-openapi-components';
 
@@ -87,7 +88,16 @@ async function annotations() {
 async function routePaths(): Promise<string[]> {
 	const paths: string[] = [];
 	for await (const file of new Glob('src/routes/api/v1/**/+server.ts').scan('.')) {
-		paths.push('/' + file.replace('src/routes/', '').replace('/+server.ts', ''));
+		paths.push(
+			'/' +
+				file
+					.replace('src/routes/', '')
+					.replace('/+server.ts', '')
+					// SvelteKit spells a parameter `[slug]`; OpenAPI spells it `{slug}`. The
+					// two have to be compared in one spelling or every dynamic route reads as
+					// undocumented.
+					.replace(/\[([^\]]+)\]/g, '{$1}')
+		);
 	}
 	return paths.sort();
 }
@@ -188,7 +198,13 @@ describe('the endpoint annotations', () => {
 			expect(names, path).toContain('Environment');
 			expect(names, path).toContain('TimeRange');
 			expect(get.security, path).toEqual([{ bearerAuth: [] }]);
-			expect(Object.keys(get.responses ?? {}).sort(), path).toEqual(['200', '400', '401']);
+			// Every operation answers these three. A path with a parameter answers 404
+			// as well, because addressing a thing that is not there is a different
+			// failure from asking for it badly.
+			const responses = Object.keys(get.responses ?? {}).sort();
+			expect(responses, path).toEqual(
+				path.includes('{') ? ['200', '400', '401', '404'] : ['200', '400', '401']
+			);
 			expect(get.summary, path).toBeTruthy();
 			expect(get.tags?.length, path).toBeGreaterThan(0);
 		}
@@ -198,10 +214,9 @@ describe('the endpoint annotations', () => {
 		// The plugin emits tag names from the annotations but has nowhere to describe
 		// them; the descriptions are added when the document is served. A tag added to
 		// a handler and nowhere else shows up in the sidebar with no explanation.
-		const described = new Set(['Domains', 'Metrics', 'Activity', 'Infrastructure']);
 		const used = [...(await annotations()).values()].flatMap(({ get }) => get.tags ?? []);
 
-		expect([...new Set(used)].filter((tag) => !described.has(tag))).toEqual([]);
+		expect([...new Set(used)].filter((tag) => !API_TAG_NAMES.has(tag))).toEqual([]);
 	});
 
 	test('operation ids are unique, since clients generate method names from them', async () => {

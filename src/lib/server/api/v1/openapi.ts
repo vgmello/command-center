@@ -1,6 +1,16 @@
 import { toJsonSchemaDefs } from '@valibot/to-json-schema';
 import {
+	activitySummarySchema,
+	dependenciesSchema,
+	deploymentPageSchema,
 	deploymentSchema,
+	deploymentSummarySchema,
+	domainChangeSchema,
+	endpointSchema,
+	facetSchema,
+	notFoundSchema,
+	healthCheckSchema,
+	serviceSchema,
 	domainPageSchema,
 	domainRefSchema,
 	domainSchema,
@@ -14,6 +24,13 @@ import {
 } from './dto';
 import { DEFAULT_API_PAGE_SIZE } from '../schemas';
 import { ALL_OWNERS, DOMAIN_SORT_KEYS, DOMAIN_STATUS_FILTERS } from '$lib/platform/query';
+import {
+	ALL_DOMAINS,
+	ALL_ENVIRONMENTS,
+	ALL_SERVICES,
+	DEPLOYMENT_STATES,
+	DEPLOYMENT_WINDOWS
+} from '$lib/platform/deployments';
 
 /**
  * The reusable half of the OpenAPI document: schemas, parameters, security.
@@ -44,7 +61,17 @@ const schemas = toJsonSchemaDefs(
 		Deployment: deploymentSchema,
 		Infrastructure: infrastructureSchema,
 		SystemStatus: systemStatusSchema,
-		Error: errorSchema
+		DeploymentPage: deploymentPageSchema,
+		DeploymentSummary: deploymentSummarySchema,
+		ActivitySummary: activitySummarySchema,
+		Facet: facetSchema,
+		DomainChange: domainChangeSchema,
+		Service: serviceSchema,
+		HealthCheck: healthCheckSchema,
+		Dependencies: dependenciesSchema,
+		Endpoint: endpointSchema,
+		Error: errorSchema,
+		NotFoundError: notFoundSchema
 	},
 	{
 		/**
@@ -115,6 +142,55 @@ const parameters = {
 		description:
 			'An owner handle, or `all`. Owners are org data rather than a fixed set — read the current list from the domains they own.'
 	},
+	DeploymentState: {
+		name: 'state',
+		in: 'query',
+		required: false,
+		schema: { type: 'string', enum: [...DEPLOYMENT_STATES], default: 'all' },
+		description:
+			'Which outcomes to include. `completed` covers everything that finished, which is a success or a rollback.'
+	},
+	DeploymentDomain: {
+		name: 'domain',
+		in: 'query',
+		required: false,
+		schema: { type: 'string', maxLength: 120, default: ALL_DOMAINS },
+		description: 'A domain id, or `all`.'
+	},
+	DeploymentService: {
+		name: 'service',
+		in: 'query',
+		required: false,
+		schema: { type: 'string', maxLength: 120, default: ALL_SERVICES },
+		description:
+			'An exact service name, or `all`. Exact rather than a substring, so a service is not matched by a longer name containing it.'
+	},
+	DeployedTo: {
+		name: 'deployedTo',
+		in: 'query',
+		required: false,
+		schema: {
+			type: 'string',
+			enum: ['production', 'staging', 'development', ALL_ENVIRONMENTS],
+			default: ALL_ENVIRONMENTS
+		},
+		description:
+			'The environment a run targeted. A different axis from the `environment` scope parameter, which says what the platform view reports on — hence the separate name rather than a second `environment` key.'
+	},
+	DeploymentWindow: {
+		name: 'window',
+		in: 'query',
+		required: false,
+		schema: { type: 'string', enum: [...DEPLOYMENT_WINDOWS], default: 'any' },
+		description: 'How far back to look. `any` applies no bound.'
+	},
+	ServiceSlug: {
+		name: 'slug',
+		in: 'path',
+		required: true,
+		schema: { type: 'string', maxLength: 120, pattern: '^[a-z0-9][a-z0-9-]*$' },
+		description: 'The service identifier, as returned by the services collection.'
+	},
 	DomainSort: {
 		name: 'sort',
 		in: 'query',
@@ -143,7 +219,11 @@ const responses = {
 		description: 'The request could not be parsed or failed validation.',
 		content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } }
 	},
-	Unauthorized: { description: 'Missing or invalid bearer token.' }
+	Unauthorized: { description: 'Missing or invalid bearer token.' },
+	NotFound: {
+		description: 'No resource with that identifier.',
+		content: { 'application/json': { schema: { $ref: '#/components/schemas/NotFoundError' } } }
+	}
 };
 
 const securitySchemes = {

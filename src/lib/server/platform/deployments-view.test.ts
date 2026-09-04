@@ -5,7 +5,7 @@ import {
 	buildDeploymentsSnapshot,
 	buildRateTiles
 } from './deployments-view';
-import { FixtureDeploymentSource } from './fixture-source';
+import { FixtureDeploymentSource, FixturePlatformSource } from './fixture-source';
 import { matchesDeploymentState } from '$lib/platform/deployments';
 import type { DeploymentSummary } from '$lib/platform/types';
 import type { PlatformScope } from '$lib/platform/query';
@@ -176,5 +176,20 @@ describe('the deployment log', () => {
 
 		expect(page.deployments.length).toBeGreaterThan(0);
 		expect(page.deployments.every((one) => one.environment === 'staging')).toBe(true);
+	});
+});
+
+describe('the two activity totals', () => {
+	test('the deployment count agrees with the deployment summary', async () => {
+		const platform = new FixturePlatformSource();
+		const [activity, summary] = await Promise.all([
+			platform.readActivitySummary(scope),
+			source.readSummary(scope)
+		]);
+
+		// Two endpoints publish these separately; a caller comparing them must not find
+		// two different totals for one day.
+		expect(activity.deploymentsToday).toBe(summary.total);
+		expect(activity.deploymentDomains).toBe(summary.domainCount);
 	});
 });

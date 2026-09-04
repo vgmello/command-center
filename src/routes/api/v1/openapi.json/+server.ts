@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import generated from 'virtual:openapi-spec';
+import { API_TAGS } from '$lib/server/api/v1/tags';
 import type { RequestHandler } from './$types';
 
 /**
@@ -24,17 +25,11 @@ import type { RequestHandler } from './$types';
  * has authenticated. Gating it would make the documentation unreadable to the people
  * deciding whether to integrate, and would protect nothing.
  */
-const TAGS = [
-	{ name: 'Domains', description: 'Business domains and their rolled-up health.' },
-	{ name: 'Metrics', description: 'Headline rates across the platform.' },
-	{ name: 'Activity', description: 'Incidents and deployments.' },
-	{ name: 'Infrastructure', description: 'Clusters, nodes, databases and queues.' }
-];
 
 const document = {
 	...generated,
 	security: [{ bearerAuth: [] }],
-	tags: TAGS
+	tags: API_TAGS
 };
 
 export const GET: RequestHandler = () =>

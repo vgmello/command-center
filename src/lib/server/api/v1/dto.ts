@@ -1,12 +1,22 @@
 import * as v from 'valibot';
 import type {
+	ActivitySummary,
 	Deployment,
+	DeploymentPage,
+	DeploymentSummary,
 	Domain,
+	DomainChange,
 	DomainPage,
 	DomainStatusCounts,
+	FacetOption,
+	Page,
+	HealthCheck,
 	Incident,
 	InfrastructureGroup,
 	RateObservation,
+	Service,
+	ServiceDependencies,
+	ServiceEndpoint,
 	SystemStatus
 } from '$lib/platform/types';
 
@@ -126,6 +136,107 @@ export const deploymentSchema = v.object({
 	durationSeconds: v.nullable(v.pipe(v.number(), v.minValue(0)))
 });
 
+export const deploymentPageSchema = v.object({
+	data: v.array(deploymentSchema),
+	page: pageSchema
+});
+
+export const deploymentSummarySchema = v.object({
+	total: v.pipe(v.number(), v.integer()),
+	domainCount: v.pipe(v.number(), v.integer()),
+	successful: v.pipe(v.number(), v.integer()),
+	inProgress: v.pipe(v.number(), v.integer()),
+	failed: v.pipe(v.number(), v.integer()),
+	/** Mean wall-clock duration of the runs that finished, in seconds. */
+	meanDurationSeconds: v.pipe(v.number(), v.minValue(0)),
+	/** Share of runs that failed or were rolled back. */
+	changeFailureRatePct: v.pipe(v.number(), v.minValue(0), v.maxValue(100))
+});
+
+export const activitySummarySchema = v.object({
+	activeIncidents: v.pipe(v.number(), v.integer()),
+	/** How many distinct domains those incidents span. */
+	incidentDomains: v.pipe(v.number(), v.integer()),
+	deploymentsToday: v.pipe(v.number(), v.integer()),
+	deploymentDomains: v.pipe(v.number(), v.integer())
+});
+
+/** A filter option populated from the data: an owner, a domain, anything grouped. */
+export const facetSchema = v.object({
+	id: v.string(),
+	label: v.string(),
+	count: v.pipe(v.number(), v.integer())
+});
+
+export const domainChangeSchema = v.object({
+	domain: domainRefSchema,
+	healthScore: v.pipe(v.number(), v.minValue(0), v.maxValue(100)),
+	previousScore: v.pipe(v.number(), v.minValue(0), v.maxValue(100)),
+	direction: v.picklist(['up', 'down', 'flat']),
+	changedAt: v.pipe(v.string(), v.isoTimestamp())
+});
+
+/** A labelled destination outside the platform: a repo, a channel, a runbook. */
+export const linkSchema = v.object({
+	label: v.string(),
+	href: v.pipe(v.string(), v.url())
+});
+
+export const serviceSchema = v.object({
+	id: v.string(),
+	name: v.string(),
+	description: v.string(),
+	domain: domainRefSchema,
+	status: healthStatusSchema,
+	owner: v.string(),
+	serviceType: v.string(),
+	language: v.string(),
+	runtime: v.string(),
+	repository: linkSchema,
+	chatChannel: linkSchema,
+	runbook: linkSchema,
+	/** The observability console, when the catalog records one. */
+	dashboard: v.nullable(linkSchema),
+	instancesHealthy: v.pipe(v.number(), v.integer()),
+	instancesTotal: v.pipe(v.number(), v.integer()),
+	activeAlerts: v.pipe(v.number(), v.integer())
+});
+
+/**
+ * One SLI reading.
+ *
+ * The value is a number with its unit stated, not the pre-formatted string our table
+ * prints: "517 ms" is a rendering, and a client that wants to alert on it needs the
+ * number.
+ */
+export const healthCheckSchema = v.object({
+	id: v.string(),
+	label: v.string(),
+	status: healthStatusSchema,
+	value: v.number(),
+	unit: v.picklist(['percent', 'milliseconds'])
+});
+
+export const dependencySchema = v.object({
+	id: v.string(),
+	name: v.string(),
+	/** How they talk: HTTP, gRPC, PostgreSQL. Not inferable from the name. */
+	protocol: v.string(),
+	status: healthStatusSchema
+});
+
+export const dependenciesSchema = v.object({
+	upstream: v.array(dependencySchema),
+	downstream: v.array(dependencySchema)
+});
+
+export const endpointSchema = v.object({
+	method: v.string(),
+	path: v.string(),
+	p95LatencyMs: v.pipe(v.number(), v.minValue(0)),
+	status: healthStatusSchema
+});
+
 export const infrastructureSchema = v.object({
 	id: v.string(),
 	label: v.string(),
@@ -142,6 +253,18 @@ export const systemStatusSchema = v.object({
 export const errorSchema = v.object({
 	error: v.literal('invalid_request'),
 	issues: v.array(v.object({ path: v.string(), message: v.string() }))
+});
+
+/**
+ * A missing resource.
+ *
+ * A separate schema rather than making `issues` optional on the one above: the two
+ * failures carry different information, and a client branching on `error` should not
+ * also have to test whether a field happens to be present.
+ */
+export const notFoundSchema = v.object({
+	error: v.literal('not_found'),
+	message: v.string()
 });
 
 export type DomainRefDto = v.InferOutput<typeof domainRefSchema>;
@@ -171,15 +294,26 @@ export function toDomainDto(domain: Domain): DomainDto {
 	};
 }
 
+/**
+ * Paging metadata, listed field by field like every other mapper.
+ *
+ * Extracted now that two resources page. `from` and `to` stay internal: they are the
+ * "Showing 1 to 8 of 29" arithmetic our footer does, derivable from the four fields
+ * here, and a contract is smaller when it does not publish its own conveniences.
+ */
+function toPageDto(page: Page): PageDto {
+	return {
+		page: page.page,
+		pageSize: page.pageSize,
+		totalItems: page.totalItems,
+		totalPages: page.totalPages
+	};
+}
+
 export function toDomainPageDto(result: DomainPage): DomainPageDto {
 	return {
 		data: result.domains.map(toDomainDto),
-		page: {
-			page: result.page.page,
-			pageSize: result.page.pageSize,
-			totalItems: result.page.totalItems,
-			totalPages: result.page.totalPages
-		}
+		page: toPageDto(result.page)
 	};
 }
 
@@ -229,6 +363,134 @@ export function toDeploymentDto(deployment: Deployment): DeploymentDto {
 		deployedBy: deployment.deployedBy,
 		deployedAt: deployment.deployedAt,
 		durationSeconds: deployment.durationSeconds
+	};
+}
+
+export type DeploymentPageDto = v.InferOutput<typeof deploymentPageSchema>;
+export type DeploymentSummaryDto = v.InferOutput<typeof deploymentSummarySchema>;
+export type ActivitySummaryDto = v.InferOutput<typeof activitySummarySchema>;
+export type FacetDto = v.InferOutput<typeof facetSchema>;
+export type DomainChangeDto = v.InferOutput<typeof domainChangeSchema>;
+export type ServiceDto = v.InferOutput<typeof serviceSchema>;
+export type HealthCheckDto = v.InferOutput<typeof healthCheckSchema>;
+export type DependenciesDto = v.InferOutput<typeof dependenciesSchema>;
+export type EndpointDto = v.InferOutput<typeof endpointSchema>;
+
+export function toDeploymentPageDto(result: DeploymentPage): DeploymentPageDto {
+	return {
+		data: result.deployments.map(toDeploymentDto),
+		page: toPageDto(result.page)
+	};
+}
+
+/**
+ * The day's deployment aggregate.
+ *
+ * The against-yesterday deltas the dashboard prints are deliberately absent: they are
+ * a comparison this screen chose to draw, and a client with its own period can compute
+ * a better one from two calls to this endpoint.
+ */
+export function toDeploymentSummaryDto(summary: DeploymentSummary): DeploymentSummaryDto {
+	return {
+		total: summary.total,
+		domainCount: summary.domainCount,
+		successful: summary.successful,
+		inProgress: summary.inProgress,
+		failed: summary.failed,
+		meanDurationSeconds: summary.meanDurationSeconds,
+		changeFailureRatePct: summary.changeFailureRatePct
+	};
+}
+
+export function toActivitySummaryDto(activity: ActivitySummary): ActivitySummaryDto {
+	return {
+		activeIncidents: activity.activeIncidents,
+		incidentDomains: activity.incidentDomains,
+		deploymentsToday: activity.deploymentsToday,
+		deploymentDomains: activity.deploymentDomains
+	};
+}
+
+export function toFacetDto(option: FacetOption): FacetDto {
+	return { id: option.id, label: option.label, count: option.count };
+}
+
+export function toDomainChangeDto(change: DomainChange): DomainChangeDto {
+	return {
+		domain: { id: change.domainId, name: change.name },
+		healthScore: change.healthScore,
+		previousScore: change.previousScore,
+		direction: change.direction,
+		changedAt: change.changedAt
+	};
+}
+
+export function toServiceDto(service: Service): ServiceDto {
+	return {
+		id: service.slug,
+		name: service.name,
+		description: service.description,
+		domain: { id: service.domainId, name: service.domainName },
+		status: service.status,
+		owner: service.owner,
+		serviceType: service.serviceType,
+		language: service.language,
+		runtime: service.runtime,
+		repository: service.repository,
+		chatChannel: service.chatChannel,
+		runbook: service.runbook,
+		dashboard: service.dashboard,
+		instancesHealthy: service.instancesHealthy,
+		instancesTotal: service.instancesTotal,
+		activeAlerts: service.activeAlerts
+	};
+}
+
+/**
+ * A health check as a number and a unit.
+ *
+ * The internal shape carries a formatted string and a sparkline because that is what
+ * our table draws. A client wants the reading — it will render or alert on it its own
+ * way — so the value is parsed back out of the check's own unit rather than shipped as
+ * "517 ms".
+ */
+export function toHealthCheckDto(check: HealthCheck): HealthCheckDto {
+	const percent = check.formatted.trim().endsWith('%');
+	const value = Number.parseFloat(check.formatted);
+
+	return {
+		id: check.id,
+		label: check.label,
+		status: check.status,
+		value: Number.isFinite(value) ? value : 0,
+		unit: percent ? 'percent' : 'milliseconds'
+	};
+}
+
+export function toDependenciesDto(dependencies: ServiceDependencies): DependenciesDto {
+	const node = (one: ServiceDependencies['upstream'][number]) => ({
+		id: one.id,
+		name: one.name,
+		protocol: one.protocol,
+		status: one.status
+	});
+
+	return {
+		upstream: dependencies.upstream.map(node),
+		downstream: dependencies.downstream.map(node)
+	};
+}
+
+/**
+ * `sharePct` is deliberately absent: it is the width of a bar in our table, computed
+ * against the slowest endpoint in the list we happened to return.
+ */
+export function toEndpointDto(endpoint: ServiceEndpoint): EndpointDto {
+	return {
+		method: endpoint.method,
+		path: endpoint.path,
+		p95LatencyMs: endpoint.p95LatencyMs,
+		status: endpoint.status
 	};
 }
 

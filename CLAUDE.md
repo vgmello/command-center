@@ -179,6 +179,20 @@ detail, because those issues describe our schemas and the endpoint is public. Th
 JSON API names the offending field, because there the caller wrote the request by
 hand and is owed an explanation.
 
+**Every new screen owes the API its resources.** A screen composite stays private —
+`readOverview`, `readDomainsView`, `readDeploymentsView`, `readServiceView` are shaped
+for one page — but the resources it is composed _from_ belong in `/api/v1`, and adding
+a screen without them leaves the public contract describing a smaller platform than the
+one that exists. Two rules the service endpoints settled:
+
+- **A missing resource is a 404, not an empty 200.** `NotFoundError` in
+  `src/lib/server/api/respond.ts` is the one place that maps it, for the same reason
+  validation errors are mapped there: the moment two endpoints write their own 404,
+  they write two different ones.
+- **A query key means one thing.** The deployment log's environment filter is
+  `deployedTo`, not a second `environment`, because the scope already owns that key and
+  the two are different axes — what the view reports on, and what a run targeted.
+
 **With `API_TOKENS` unset the API is closed, not open** — every request gets 401. A
 data API that serves everything because someone forgot an environment variable is not
 a failure mode worth having.
@@ -490,7 +504,7 @@ an `@` costs its full length in every session, whether or not the session touche
 
 ## State
 
-Overview, Domains, Deployments and the Service detail view built and verified. `bun test` (168 tests), `bun run check`, `bun run lint`,
+Overview, Domains, Deployments and the Service detail view built and verified. `bun test` (178 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
@@ -510,9 +524,11 @@ What exists:
 - `src/routes/services.remote.ts` — `getServices`, `getServiceView`. All remote
   functions are Valibot-validated against the schemas the JSON API shares, the service
   slug included: it arrives from a URL anyone can edit
-- `src/routes/api/v1/` — public JSON API: `domains`, `domains/summary`, `metrics`,
-  `incidents`, `deployments`, `infrastructure`, `status`. Token-authenticated,
-  frozen DTOs in `src/lib/server/api/v1/dto.ts` with a shape test
+- `src/routes/api/v1/` — public JSON API, sixteen paths: `domains` (+ `summary`,
+  `owners`, `changes`), `services` (+ `{slug}` and its `health`, `dependencies`,
+  `endpoints`), `deployments` (+ `summary`), `activity`, `metrics`, `incidents`,
+  `infrastructure`, `status`. Token-authenticated, frozen DTOs in
+  `src/lib/server/api/v1/dto.ts` with a shape test per resource
 - `/api/v1/openapi.json` and `/api` — the generated OpenAPI document and
   the Scalar reference that renders it
 - `src/hooks.server.ts` — `handleValidationError`: generic message to the client,

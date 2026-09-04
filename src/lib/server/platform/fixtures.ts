@@ -893,15 +893,20 @@ export function listRecentChanges(now: Date): DomainChange[] {
  * tile cannot disagree with the per-domain column beside it. Deployments have no
  * per-domain field to count, so they are seeded.
  */
-export function listActivitySummary(): ActivitySummary {
+export function listActivitySummary(now: Date = new Date()): ActivitySummary {
 	const domains = listDomains();
 	const withIncidents = domains.filter((domain) => domain.activeIncidents > 0);
+	const log = listDeploymentLog(now);
 
 	return {
 		activeIncidents: withIncidents.reduce((sum, domain) => sum + domain.activeIncidents, 0),
 		incidentDomains: withIncidents.length,
-		deploymentsToday: 29,
-		deploymentDomains: 6
+		// Counted off the same log the deployment summary counts, not seeded. Two
+		// endpoints publishing different totals for one day is the failure the whole
+		// derive-rather-than-store rule exists to prevent — and adding three rows to
+		// the log is all it took to expose it.
+		deploymentsToday: log.length,
+		deploymentDomains: new Set(log.map((one) => one.domainId)).size
 	};
 }
 
