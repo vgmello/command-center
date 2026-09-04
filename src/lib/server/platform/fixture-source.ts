@@ -63,7 +63,8 @@ import {
 	listOwners,
 	listRecentChanges,
 	readDeploymentBreakdown,
-	readDeploymentSummary
+	readDeploymentSummary,
+	readPlatformRates
 } from './fixtures';
 import { queryDeploymentsInMemory, queryDomainsInMemory } from './in-memory-query';
 import * as estate from './infrastructure-fixtures';
@@ -82,7 +83,6 @@ import {
 	readRequestRate,
 	readServiceStats
 } from './service-fixtures';
-import { buildSeries } from './series';
 
 /**
  * The stand-in implementation: seeded fixtures, no I/O.
@@ -122,48 +122,11 @@ export class FixturePlatformSource implements PlatformSource {
 	/**
 	 * The headline rates.
 	 *
-	 * These numbers are invented here rather than in the assembler above, because
-	 * "what the request rate is" is the source's job — the assembler only decides how
-	 * to print it. When a metrics backend replaces this, that division already holds.
+	 * Delegates to `readPlatformRates` in `fixtures.ts` so the class and the fixture
+	 * APM provider (Task 7) read one definition instead of two copies drifting apart.
 	 */
 	async readRates(scope: PlatformScope): Promise<RateObservation[]> {
-		const window = scope.timeRange;
-
-		return [
-			{
-				id: 'request-rate',
-				label: 'Request Rate',
-				value: 18_700,
-				kind: 'rate',
-				unit: 'req/s',
-				samples: buildSeries(`request-rate:${window}`, 18_700, {
-					volatility: 0.08,
-					drift: 0.12
-				}).values,
-				change: 8.4,
-				polarity: 'higher-is-better'
-			},
-			{
-				id: 'error-rate',
-				label: 'Error Rate',
-				value: 1.38,
-				kind: 'percent',
-				unit: '',
-				samples: buildSeries(`error-rate:${window}`, 1.38, { volatility: 0.2, drift: 0.35 }).values,
-				change: 0.32,
-				polarity: 'lower-is-better'
-			},
-			{
-				id: 'p95-latency',
-				label: 'P95 Latency',
-				value: 412,
-				kind: 'duration-ms',
-				unit: 'ms',
-				samples: buildSeries(`p95:${window}`, 412, { volatility: 0.12, drift: -0.15 }).values,
-				change: -28,
-				polarity: 'lower-is-better'
-			}
-		];
+		return readPlatformRates(scope.timeRange);
 	}
 
 	async listIncidents(_scope: PlatformScope, limit: number): Promise<Incident[]> {

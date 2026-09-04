@@ -16,6 +16,8 @@ import type {
 	Incident,
 	InfrastructureGroup,
 	NavItem,
+	RateObservation,
+	TimeRangeId,
 	TimeRangeOption,
 	TimeSeries,
 	TrendGrain
@@ -1025,6 +1027,53 @@ export function listActivitySummary(now: Date = new Date()): ActivitySummary {
 		deploymentsToday: log.length,
 		deploymentDomains: new Set(log.map((one) => one.domainId)).size
 	};
+}
+
+/**
+ * The headline rates.
+ *
+ * These numbers are invented here rather than in the assembler above, because "what
+ * the request rate is" is the source's job — the assembler only decides how to print
+ * it. When a metrics backend replaces this, that division already holds.
+ */
+export function readPlatformRates(timeRange: TimeRangeId): RateObservation[] {
+	const window = timeRange;
+
+	return [
+		{
+			id: 'request-rate',
+			label: 'Request Rate',
+			value: 18_700,
+			kind: 'rate',
+			unit: 'req/s',
+			samples: buildSeries(`request-rate:${window}`, 18_700, {
+				volatility: 0.08,
+				drift: 0.12
+			}).values,
+			change: 8.4,
+			polarity: 'higher-is-better'
+		},
+		{
+			id: 'error-rate',
+			label: 'Error Rate',
+			value: 1.38,
+			kind: 'percent',
+			unit: '',
+			samples: buildSeries(`error-rate:${window}`, 1.38, { volatility: 0.2, drift: 0.35 }).values,
+			change: 0.32,
+			polarity: 'lower-is-better'
+		},
+		{
+			id: 'p95-latency',
+			label: 'P95 Latency',
+			value: 412,
+			kind: 'duration-ms',
+			unit: 'ms',
+			samples: buildSeries(`p95:${window}`, 412, { volatility: 0.12, drift: -0.15 }).values,
+			change: -28,
+			polarity: 'lower-is-better'
+		}
+	];
 }
 
 export function listInfrastructure(): InfrastructureGroup[] {
