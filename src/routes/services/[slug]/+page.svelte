@@ -7,7 +7,7 @@
 	import ServiceDeploymentsCard from '$lib/components/services/ServiceDeploymentsCard.svelte';
 	import ServiceHeader from '$lib/components/services/ServiceHeader.svelte';
 	import ServiceInfoCard from '$lib/components/services/ServiceInfoCard.svelte';
-	import ServiceStats from '$lib/components/services/ServiceStats.svelte';
+	import StatTiles from '$lib/components/StatTiles.svelte';
 	import ServiceTabs from '$lib/components/services/ServiceTabs.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { getScope } from '$lib/scope.svelte';
@@ -77,7 +77,7 @@
 				badges={{ alerts: snapshot.service.activeAlerts }}
 			/>
 
-			<ServiceStats stats={snapshot.stats} />
+			<StatTiles stats={snapshot.stats} />
 
 			<div class="grid gap-4 xl:grid-cols-[1fr_1.05fr_0.85fr]">
 				<HealthChecksCard checks={snapshot.checks} />

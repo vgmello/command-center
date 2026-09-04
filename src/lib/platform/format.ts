@@ -72,3 +72,14 @@ function trimZeros(value: number, decimals: number): string {
 		.replace(/\.0+$/, '')
 		.replace(/(\.\d*[1-9])0+$/, '$1');
 }
+
+/**
+ * "$4k" / "$850" — a money axis label.
+ *
+ * Compact because an axis has four labels and no room for thousands separators, and
+ * rounded because nobody reads a tick mark to the dollar.
+ */
+export function formatMoneyAxis(amount: number): string {
+	if (amount >= 1000) return `$${trimZeros(amount / 1000, 1)}k`;
+	return `$${Math.round(amount)}`;
+}

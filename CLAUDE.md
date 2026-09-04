@@ -89,10 +89,12 @@ module the UI imports directly:
 - `src/lib/server/platform/source.ts` — `PlatformSource` (telemetry: domain counts,
   the domain page, rates, incidents, infrastructure), `DeploymentSource` (the CI/CD
   feed: the deployment log, its aggregates and its trends), `ServiceSource` (the
-  service catalog and per-service telemetry) and `WorkspaceSource` (the signed-in user
-  and their pins). Four interfaces, because they are four upstreams that will be
-  replaced independently and on different schedules — and because one interface
-  carrying all of it would stop describing a single responsibility.
+  service catalog and per-service telemetry), `InfrastructureSource` (the estate:
+  regions, nodes, utilisation, storage, databases, queues and spend) and
+  `WorkspaceSource` (the signed-in user and their pins). Five interfaces, because they
+  are five upstreams that will be replaced independently and on different schedules —
+  and because one interface carrying all of it would stop describing a single
+  responsibility.
 
   **When to add a port rather than a method.** Deployments got their own the moment
   they stopped being one method: the data comes from a build system, not a metrics
@@ -100,12 +102,16 @@ module the UI imports directly:
   followed for the same reason — a catalog entry (owner, repo, runbook, language) comes
   from a service registry. A real adapter may well stitch a registry and a metrics
   backend together behind `ServiceSource`; that is the point, the stitching is one
-  adapter's problem rather than every caller's.
+  adapter's problem rather than every caller's. Spend sits inside
+  `InfrastructureSource` rather than in a billing port, because it is a property of the
+  estate read on the same screen — if a finance surface ever wants budgets or chargeback
+  on its own terms, that is when it earns a seam.
 
 - `src/lib/server/platform/fixture-source.ts` — the seeded stand-in.
 - `src/lib/server/platform/index.ts` — resolves one implementation per port from
-  `PLATFORM_SOURCE` / `DEPLOYMENT_SOURCE` / `SERVICE_SOURCE` / `WORKSPACE_SOURCE`,
-  caches the instance, and **throws on an unknown name**. Falling back to fixtures on a typo would serve invented numbers
+  `PLATFORM_SOURCE` / `DEPLOYMENT_SOURCE` / `SERVICE_SOURCE` /
+  `INFRASTRUCTURE_SOURCE` / `WORKSPACE_SOURCE`, caches the instance, and **throws on
+  an unknown name**. Falling back to fixtures on a typo would serve invented numbers
   in production with nothing on the page admitting it.
 
 To add a real backend: implement the interface, register it in the resolver, set the
@@ -273,6 +279,14 @@ as arguments, an axis can be asserted in a test — and that is how the axis lab
 0, 12.5, 25 was caught. `niceScale` returns a ceiling **and** its step together for
 that reason: rounding them independently produces numbers each defensible alone and
 unreadable side by side.
+
+### A rollup is not always worst-wins
+
+`rollUpStatus` is right for a service — one dead instance of three is an incident — and
+wrong for an estate. Fifty nodes always have one rebuilding, and a headline reading
+"At risk" whenever a single node is down is a headline nobody reads twice.
+`estateHealth()` judges on proportion instead, with its bands stated beside it. When a
+new screen rolls many things into one verdict, decide which of the two it is.
 
 ### The client declares no data
 
@@ -504,7 +518,8 @@ an `@` costs its full length in every session, whether or not the session touche
 
 ## State
 
-Overview, Domains, Deployments and the Service detail view built and verified. `bun test` (178 tests), `bun run check`, `bun run lint`,
+Overview, Domains, Deployments, the Service detail view and Infrastructure built and
+verified. `bun test` (203 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
@@ -521,7 +536,9 @@ What exists:
 - `src/routes/overview.remote.ts` — `getOverview`
 - `src/routes/domains.remote.ts` — `getDomainPage`, `getDomainsView`
 - `src/routes/deployments.remote.ts` — `getDeploymentPage`, `getDeploymentsView`
-- `src/routes/services.remote.ts` — `getServices`, `getServiceView`. All remote
+- `src/routes/services.remote.ts` — `getServices`, `getServiceView`
+- `src/routes/infrastructure.remote.ts` — `getInfrastructureView`, one query because
+  every panel reflects the same estate at the same moment. All remote
   functions are Valibot-validated against the schemas the JSON API shares, the service
   slug included: it arrives from a URL anyone can edit
 - `src/routes/api/v1/` — public JSON API, sixteen paths: `domains` (+ `summary`,
@@ -533,9 +550,13 @@ What exists:
   the Scalar reference that renders it
 - `src/hooks.server.ts` — `handleValidationError`: generic message to the client,
   detail to the log
-- `src/lib/platform/chart.ts` — chart layout maths, with a test file
+- `src/lib/platform/chart.ts` — chart layout maths (lines, bars, stacks, axes,
+  equirectangular projection), and `world.ts` — the coarse land mask the region map
+  draws. Both have test files; the mask's asserts that the cities the regions are named
+  after are on land and the open oceans are not
 - `src/lib/components/` — app shell (`app/`), one folder per screen (`overview/`,
-  `domains/`, `deployments/`, `services/`), the shared table pieces (`DomainToolbar`, `DomainTable`,
+  `domains/`, `deployments/`, `services/`, `infrastructure/`), the shared `StatTiles`
+  strip, the shared table pieces (`DomainToolbar`, `DomainTable`,
   `TablePager`), `LineChart` / `BarChart`, the cards, the icon registry and `tone.ts`
 - `src/lib/scope.svelte.ts` — environment / time range / auto-refresh, held in context
 - `src/routes/status/` — the original health-probe slice, kept as the minimal end-to-end reference

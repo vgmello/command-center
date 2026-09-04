@@ -12,11 +12,11 @@
 		series: TimeSeries;
 		fill?: string;
 		height?: number;
+		/** Width of the coordinate space; see the note on `LineChart`. */
+		width?: number;
 	}
 
-	let { series, fill = 'fill-primary', height = 168 }: Props = $props();
-
-	const width = 400;
+	let { series, fill = 'fill-primary', height = 168, width = 400 }: Props = $props();
 
 	const plot = $derived<Plot>({
 		width,

@@ -13,12 +13,21 @@ import type {
 	FavoriteItem,
 	Incident,
 	InfrastructureGroup,
+	ClusterLoad,
+	CostBreakdown,
+	DatabaseInstance,
 	HealthCheck,
+	InfraAlert,
+	InfraRegion,
+	MessageQueue,
+	NodeCounts,
 	RateObservation,
+	ResourceUsage,
 	Service,
 	ServiceDependencies,
-	ServiceEndpoint,
 	ServiceStat,
+	StorageClass,
+	ServiceEndpoint,
 	TimeSeries,
 	TrendGrain
 } from '$lib/platform/types';
@@ -61,9 +70,6 @@ export interface PlatformSource {
 
 	/** Most recent open incidents, worst first. */
 	listIncidents(scope: PlatformScope, limit: number): Promise<Incident[]>;
-
-	/** Infrastructure counts by kind. */
-	listInfrastructure(scope: PlatformScope): Promise<InfrastructureGroup[]>;
 
 	/**
 	 * The teams that own domains, with how many each owns.
@@ -182,6 +188,50 @@ export interface ServiceSource {
 
 	/** Slowest endpoints first, already ranked and shared out by the source. */
 	listEndpoints(scope: PlatformScope, slug: string, limit: number): Promise<ServiceEndpoint[]>;
+}
+
+/**
+ * The estate the platform runs on.
+ *
+ * A fifth port, and the reasoning has not changed: nodes and clusters come from a
+ * cluster API, utilisation from a metrics backend, spend from a billing export. They
+ * are queried together by one screen and owned by different teams, which is the case
+ * for a seam rather than for more methods on a port about business domains.
+ *
+ * Spend sits here rather than in a port of its own because it is a property of the
+ * estate and is read on the same screen. If a finance surface ever wants it on its own
+ * terms — budgets, chargeback, per-team allocation — that is when it earns a seam.
+ */
+export interface InfrastructureSource {
+	readonly id: string;
+
+	/** Counts by kind: clusters, nodes, databases, queues. The overview's summary. */
+	listGroups(scope: PlatformScope): Promise<InfrastructureGroup[]>;
+
+	/** Where the estate runs, with coordinates so a map can place each region. */
+	listRegions(scope: PlatformScope): Promise<InfraRegion[]>;
+
+	/** Nodes per state. An aggregate, not a list of every node. */
+	readNodeCounts(scope: PlatformScope): Promise<NodeCounts>;
+
+	/** Busiest clusters first, already ranked by the source. */
+	listClusters(scope: PlatformScope, limit: number): Promise<ClusterLoad[]>;
+
+	/** CPU, memory, disk and network across the scope's window. */
+	readUtilization(scope: PlatformScope): Promise<ResourceUsage[]>;
+
+	/** Stored bytes by class, with the total the donut prints in its middle. */
+	readStorage(scope: PlatformScope): Promise<{ totalBytes: number; classes: StorageClass[] }>;
+
+	listDatabases(scope: PlatformScope, limit: number): Promise<DatabaseInstance[]>;
+
+	listQueues(scope: PlatformScope, limit: number): Promise<MessageQueue[]>;
+
+	/** Alerts raised against infrastructure rather than against a business domain. */
+	listAlerts(scope: PlatformScope, limit: number): Promise<InfraAlert[]>;
+
+	/** Month-to-date spend by category, with the daily series behind it. */
+	readCost(scope: PlatformScope): Promise<CostBreakdown>;
 }
 
 /**

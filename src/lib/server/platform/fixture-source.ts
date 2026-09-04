@@ -13,8 +13,17 @@ import type {
 	FavoriteItem,
 	Incident,
 	InfrastructureGroup,
+	ClusterLoad,
+	CostBreakdown,
+	DatabaseInstance,
 	HealthCheck,
+	InfraAlert,
+	InfraRegion,
+	MessageQueue,
+	NodeCounts,
 	RateObservation,
+	ResourceUsage,
+	StorageClass,
 	Service,
 	ServiceDependencies,
 	ServiceEndpoint,
@@ -24,7 +33,13 @@ import type {
 } from '$lib/platform/types';
 import type { DomainQuery, PlatformScope } from '$lib/platform/query';
 import type { DeploymentQuery } from '$lib/platform/deployments';
-import type { DeploymentSource, PlatformSource, ServiceSource, WorkspaceSource } from './source';
+import type {
+	DeploymentSource,
+	InfrastructureSource,
+	PlatformSource,
+	ServiceSource,
+	WorkspaceSource
+} from './source';
 import {
 	CURRENT_USER,
 	buildDeploymentTrends,
@@ -35,13 +50,13 @@ import {
 	listDeployments,
 	listDomains,
 	listIncidents,
-	listInfrastructure,
 	listOwners,
 	listRecentChanges,
 	readDeploymentBreakdown,
 	readDeploymentSummary
 } from './fixtures';
 import { queryDeploymentsInMemory, queryDomainsInMemory } from './in-memory-query';
+import * as estate from './infrastructure-fixtures';
 import {
 	findService,
 	listFavorites,
@@ -134,10 +149,6 @@ export class FixturePlatformSource implements PlatformSource {
 			.slice(0, limit);
 	}
 
-	async listInfrastructure(_scope: PlatformScope): Promise<InfrastructureGroup[]> {
-		return listInfrastructure();
-	}
-
 	async listOwners(_scope: PlatformScope): Promise<FacetOption[]> {
 		return listOwners();
 	}
@@ -195,6 +206,58 @@ export class FixtureDeploymentSource implements DeploymentSource {
 
 	async listDeployingDomains(_scope: PlatformScope): Promise<FacetOption[]> {
 		return listDeployingDomains(new Date());
+	}
+}
+
+/**
+ * The stand-in estate.
+ *
+ * Reads through to `infrastructure-fixtures.ts`, so replacing it with a cluster API
+ * adapter means deleting one file and writing another.
+ */
+export class FixtureInfrastructureSource implements InfrastructureSource {
+	readonly id = 'fixture';
+
+	async listGroups(_scope: PlatformScope): Promise<InfrastructureGroup[]> {
+		return estate.listGroups();
+	}
+
+	async listRegions(_scope: PlatformScope): Promise<InfraRegion[]> {
+		return estate.listRegions();
+	}
+
+	async readNodeCounts(_scope: PlatformScope): Promise<NodeCounts> {
+		return estate.readNodeCounts();
+	}
+
+	async listClusters(_scope: PlatformScope, limit: number): Promise<ClusterLoad[]> {
+		return estate.listClusters(limit);
+	}
+
+	async readUtilization(_scope: PlatformScope): Promise<ResourceUsage[]> {
+		return estate.readUtilization(new Date());
+	}
+
+	async readStorage(
+		_scope: PlatformScope
+	): Promise<{ totalBytes: number; classes: StorageClass[] }> {
+		return estate.readStorage();
+	}
+
+	async listDatabases(_scope: PlatformScope, limit: number): Promise<DatabaseInstance[]> {
+		return estate.listDatabases(limit);
+	}
+
+	async listQueues(_scope: PlatformScope, limit: number): Promise<MessageQueue[]> {
+		return estate.listQueues(limit);
+	}
+
+	async listAlerts(_scope: PlatformScope, limit: number): Promise<InfraAlert[]> {
+		return estate.listAlerts(new Date(), limit);
+	}
+
+	async readCost(_scope: PlatformScope): Promise<CostBreakdown> {
+		return estate.readCost(new Date());
 	}
 }
 

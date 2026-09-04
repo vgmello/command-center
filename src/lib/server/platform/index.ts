@@ -1,7 +1,14 @@
 import { env } from '$env/dynamic/private';
-import type { DeploymentSource, PlatformSource, ServiceSource, WorkspaceSource } from './source';
+import type {
+	DeploymentSource,
+	InfrastructureSource,
+	PlatformSource,
+	ServiceSource,
+	WorkspaceSource
+} from './source';
 import {
 	FixtureDeploymentSource,
+	FixtureInfrastructureSource,
 	FixturePlatformSource,
 	FixtureServiceSource,
 	FixtureWorkspaceSource
@@ -28,6 +35,10 @@ const deploymentSources: Record<string, () => DeploymentSource> = {
 	fixture: () => new FixtureDeploymentSource()
 };
 
+const infrastructureSources: Record<string, () => InfrastructureSource> = {
+	fixture: () => new FixtureInfrastructureSource()
+};
+
 const serviceSources: Record<string, () => ServiceSource> = {
 	fixture: () => new FixtureServiceSource()
 };
@@ -39,6 +50,7 @@ const workspaceSources: Record<string, () => WorkspaceSource> = {
 let platform: PlatformSource | undefined;
 let deployment: DeploymentSource | undefined;
 let service: ServiceSource | undefined;
+let infrastructure: InfrastructureSource | undefined;
 let workspace: WorkspaceSource | undefined;
 
 export function platformSource(): PlatformSource {
@@ -49,6 +61,11 @@ export function platformSource(): PlatformSource {
 export function deploymentSource(): DeploymentSource {
 	deployment ??= resolve('DEPLOYMENT_SOURCE', deploymentSources);
 	return deployment;
+}
+
+export function infrastructureSource(): InfrastructureSource {
+	infrastructure ??= resolve('INFRASTRUCTURE_SOURCE', infrastructureSources);
+	return infrastructure;
 }
 
 export function serviceSource(): ServiceSource {
@@ -65,4 +82,10 @@ function resolve<T>(variable: string, registry: Record<string, () => T>): T {
 	return selectSource(variable, env[variable], registry);
 }
 
-export type { DeploymentSource, PlatformSource, ServiceSource, WorkspaceSource } from './source';
+export type {
+	DeploymentSource,
+	InfrastructureSource,
+	PlatformSource,
+	ServiceSource,
+	WorkspaceSource
+} from './source';

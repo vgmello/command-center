@@ -32,6 +32,13 @@
 		axisWidth?: number;
 		/** A fill class per series id. Only the named series get an area under the line. */
 		areas?: Record<string, string>;
+		/**
+		 * Width of the coordinate space, not of the rendered chart — the SVG still fills
+		 * its container. It has to be near the real width, though: a 460-wide box in a
+		 * 200px column is letterboxed to a third of its stated height, because the
+		 * viewBox scales to fit the narrower axis.
+		 */
+		width?: number;
 	}
 
 	let {
@@ -42,10 +49,9 @@
 		maxLabels = 8,
 		formatValue = (value: number) => String(Math.round(value)),
 		axisWidth = 30,
-		areas = {}
+		areas = {},
+		width = 460
 	}: Props = $props();
-
-	const width = 460;
 
 	const plot = $derived<Plot>({
 		width,

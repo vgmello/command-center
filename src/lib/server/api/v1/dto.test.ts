@@ -20,6 +20,7 @@ import {
 import { listDomains } from '$lib/server/platform/fixtures';
 import {
 	FixtureDeploymentSource,
+	FixtureInfrastructureSource,
 	FixturePlatformSource,
 	FixtureServiceSource
 } from '$lib/server/platform/fixture-source';
@@ -29,6 +30,7 @@ import type { PlatformScope } from '$lib/platform/query';
 const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
 const source = new FixturePlatformSource();
 const deployments = new FixtureDeploymentSource();
+const estate = new FixtureInfrastructureSource();
 
 /**
  * These assert the wire shape *literally*, key by key.
@@ -171,7 +173,7 @@ describe('v1 collection shapes', () => {
 	});
 
 	test('infrastructure and status expose the state, not its label styling', async () => {
-		const [group] = await source.listInfrastructure(scope);
+		const [group] = await estate.listGroups(scope);
 
 		expect(Object.keys(toInfrastructureDto(group)).sort()).toEqual([
 			'count',

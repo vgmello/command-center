@@ -415,6 +415,7 @@ export type ServiceStat =
 			direction: TrendDirection;
 			polarity: TrendPolarity;
 			tone: ToneKey | null;
+			icon?: string;
 	  }
 	| {
 			kind: 'gauge';
@@ -429,6 +430,7 @@ export type ServiceStat =
 			direction: TrendDirection;
 			polarity: TrendPolarity;
 			tone: ToneKey | null;
+			icon?: string;
 	  }
 	| {
 			kind: 'ratio';
@@ -438,6 +440,7 @@ export type ServiceStat =
 			total: number;
 			caption: string;
 			tone: ToneKey | null;
+			icon?: string;
 	  }
 	| {
 			kind: 'link';
@@ -446,6 +449,17 @@ export type ServiceStat =
 			formatted: string;
 			action: { label: string; href: string } | null;
 			tone: ToneKey | null;
+			icon?: string;
+	  }
+	| {
+			kind: 'note';
+			id: string;
+			label: string;
+			formatted: string;
+			/** The sentence under the headline — what the judgement was based on. */
+			caption: string;
+			tone: ToneKey | null;
+			icon?: string;
 	  };
 
 /** One row of the service health table: an SLI, its state and its recent shape. */
@@ -502,6 +516,131 @@ export interface ServiceSnapshot {
 	deployments: Deployment[];
 	requestRate: TimeSeries;
 	endpoints: ServiceEndpoint[];
+}
+
+/** A hosting region, with where it is so a map can place it. */
+export interface InfraRegion {
+	id: string;
+	name: string;
+	status: HealthStatus;
+	latitude: number;
+	longitude: number;
+	nodeCount: number;
+}
+
+/** Nodes per state across the estate. Feeds the compute donut and its legend. */
+export interface NodeCounts {
+	healthy: number;
+	warning: number;
+	down: number;
+}
+
+/** A cluster and how hard it is working. */
+export interface ClusterLoad {
+	id: string;
+	name: string;
+	cpuPct: number;
+	status: HealthStatus;
+}
+
+/**
+ * One of the four utilisation panels.
+ *
+ * `formatted` and `unit` are split so the number can be set large and its unit small,
+ * which is how every reading on this platform is drawn.
+ */
+export interface ResourceUsage {
+	id: string;
+	label: string;
+	formatted: string;
+	unit: string;
+	series: TimeSeries;
+	/** Ceiling for the panel's y-axis in the series' own unit — a percent, or bits/s. */
+	axisMax: number;
+	changeFormatted: string;
+	comparedToLabel: string;
+	direction: TrendDirection;
+	polarity: TrendPolarity;
+}
+
+/** One slice of the storage donut. */
+export interface StorageClass {
+	id: string;
+	label: string;
+	formatted: string;
+	accent: DomainAccent;
+	/** Share of the total, 0–100. The bytes stay exact in `formatted`. */
+	percentage: number;
+}
+
+export interface DatabaseInstance {
+	id: string;
+	name: string;
+	engine: string;
+	status: HealthStatus;
+	cpuPct: number;
+	connections: number;
+	connectionLimit: number;
+	storageFormatted: string;
+}
+
+export interface MessageQueue {
+	id: string;
+	name: string;
+	kind: string;
+	messages: number;
+	status: HealthStatus;
+	/** Consumer lag in messages. Zero is the healthy answer, not a missing one. */
+	lag: number;
+}
+
+/** An alert raised against infrastructure rather than against a business domain. */
+export interface InfraAlert {
+	id: string;
+	severity: IncidentSeverity;
+	title: string;
+	/** What it was raised against — a cluster, a node, a database. */
+	subject: string;
+	raisedAt: string;
+}
+
+/** One spend category: a legend row and one layer of the stacked cost chart. */
+export interface CostCategory {
+	id: string;
+	label: string;
+	amount: number;
+	formatted: string;
+	accent: DomainAccent;
+	percentage: number;
+	/** Daily spend across the month, in the same order as `CostBreakdown.labels`. */
+	daily: number[];
+}
+
+export interface CostBreakdown {
+	/** One label per day, shared by every category so the columns stay aligned. */
+	labels: string[];
+	categories: CostCategory[];
+	totalFormatted: string;
+	changePct: number;
+	forecastFormatted: string;
+	forecastChangePct: number;
+}
+
+/** Everything the infrastructure overview tab renders. */
+export interface InfrastructureSnapshot {
+	generatedAt: string;
+	environment: EnvironmentId;
+	timeRange: TimeRangeId;
+	stats: ServiceStat[];
+	regions: InfraRegion[];
+	nodes: NodeCounts;
+	clusters: ClusterLoad[];
+	resources: ResourceUsage[];
+	storage: { totalFormatted: string; classes: StorageClass[] };
+	databases: DatabaseInstance[];
+	queues: MessageQueue[];
+	alerts: InfraAlert[];
+	cost: CostBreakdown;
 }
 
 /** One column of the infrastructure summary: clusters, nodes, databases, queues. */

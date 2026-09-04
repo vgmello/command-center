@@ -18,6 +18,7 @@ import ClipboardCheck from '@lucide/svelte/icons/clipboard-check';
 import Clock from '@lucide/svelte/icons/clock';
 import Calendar from '@lucide/svelte/icons/calendar';
 import Cloud from '@lucide/svelte/icons/cloud';
+import Cpu from '@lucide/svelte/icons/cpu';
 import Database from '@lucide/svelte/icons/database';
 import Ellipsis from '@lucide/svelte/icons/ellipsis';
 import Code from '@lucide/svelte/icons/code';
@@ -26,6 +27,7 @@ import FileChartColumn from '@lucide/svelte/icons/file-chart-column';
 import FileText from '@lucide/svelte/icons/file-text';
 import Funnel from '@lucide/svelte/icons/funnel';
 import Gauge from '@lucide/svelte/icons/gauge';
+import HardDrive from '@lucide/svelte/icons/hard-drive';
 import Gift from '@lucide/svelte/icons/gift';
 import GitBranch from '@lucide/svelte/icons/git-branch';
 import Handshake from '@lucide/svelte/icons/handshake';
@@ -36,6 +38,7 @@ import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 import Library from '@lucide/svelte/icons/library';
 import List from '@lucide/svelte/icons/list';
 import MessageSquare from '@lucide/svelte/icons/message-square';
+import MemoryStick from '@lucide/svelte/icons/memory-stick';
 import Network from '@lucide/svelte/icons/network';
 import Package from '@lucide/svelte/icons/package';
 import Percent from '@lucide/svelte/icons/percent';
@@ -92,6 +95,7 @@ const ICONS = {
 	clock: Clock,
 	code: Code,
 	cloud: Cloud,
+	cpu: Cpu,
 	database: Database,
 	ellipsis: Ellipsis,
 	'file-chart-column': FileChartColumn,
@@ -99,6 +103,7 @@ const ICONS = {
 	'external-link': ExternalLink,
 	funnel: Funnel,
 	gauge: Gauge,
+	'hard-drive': HardDrive,
 	gift: Gift,
 	'git-branch': GitBranch,
 	handshake: Handshake,
@@ -109,6 +114,7 @@ const ICONS = {
 	library: Library,
 	list: List,
 	'message-square': MessageSquare,
+	'memory-stick': MemoryStick,
 	network: Network,
 	package: Package,
 	percent: Percent,

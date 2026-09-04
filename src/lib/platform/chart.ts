@@ -162,6 +162,100 @@ export function plotBars(
 	});
 }
 
+export interface StackedSeries {
+	id: string;
+	label: string;
+	values: number[];
+}
+
+export interface StackedSegment {
+	seriesId: string;
+	label: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	value: number;
+}
+
+/**
+ * Rectangles stacked per slot, one column per bucket.
+ *
+ * Every series must supply a value for every bucket — a stack with holes in it draws a
+ * column whose total is not the sum of its parts, which is the one thing a stacked
+ * chart is read for. Missing entries are treated as zero rather than skipped, so the
+ * columns stay aligned.
+ */
+export function plotStackedBars(
+	series: StackedSeries[],
+	labels: string[],
+	plot: Plot,
+	bounds: Bounds,
+	gapRatio = 0.25
+): StackedSegment[] {
+	if (series.length === 0 || labels.length === 0) return [];
+
+	const innerWidth = plot.width - plot.padLeft - plot.padRight;
+	const innerHeight = plot.height - plot.padTop - plot.padBottom;
+	const baseline = plot.padTop + innerHeight;
+	const span = bounds.max - bounds.min || 1;
+	const slot = innerWidth / labels.length;
+	const width = Math.max(slot * (1 - gapRatio), 1);
+
+	const segments: StackedSegment[] = [];
+
+	labels.forEach((label, index) => {
+		const x = round(plot.padLeft + index * slot + (slot - width) / 2);
+		let consumed = 0;
+
+		for (const one of series) {
+			const value = one.values[index] ?? 0;
+			const height = (value / span) * innerHeight;
+			segments.push({
+				seriesId: one.id,
+				label,
+				x,
+				y: round(baseline - consumed - height),
+				width: round(width),
+				height: round(Math.max(height, 0)),
+				value
+			});
+			consumed += height;
+		}
+	});
+
+	return segments;
+}
+
+/** The tallest column, which is what a stacked chart has to be scaled against. */
+export function stackedMax(series: StackedSeries[], buckets: number): number {
+	let max = 0;
+	for (let index = 0; index < buckets; index++) {
+		const total = series.reduce((sum, one) => sum + (one.values[index] ?? 0), 0);
+		if (total > max) max = total;
+	}
+	return max;
+}
+
+/**
+ * Longitude/latitude to a point in an equirectangular box.
+ *
+ * The simplest projection there is, and the right one here: the map is a locator for a
+ * handful of regions, not a chart anyone measures. Anything conformal would need a
+ * projection library to place five dots.
+ */
+export function projectLatLon(
+	lat: number,
+	lon: number,
+	width: number,
+	height: number
+): { x: number; y: number } {
+	return {
+		x: round(((lon + 180) / 360) * width),
+		y: round(((90 - lat) / 180) * height)
+	};
+}
+
 /**
  * Thin an axis's labels so they cannot overlap.
  *

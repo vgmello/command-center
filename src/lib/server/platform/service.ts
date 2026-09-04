@@ -12,6 +12,7 @@ import type {
 	FacetOption,
 	Incident,
 	InfrastructureGroup,
+	InfrastructureSnapshot,
 	OverviewSnapshot,
 	RateObservation,
 	HealthCheck,
@@ -23,11 +24,12 @@ import type {
 	TrendGrain
 } from '$lib/platform/types';
 import type { DeploymentQuery } from '$lib/platform/deployments';
-import { deploymentSource, platformSource, serviceSource } from './index';
+import { deploymentSource, infrastructureSource, platformSource, serviceSource } from './index';
 import { DEPLOYMENT_LIMIT, INCIDENT_LIMIT, buildOverview, buildSystemStatus } from './snapshot';
 import { RECENT_CHANGE_LIMIT, buildDomainsSnapshot } from './domains-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
+import { buildInfrastructureSnapshot } from './infrastructure-view';
 
 /**
  * The application's in-process API: one function per thing a caller can ask for.
@@ -81,7 +83,7 @@ export function readDeploymentPage(
 }
 
 export function readInfrastructure(scope: PlatformScope): Promise<InfrastructureGroup[]> {
-	return platformSource().listInfrastructure(scope);
+	return infrastructureSource().listGroups(scope);
 }
 
 export function readFacetOptions(scope: PlatformScope): Promise<FacetOption[]> {
@@ -111,7 +113,7 @@ export async function readSystemStatus(scope: PlatformScope): Promise<SystemStat
  * resources it is composed from, which stay stable while the screen changes.
  */
 export function readOverview(scope: PlatformScope): Promise<OverviewSnapshot> {
-	return buildOverview(platformSource(), deploymentSource(), scope);
+	return buildOverview(platformSource(), deploymentSource(), infrastructureSource(), scope);
 }
 
 /**
@@ -176,6 +178,11 @@ export function readServiceView(
 	slug: string
 ): Promise<ServiceSnapshot | null> {
 	return buildServiceSnapshot(serviceSource(), deploymentSource(), scope, slug);
+}
+
+/** The infrastructure page's aggregate. Screen-shaped, and unexposed for the same reason. */
+export function readInfrastructureView(scope: PlatformScope): Promise<InfrastructureSnapshot> {
+	return buildInfrastructureSnapshot(infrastructureSource(), scope);
 }
 
 /** The deployments page's aggregate. Screen-shaped, and unexposed for the same reason. */

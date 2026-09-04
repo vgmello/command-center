@@ -56,7 +56,8 @@ export default defineConfig(
 			'src/lib/components/app/AppSidebar.svelte',
 			'src/lib/components/app/Breadcrumb.svelte',
 			'src/lib/components/SectionCard.svelte',
-			'src/lib/components/services/ServiceStats.svelte',
+			'src/lib/components/StatTiles.svelte',
+			'src/lib/components/infrastructure/InfraTabs.svelte',
 			'src/lib/components/services/ServiceTabs.svelte',
 			'src/routes/services/+page.svelte',
 			// Wildcards, not the literal path: a route's `[slug]` is a character class to

@@ -9,7 +9,7 @@ import type {
 	SystemStatus
 } from '$lib/platform/types';
 import type { PlatformScope } from '$lib/platform/query';
-import type { DeploymentSource, PlatformSource } from './source';
+import type { DeploymentSource, InfrastructureSource, PlatformSource } from './source';
 import { STATUS_LABELS, buildDistribution } from '$lib/platform/health';
 import { formatChange, formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
 
@@ -164,6 +164,7 @@ export function buildSystemStatus(counts: DomainStatusCounts): SystemStatus {
 export async function buildOverview(
 	source: PlatformSource,
 	deployments: DeploymentSource,
+	estate: InfrastructureSource,
 	scope: PlatformScope,
 	now: Date = new Date()
 ): Promise<OverviewSnapshot> {
@@ -172,7 +173,7 @@ export async function buildOverview(
 		source.readRates(scope),
 		source.listIncidents(scope, INCIDENT_LIMIT),
 		deployments.listDeployments(scope, DEPLOYMENT_LIMIT),
-		source.listInfrastructure(scope)
+		estate.listGroups(scope)
 	]);
 
 	return {

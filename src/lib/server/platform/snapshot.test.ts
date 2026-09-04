@@ -6,7 +6,7 @@ import {
 	buildSystemStatus,
 	toSeries
 } from './snapshot';
-import type { DeploymentSource, PlatformSource } from './source';
+import type { DeploymentSource, InfrastructureSource, PlatformSource } from './source';
 import type { DomainStatusCounts, RateObservation } from '$lib/platform/types';
 import type { PlatformScope } from '$lib/platform/query';
 
@@ -47,10 +47,6 @@ function stubSource(overrides: Partial<PlatformSource> = {}) {
 		},
 		async listIncidents(_scope, limit) {
 			calls.push(`incidents:${limit}`);
-			return [];
-		},
-		async listInfrastructure() {
-			calls.push('infrastructure');
 			return [];
 		},
 		async listOwners() {
@@ -124,7 +120,58 @@ function stubSource(overrides: Partial<PlatformSource> = {}) {
 		}
 	};
 
-	return { source, deployments, calls };
+	const estate: InfrastructureSource = {
+		id: 'stub',
+		async listGroups() {
+			calls.push('infrastructure');
+			return [];
+		},
+		async listRegions() {
+			calls.push('regions');
+			return [];
+		},
+		async readNodeCounts() {
+			calls.push('node-counts');
+			return { healthy: 0, warning: 0, down: 0 };
+		},
+		async listClusters() {
+			calls.push('clusters');
+			return [];
+		},
+		async readUtilization() {
+			calls.push('utilization');
+			return [];
+		},
+		async readStorage() {
+			calls.push('storage');
+			return { totalBytes: 0, classes: [] };
+		},
+		async listDatabases() {
+			calls.push('databases');
+			return [];
+		},
+		async listQueues() {
+			calls.push('queues');
+			return [];
+		},
+		async listAlerts() {
+			calls.push('infra-alerts');
+			return [];
+		},
+		async readCost() {
+			calls.push('cost');
+			return {
+				labels: [],
+				categories: [],
+				totalFormatted: '$0',
+				changePct: 0,
+				forecastFormatted: '$0',
+				forecastChangePct: 0
+			};
+		}
+	};
+
+	return { source, deployments, estate, calls };
 }
 
 describe('buildCountTiles', () => {
@@ -240,10 +287,11 @@ describe('buildSystemStatus', () => {
 
 describe('buildOverview', () => {
 	test('assembles from the interface alone, with no knowledge of the fixtures', async () => {
-		const { source, deployments } = stubSource();
+		const { source, deployments, estate } = stubSource();
 		const snapshot = await buildOverview(
 			source,
 			deployments,
+			estate,
 			scope,
 			new Date('2026-09-03T12:00:00.000Z')
 		);
@@ -256,8 +304,8 @@ describe('buildOverview', () => {
 	});
 
 	test('the tiles and the donut are built from the same counts', async () => {
-		const { source, deployments } = stubSource();
-		const snapshot = await buildOverview(source, deployments, scope);
+		const { source, deployments, estate } = stubSource();
+		const snapshot = await buildOverview(source, deployments, estate, scope);
 
 		const healthyTile = snapshot.counts.find((tile) => tile.id === 'healthy');
 		const healthySlice = snapshot.distribution.slices.find((slice) => slice.status === 'healthy');
@@ -267,28 +315,28 @@ describe('buildOverview', () => {
 	});
 
 	test('asks the source for the panel limits rather than trimming afterwards', async () => {
-		const { source, deployments, calls } = stubSource();
-		await buildOverview(source, deployments, scope);
+		const { source, deployments, estate, calls } = stubSource();
+		await buildOverview(source, deployments, estate, scope);
 
 		expect(calls).toContain('incidents:5');
 		expect(calls).toContain('deployments:5');
 	});
 
 	test('does not fetch the domain table; that is a separate query', async () => {
-		const { source, deployments, calls } = stubSource();
-		await buildOverview(source, deployments, scope);
+		const { source, deployments, estate, calls } = stubSource();
+		await buildOverview(source, deployments, estate, scope);
 
 		expect(calls).not.toContain('domains');
 	});
 
 	test('propagates a source failure instead of serving a half-built page', async () => {
-		const { source, deployments } = stubSource({
+		const { source, deployments, estate } = stubSource({
 			async readRates() {
 				throw new Error('metrics backend unreachable');
 			}
 		});
 
-		expect(buildOverview(source, deployments, scope)).rejects.toThrow(
+		expect(buildOverview(source, deployments, estate, scope)).rejects.toThrow(
 			'metrics backend unreachable'
 		);
 	});
