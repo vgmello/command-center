@@ -8,6 +8,7 @@ import type {
 	DomainChange,
 	DomainPage,
 	DomainStatusCounts,
+	DomainSnapshot,
 	DomainsSnapshot,
 	FacetOption,
 	Incident,
@@ -31,6 +32,7 @@ import { RECENT_CHANGE_LIMIT, buildDomainsSnapshot } from './domains-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
+import { buildDomainSnapshot } from './domain-view';
 import { buildInfrastructureSnapshot } from './infrastructure-view';
 
 /**
@@ -198,6 +200,16 @@ export function readServiceMetrics(
 /** The infrastructure page's aggregate. Screen-shaped, and unexposed for the same reason. */
 export function readInfrastructureView(scope: PlatformScope): Promise<InfrastructureSnapshot> {
 	return buildInfrastructureSnapshot(infrastructureSource(), scope);
+}
+
+/**
+ * One domain's overview tab.
+ *
+ * `null` when the slug matches nothing, so the route can answer 404 rather than
+ * rendering a page about a domain that does not exist.
+ */
+export function readDomainView(scope: PlatformScope, slug: string): Promise<DomainSnapshot | null> {
+	return buildDomainSnapshot(platformSource(), serviceSource(), deploymentSource(), scope, slug);
 }
 
 /** The deployments page's aggregate. Screen-shaped, and unexposed for the same reason. */

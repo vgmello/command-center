@@ -280,6 +280,18 @@ as arguments, an axis can be asserted in a test — and that is how the axis lab
 that reason: rounding them independently produces numbers each defensible alone and
 unreadable side by side.
 
+### A fixture must cover what another fixture claims
+
+A domain states a `serviceCount`; the service catalog had six hand-written services in
+total. The domain header therefore said 24 services over a table listing 2 — two
+renderings of one number, disagreeing. `listServiceVitals` now takes the domain's split
+and its count and returns exactly that many rows, generating the ones nobody wrote by
+hand and dealing the states out to match. A test asserts the table's length equals the
+count and its statuses sum to the header's parts.
+
+The general rule: when two fixtures describe the same quantity, one of them derives from
+the other. Seeding both is how a dashboard ends up telling two stories.
+
 ### Fixtures: ask for the window, never slice it
 
 `buildSeries` defaults to 24 points. Callers that need more must pass `points`, because
@@ -534,7 +546,7 @@ an `@` costs its full length in every session, whether or not the session touche
 ## State
 
 Overview, Domains, Deployments, the Service detail view and Infrastructure built and
-verified, plus the service Metrics tab. `bun test` (230 tests), `bun run check`, `bun run lint`,
+verified, plus the service Metrics tab and the Domain detail view. `bun test` (244 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
@@ -545,12 +557,12 @@ What exists:
 - `src/lib/server/platform/` — the `PlatformSource` / `WorkspaceSource` ports, the fixture
   implementation, the resolver, and one assembler per screen (`snapshot.ts` for the
   overview, `domains-view.ts`, `deployments-view.ts`, `service-view.ts`,
-  `service-metrics-view.ts`, `infrastructure-view.ts`). **Replacing the fixture with real
+  `service-metrics-view.ts`, `domain-view.ts`, `infrastructure-view.ts`). **Replacing the fixture with real
   telemetry is a new file plus a resolver entry**; nothing above the ports changes
 - `src/lib/server/platform/service.ts` — the in-process API both transports call
 - `src/routes/shell.remote.ts` — `getShell`, `getSystemStatus`
 - `src/routes/overview.remote.ts` — `getOverview`
-- `src/routes/domains.remote.ts` — `getDomainPage`, `getDomainsView`
+- `src/routes/domains.remote.ts` — `getDomainPage`, `getDomainsView`, `getDomainView`
 - `src/routes/deployments.remote.ts` — `getDeploymentPage`, `getDeploymentsView`
 - `src/routes/services.remote.ts` — `getServices`, `getServiceView`, `getServiceMetrics`
   (its own query: the two tabs are never on screen together, and six series is a lot to
@@ -595,8 +607,11 @@ downtime, and achieving 99.95% spends half of it — no window and no target pro
 hours. And "Budget burn" is labelled with the window it actually measures, because the
 mock's percentage and its "last 7 days" caption describe different periods.
 
-Not yet built: per-domain, per-incident and per-deployment detail routes. Until they exist the
-table's row actions menu and those rows stay non-navigating, by the rule above. The domains
+**The deferred links have landed.** `/domains/[slug]` exists, so the domain table's rows,
+the service breadcrumb's domain step and the service info card's Domain row are links
+now rather than plain text — which is what "make it a link when the destination lands"
+was waiting for. Per-incident and per-deployment routes are still unbuilt, so the row
+actions menu and those rows stay non-navigating. The domains
 table's column-settings button is likewise inert — the columns a screen shows are still a
 prop, not a preference, and there is nowhere yet to persist one.
 

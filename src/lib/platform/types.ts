@@ -452,6 +452,26 @@ export type ServiceStat =
 			icon?: string;
 	  }
 	| {
+			kind: 'ring';
+			id: string;
+			label: string;
+			/** 0–100. Drawn as an arc, with the number inside it. */
+			score: number;
+			status: HealthStatus;
+			caption: string;
+			icon?: string;
+	  }
+	| {
+			kind: 'breakdown';
+			id: string;
+			label: string;
+			total: number;
+			caption: string;
+			/** Parts of the total, in the order they should be drawn and listed. */
+			parts: Array<{ status: HealthStatus; label: string; count: number }>;
+			icon?: string;
+	  }
+	| {
 			kind: 'note';
 			id: string;
 			label: string;
@@ -564,6 +584,74 @@ export interface MetricInsight {
 	/** What it was observed on — an endpoint, an instance. */
 	affects: string;
 	startedAt: string;
+}
+
+/** A domain that this one calls, or that calls it. */
+export interface DomainRef {
+	id: string;
+	name: string;
+	status: HealthStatus;
+}
+
+/**
+ * A domain's immediate neighbourhood, plus the path an incident travels.
+ *
+ * `criticalPath` is a sequence of domain names rather than of ids: it is a sentence
+ * about how a failure propagates, and the only thing a reader does with it is read it.
+ */
+export interface DomainDependencies {
+	upstream: DomainRef[];
+	downstream: DomainRef[];
+	criticalPath: string[];
+}
+
+/** One row of the domain's service-health table. */
+export interface ServiceVitals {
+	id: string;
+	slug: string;
+	name: string;
+	/** What kind of thing it is — "API Gateway", "Background Worker". */
+	kind: string;
+	icon: string;
+	accent: DomainAccent;
+	status: HealthStatus;
+	requestsPerSecond: number;
+	errorRatePct: number;
+	p95LatencyMs: number;
+	instancesHealthy: number;
+	instancesTotal: number;
+	/** Recent shape, drawn beside the health badge. */
+	trend: Series;
+}
+
+/**
+ * A domain's aggregate readings.
+ *
+ * Separate from `Domain` because these are measurements over a window, while `Domain`
+ * is the row a table lists — adding six series to it would put them on the wire for
+ * every one of twenty-five rows.
+ */
+export interface DomainVitals {
+	requestRate: TimeSeries;
+	errorRate: TimeSeries;
+	p95Latency: TimeSeries;
+	/** Services per state, which the header tile splits its total by. */
+	serviceCounts: Record<'healthy' | 'degraded' | 'down', number>;
+	sloCompliancePct: number;
+	sloWindowLabel: string;
+}
+
+/** Everything the domain overview tab renders. */
+export interface DomainSnapshot {
+	generatedAt: string;
+	environment: EnvironmentId;
+	timeRange: TimeRangeId;
+	domain: Domain;
+	stats: ServiceStat[];
+	services: ServiceVitals[];
+	dependencies: DomainDependencies;
+	deployments: Deployment[];
+	issues: Incident[];
 }
 
 /** Everything the service metrics tab renders. */

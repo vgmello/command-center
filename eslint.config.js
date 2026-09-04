@@ -55,6 +55,10 @@ export default defineConfig(
 		files: [
 			'src/lib/components/app/AppSidebar.svelte',
 			'src/lib/components/app/Breadcrumb.svelte',
+			'src/lib/components/DomainTable.svelte',
+			'src/lib/components/domains/DomainDependenciesCard.svelte',
+			'src/lib/components/domains/DomainTabs.svelte',
+			'src/lib/components/domains/ServicesHealthCard.svelte',
 			'src/lib/components/SectionCard.svelte',
 			'src/lib/components/StatTiles.svelte',
 			'src/lib/components/infrastructure/InfraTabs.svelte',
@@ -62,7 +66,8 @@ export default defineConfig(
 			'src/routes/services/+page.svelte',
 			// Wildcards, not the literal path: a route's `[slug]` is a character class to
 			// the glob matcher, so `[slug]/[tab]` would silently match nothing.
-			'src/routes/services/*/*/+page.svelte'
+			'src/routes/services/*/*/+page.svelte',
+			'src/routes/domains/*/*/+page.svelte'
 		],
 		rules: {
 			'svelte/no-navigation-without-resolve': 'off'

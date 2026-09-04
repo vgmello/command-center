@@ -6,8 +6,11 @@ import type {
 	DeploymentSummary,
 	Deployment,
 	DomainBreakdown,
+	Domain,
 	DomainChange,
+	DomainDependencies,
 	DomainPage,
+	DomainVitals,
 	DomainStatusCounts,
 	FacetOption,
 	FavoriteItem,
@@ -28,6 +31,7 @@ import type {
 	Service,
 	ServiceDependencies,
 	ServiceStat,
+	ServiceVitals,
 	SloBudget,
 	StorageClass,
 	ServiceEndpoint,
@@ -67,6 +71,25 @@ export interface PlatformSource {
 
 	/** One page of domains, already filtered, sorted and sliced by the source. */
 	queryDomains(scope: PlatformScope, query: DomainQuery): Promise<DomainPage>;
+
+	/**
+	 * One domain by slug, or `null` when there is none.
+	 *
+	 * `null` rather than a throw, for the reason `findService` gives: someone edited a
+	 * URL, which is an ordinary question with an ordinary answer.
+	 */
+	findDomain(scope: PlatformScope, slug: string): Promise<Domain | null>;
+
+	/**
+	 * A domain's aggregate readings over the scope's window.
+	 *
+	 * Separate from the domain row because these are six series: putting them on
+	 * `Domain` would send them for all twenty-five rows of a table that draws none.
+	 */
+	readDomainVitals(scope: PlatformScope, slug: string): Promise<DomainVitals | null>;
+
+	/** One hop each way between domains, and the path a failure travels. */
+	readDomainDependencies(scope: PlatformScope, slug: string): Promise<DomainDependencies>;
 
 	/** Headline rates, as observed. The pure layer decides how they are printed. */
 	readRates(scope: PlatformScope): Promise<RateObservation[]>;
@@ -165,8 +188,33 @@ export interface DeploymentSource {
 export interface ServiceSource {
 	readonly id: string;
 
-	/** Every service, newest catalog entry order. Feeds the index and the sidebar pins. */
-	listServices(scope: PlatformScope): Promise<Service[]>;
+	/**
+	 * Every service, newest catalog entry order. Feeds the index and the sidebar pins.
+	 *
+	 * `domainId` narrows it at the source rather than in the caller — the same rule the
+	 * domain and deployment queries follow, so an adapter can turn it into a `WHERE`.
+	 */
+	listServices(scope: PlatformScope, domainId?: string): Promise<Service[]>;
+
+	/**
+	 * One row per service in a domain: the readings its health table prints.
+	 *
+	 * A separate read from `listServices` because a catalog entry and a window of
+	 * measurements come from different places, and the index page needs only the first.
+	 */
+	listServiceVitals(
+		scope: PlatformScope,
+		domainId: string,
+		/**
+		 * The split the domain reports, and how many services it claims.
+		 *
+		 * Passed in rather than looked up, because the rows must add up to exactly what
+		 * the domain states — the catalog does not get to disagree with it, and a source
+		 * that fetched the domain itself would be reaching across a port to find out.
+		 */
+		vitals: DomainVitals,
+		total: number
+	): Promise<ServiceVitals[]>;
 
 	/**
 	 * One service by slug, or `null` when there is no such service.

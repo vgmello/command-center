@@ -9,9 +9,17 @@
 	interface Props {
 		deployments: Deployment[];
 		environments: EnvironmentOption[];
+		/**
+		 * Names the service each row deployed.
+		 *
+		 * Off on a service's own page, where every row is the same service and the column
+		 * would repeat one word. On for a domain, where a version number alone does not
+		 * say what shipped.
+		 */
+		showService?: boolean;
 	}
 
-	let { deployments, environments }: Props = $props();
+	let { deployments, environments, showService = false }: Props = $props();
 
 	const environmentLabel = $derived(
 		(id: Deployment['environment']) => environments.find((one) => one.id === id)?.label ?? id
@@ -33,7 +41,14 @@
 			{#each deployments as deployment (deployment.id)}
 				{@const tone = deploymentTone(deployment.status)}
 				<tr class="border-t border-border/60">
-					<td class="tabular px-4 py-[7px] text-[12.5px]">{deployment.version}</td>
+					{#if showService}
+						<td class="max-w-[132px] truncate px-4 py-[7px] text-[12.5px]">
+							{deployment.service}
+						</td>
+						<td class="tabular py-[7px] text-[12.5px]">{deployment.version}</td>
+					{:else}
+						<td class="tabular px-4 py-[7px] text-[12.5px]">{deployment.version}</td>
+					{/if}
 					<td class="py-[7px] text-[12.5px] text-muted-foreground">
 						{environmentLabel(deployment.environment)}
 					</td>
@@ -52,7 +67,10 @@
 				</tr>
 			{:else}
 				<tr>
-					<td colspan="5" class="px-4 py-10 text-center text-[12.5px] text-muted-foreground">
+					<td
+						colspan={showService ? 6 : 5}
+						class="px-4 py-10 text-center text-[12.5px] text-muted-foreground"
+					>
 						No deployments recorded for this service.
 					</td>
 				</tr>

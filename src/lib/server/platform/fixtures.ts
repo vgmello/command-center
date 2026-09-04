@@ -8,6 +8,8 @@ import type {
 	Domain,
 	DomainBreakdown,
 	DomainChange,
+	DomainDependencies,
+	DomainVitals,
 	EnvironmentId,
 	EnvironmentOption,
 	FacetOption,
@@ -435,6 +437,118 @@ export function listDomains(): Domain[] {
 			favorite: seed.favorite ?? false
 		};
 	});
+}
+
+export function findDomain(slug: string): Domain | null {
+	return listDomains().find((domain) => domain.slug === slug) ?? null;
+}
+
+/**
+ * A domain's aggregate readings.
+ *
+ * Request rate is derived from the service count rather than seeded: a domain's traffic
+ * is the sum of its services', and two numbers that must add up should not be stated
+ * twice. The rest come from the domain row, so the header of the detail page and the
+ * row in the table cannot print different figures for the same domain.
+ */
+export function readDomainVitals(slug: string, now: Date, buckets = 24): DomainVitals | null {
+	const domain = findDomain(slug);
+	if (!domain) return null;
+
+	const requestRate = domain.serviceCount * 175;
+
+	const points = (values: number[]) =>
+		values.map((value, index) => {
+			const at = new Date(now.getTime() - (values.length - 1 - index) * 60_000);
+			return {
+				label: `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`,
+				value: Math.round(value * 100) / 100
+			};
+		});
+
+	const build = (id: string, label: string, base: number, volatility: number) => {
+		const values = buildSeries(`domain:${slug}:${id}`, base, {
+			points: buckets,
+			volatility,
+			floor: 0
+		}).values;
+		// Pin the newest bucket to the stated reading, so the tile above a chart and the
+		// domain table agree — the same rule the service metrics tab follows.
+		values[values.length - 1] = base;
+		return {
+			id,
+			label,
+			points: points(values),
+			min: Math.min(...values),
+			max: Math.max(...values)
+		};
+	};
+
+	/*
+	 * Service states are split from the domain's own health rather than seeded: a
+	 * degraded domain has some services in trouble and most of them fine, and stating
+	 * both invites them to disagree.
+	 */
+	const down = domain.status === 'down' ? Math.max(1, Math.round(domain.serviceCount * 0.15)) : 0;
+	const degraded =
+		domain.status === 'healthy' ? 0 : Math.max(1, Math.round(domain.serviceCount * 0.15));
+
+	return {
+		requestRate: build('rps', 'Request Rate', requestRate, 0.12),
+		errorRate: build('errors', 'Error Rate', domain.errorRatePct, 0.22),
+		p95Latency: build('p95', 'P95 Latency', domain.p95LatencyMs, 0.12),
+		serviceCounts: {
+			healthy: Math.max(0, domain.serviceCount - degraded - down),
+			degraded,
+			down
+		},
+		// Compliance tracks health, because both answer "is this domain meeting its
+		// commitments" and a domain at 74 is not also at 99.9.
+		sloCompliancePct: Math.round((95 + (domain.healthScore / 100) * 4.9) * 10) / 10,
+		sloWindowLabel: '30d rolling'
+	};
+}
+
+/**
+ * One hop each way between domains.
+ *
+ * The critical path is the sentence a reader wants: which domain's failure reaches
+ * this one, and which one this reaches. It is built from the neighbours rather than
+ * stated, so it cannot name a domain the graph does not show.
+ */
+export function readDomainDependencies(slug: string): DomainDependencies {
+	const byId = new Map(listDomains().map((domain) => [domain.id, domain]));
+	const ref = (id: string) => {
+		const domain = byId.get(id);
+		return domain ? { id: domain.id, name: domain.name, status: domain.status } : null;
+	};
+
+	const shapes: Record<string, { upstream: string[]; downstream: string[] }> = {
+		'payment-domain': {
+			upstream: ['order-domain', 'user-domain'],
+			downstream: ['notification-domain', 'inventory-domain']
+		},
+		'order-domain': {
+			upstream: ['user-domain'],
+			downstream: ['payment-domain', 'inventory-domain', 'shipping-domain']
+		},
+		'inventory-domain': {
+			upstream: ['order-domain', 'payment-domain'],
+			downstream: ['warehouse-domain']
+		}
+	};
+
+	const shape = shapes[slug] ?? { upstream: ['shared-domain'], downstream: ['audit-domain'] };
+	const upstream = shape.upstream.map(ref).filter((one) => one !== null);
+	const downstream = shape.downstream.map(ref).filter((one) => one !== null);
+	const self = byId.get(slug);
+
+	const criticalPath =
+		self && upstream.length > 0 && downstream.length > 0
+			? [upstream[0].name, self.name, downstream[0].name]
+			: [];
+
+	return { upstream, downstream, criticalPath };
 }
 
 /** Minutes ago → ISO timestamp, so fixtures read as relative ages. */

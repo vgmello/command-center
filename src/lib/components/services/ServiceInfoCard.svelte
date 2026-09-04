@@ -10,13 +10,10 @@
 	let { service }: Props = $props();
 
 	/*
-	 * Plain facts first, then the links.
-	 *
-	 * The domain row is text, not a link: `/domains/<slug>` does not exist yet, and a
-	 * row that navigates to a 404 is worse than a row that does not navigate.
+	 * Plain facts first, then the external links. The domain row navigates now that
+	 * `/domains/[slug]` exists — it was text until the destination landed.
 	 */
 	const facts = $derived([
-		['Domain', service.domainName],
 		['Owner', service.owner],
 		['Service Type', service.serviceType],
 		['Language', service.language],
@@ -32,6 +29,18 @@
 
 <SectionCard title="Service Info">
 	<dl class="px-4 pb-4">
+		<div class="flex items-center justify-between gap-4 py-[7px]">
+			<dt class="shrink-0 text-[12px] text-muted-foreground">Domain</dt>
+			<dd class="min-w-0">
+				<a
+					href="/domains/{service.domainId}"
+					class="block truncate text-[12.5px] transition-colors hover:text-primary"
+				>
+					{service.domainName}
+				</a>
+			</dd>
+		</div>
+
 		{#each facts as [label, value] (label)}
 			<div class="flex items-center justify-between gap-4 py-[7px]">
 				<dt class="shrink-0 text-[12px] text-muted-foreground">{label}</dt>

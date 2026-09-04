@@ -68,7 +68,7 @@
 			<Breadcrumb
 				trail={[
 					{ label: 'Domains', href: '/domains' },
-					{ label: snapshot.service.domainName },
+					{ label: snapshot.service.domainName, href: `/domains/${snapshot.service.domainId}` },
 					{ label: 'Services', href: '/services' },
 					{ label: snapshot.service.name, href: `/services/${snapshot.service.slug}` },
 					{ label: 'Metrics' }

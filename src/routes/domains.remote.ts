@@ -1,6 +1,6 @@
 import { query } from '$app/server';
-import { scopeSchema, scopedDomainQuerySchema } from '$lib/server/api/schemas';
-import { readDomainPage, readDomainsView } from '$lib/server/platform/service';
+import { scopeSchema, scopedDomainQuerySchema, scopedServiceSchema } from '$lib/server/api/schemas';
+import { readDomainPage, readDomainView, readDomainsView } from '$lib/server/platform/service';
 
 /*
  * The domain table's transport, shared by the overview (which shows a summary of it)
@@ -37,3 +37,14 @@ export const getDomainPage = query(
  * it is the one thing split out.
  */
 export const getDomainsView = query(scopeSchema, async (scope) => readDomainsView(scope));
+
+/**
+ * One domain's overview tab.
+ *
+ * Resolves to `null` for a slug that matches nothing, which the page turns into a
+ * not-found panel. `scopedServiceSchema` validates the slug — it is the same shape,
+ * and a second identical schema is a second thing to keep in step.
+ */
+export const getDomainView = query(scopedServiceSchema, async ({ slug, ...scope }) =>
+	readDomainView(scope, slug)
+);

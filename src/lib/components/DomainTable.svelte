@@ -98,7 +98,11 @@
 			{@const latency = formatLatency(domain.p95LatencyMs)}
 			<Table.Row class="border-border">
 				<Table.Cell class="max-w-[168px] py-2.5 pl-4">
-					<span class="flex items-center gap-3">
+					<!--
+						A link at last: this row waited for `/domains/[slug]` to exist rather than
+						navigating to a 404, which is the rule that kept it inert until now.
+					-->
+					<a href="/domains/{domain.slug}" class="flex items-center gap-3">
 						<span
 							class="grid size-8 shrink-0 place-items-center rounded-lg ring-1 {accentTile(
 								domain.accent
@@ -116,7 +120,7 @@
 								</span>
 							{/if}
 						</span>
-					</span>
+					</a>
 				</Table.Cell>
 				<Table.Cell class="py-2.5">
 					<span class="flex items-center gap-1.5">

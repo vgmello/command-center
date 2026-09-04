@@ -45,6 +45,18 @@ function stubSource(overrides: Partial<PlatformSource> = {}) {
 				page: { page: 1, pageSize: 8, totalItems: 0, totalPages: 1, from: 0, to: 0 }
 			};
 		},
+		async findDomain() {
+			calls.push('domain');
+			return null;
+		},
+		async readDomainVitals() {
+			calls.push('domain-vitals');
+			return null;
+		},
+		async readDomainDependencies() {
+			calls.push('domain-dependencies');
+			return { upstream: [], downstream: [], criticalPath: [] };
+		},
 		async listIncidents(_scope, limit) {
 			calls.push(`incidents:${limit}`);
 			return [];

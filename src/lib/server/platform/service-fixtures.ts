@@ -1,5 +1,6 @@
 import type {
 	DependencyNode,
+	DomainVitals,
 	FavoriteItem,
 	LatencyHeatmap,
 	MetricInsight,
@@ -10,13 +11,14 @@ import type {
 	ServiceDependencies,
 	ServiceEndpoint,
 	ServiceStat,
+	ServiceVitals,
 	TimeSeries
 } from '$lib/platform/types';
 import { describeInstanceHealth } from '$lib/platform/services';
 import { formatChange, formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
 import { statusFromScore } from '$lib/platform/health';
 import { bandFor } from '$lib/platform/chart';
-import { buildSeries } from './series';
+import { buildSeries, hashSeed, seededRandom } from './series';
 import { listDomains } from './fixtures';
 
 /**
@@ -202,6 +204,158 @@ export function listServices(): Service[] {
 			activeAlerts: seed.activeAlerts
 		};
 	});
+}
+
+/**
+ * Suffixes a generated service is named with, in the order they are used.
+ *
+ * A domain's first services are the ones written by hand in `SERVICE_SEEDS`; the rest
+ * are generated to reach the count the domain states. Without that, a domain claiming
+ * twenty-four services would list two — and the header tile and the table beneath it
+ * would describe different platforms.
+ */
+const SERVICE_SUFFIXES = [
+	'api',
+	'worker',
+	'gateway',
+	'reconciliation',
+	'notification',
+	'processor',
+	'sync',
+	'scheduler',
+	'validator',
+	'projector',
+	'archiver',
+	'exporter',
+	'importer',
+	'auditor',
+	'router',
+	'cache',
+	'indexer',
+	'reporter',
+	'webhook',
+	'migrator',
+	'cleaner',
+	'sampler',
+	'replayer',
+	'reaper',
+	'collector',
+	'dispatcher',
+	'resolver',
+	'enricher',
+	'throttler',
+	'balancer',
+	'watcher',
+	'pruner',
+	'sealer',
+	'signer'
+];
+
+const SERVICE_KINDS = [
+	'API Gateway',
+	'Background Worker',
+	'External Gateway',
+	'Batch Job',
+	'Event Processor',
+	'Domain Service'
+];
+
+/**
+ * One row per service in a domain.
+ *
+ * The list is exactly as long as the domain says it is, and the statuses are dealt out
+ * to match the split the domain's vitals report — so the header tile, the bar under it
+ * and this table are three renderings of one set of facts rather than three guesses.
+ *
+ * Readings for a hand-written service come from its own seed, so a service's error rate
+ * is the same number here, on its page and on its metrics tab.
+ */
+export function listServiceVitals(domainId: string, vitals: DomainVitals, total: number) {
+	const catalogued = listServices().filter((service) => service.domainId === domainId);
+	const domainPrefix = domainId.replace(/-domain$/, '');
+
+	const rows: ServiceVitals[] = [];
+	const used = new Set(catalogued.map((service) => service.slug));
+
+	for (let index = 0; rows.length < total; index++) {
+		const fromCatalog = catalogued[index];
+		if (fromCatalog) {
+			const seed = SERVICE_SEEDS.find((one) => slugify(one.name) === fromCatalog.slug);
+			rows.push({
+				id: fromCatalog.id,
+				slug: fromCatalog.slug,
+				name: fromCatalog.name,
+				kind: fromCatalog.serviceType,
+				icon: fromCatalog.icon,
+				accent: fromCatalog.accent,
+				status: fromCatalog.status,
+				requestsPerSecond: seed?.requestRate ?? 0,
+				errorRatePct: seed?.errorRatePct ?? 0,
+				p95LatencyMs: seed?.p95LatencyMs ?? 0,
+				instancesHealthy: fromCatalog.instancesHealthy,
+				instancesTotal: fromCatalog.instancesTotal,
+				trend: buildSeries(`${fromCatalog.slug}:vitals`, seed?.requestRate ?? 100, {
+					points: 20,
+					volatility: 0.16
+				})
+			});
+			continue;
+		}
+
+		const suffix = SERVICE_SUFFIXES[(index - catalogued.length) % SERVICE_SUFFIXES.length];
+		const name = `${domainPrefix}-${suffix}`;
+		if (used.has(name)) continue;
+		used.add(name);
+
+		const random = seededRandom(hashSeed(`${domainId}:${name}`));
+		const requestRate = Math.round(60 + random() * 460);
+		const instancesTotal = 1 + Math.floor(random() * 3);
+
+		rows.push({
+			id: name,
+			slug: name,
+			name,
+			kind: SERVICE_KINDS[Math.floor(random() * SERVICE_KINDS.length)],
+			icon: 'code',
+			accent: catalogued[0]?.accent ?? 'slate',
+			// Overwritten below; dealt out so the counts match what the domain states.
+			status: 'healthy',
+			requestsPerSecond: requestRate,
+			errorRatePct: Math.round(random() * 90) / 100,
+			p95LatencyMs: Math.round(90 + random() * 520),
+			instancesHealthy: instancesTotal,
+			instancesTotal,
+			trend: buildSeries(`${name}:vitals`, requestRate, { points: 20, volatility: 0.16 })
+		});
+	}
+
+	/*
+	 * Deal the states out to match the domain's split exactly.
+	 *
+	 * Worst first, and skipping the hand-written services, whose status is a fact of
+	 * their own catalog entry rather than this domain's arithmetic.
+	 */
+	const generated = rows.filter((row) => !catalogued.some((one) => one.slug === row.slug));
+	const already = { healthy: 0, degraded: 0, down: 0 };
+	for (const row of rows) {
+		if (row.status === 'down') already.down++;
+		else if (row.status === 'degraded') already.degraded++;
+		else already.healthy++;
+	}
+
+	let cursor = 0;
+	for (const state of ['down', 'degraded'] as const) {
+		const wanted = Math.max(0, vitals.serviceCounts[state] - already[state]);
+		for (let taken = 0; taken < wanted && cursor < generated.length; taken++, cursor++) {
+			generated[cursor].status = state;
+			generated[cursor].instancesHealthy = Math.max(
+				state === 'down' ? 0 : 1,
+				generated[cursor].instancesTotal - 1
+			);
+		}
+	}
+
+	return rows;
 }
 
 export function findService(slug: string): Service | null {

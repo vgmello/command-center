@@ -6,8 +6,11 @@ import type {
 	DeploymentPage,
 	DeploymentSummary,
 	DomainBreakdown,
+	Domain,
 	DomainChange,
+	DomainDependencies,
 	DomainPage,
+	DomainVitals,
 	DomainStatusCounts,
 	FacetOption,
 	FavoriteItem,
@@ -30,6 +33,7 @@ import type {
 	ServiceDependencies,
 	ServiceEndpoint,
 	ServiceStat,
+	ServiceVitals,
 	SloBudget,
 	TimeSeries,
 	TrendGrain
@@ -45,6 +49,9 @@ import type {
 } from './source';
 import {
 	CURRENT_USER,
+	findDomain,
+	readDomainDependencies,
+	readDomainVitals,
 	buildDeploymentTrends,
 	buildStatusTrend,
 	listActivitySummary,
@@ -63,6 +70,7 @@ import * as estate from './infrastructure-fixtures';
 import {
 	findService,
 	listFavorites,
+	listServiceVitals,
 	listEndpoints,
 	listMetricInsights,
 	readLatencyHeatmap,
@@ -97,6 +105,18 @@ export class FixturePlatformSource implements PlatformSource {
 
 	async queryDomains(_scope: PlatformScope, query: DomainQuery): Promise<DomainPage> {
 		return queryDomainsInMemory(listDomains(), query);
+	}
+
+	async findDomain(_scope: PlatformScope, slug: string): Promise<Domain | null> {
+		return findDomain(slug);
+	}
+
+	async readDomainVitals(_scope: PlatformScope, slug: string): Promise<DomainVitals | null> {
+		return readDomainVitals(slug, new Date());
+	}
+
+	async readDomainDependencies(_scope: PlatformScope, slug: string): Promise<DomainDependencies> {
+		return readDomainDependencies(slug);
 	}
 
 	/**
@@ -278,8 +298,18 @@ export class FixtureInfrastructureSource implements InfrastructureSource {
 export class FixtureServiceSource implements ServiceSource {
 	readonly id = 'fixture';
 
-	async listServices(_scope: PlatformScope): Promise<Service[]> {
-		return listServices();
+	async listServices(_scope: PlatformScope, domainId?: string): Promise<Service[]> {
+		const all = listServices();
+		return domainId ? all.filter((service) => service.domainId === domainId) : all;
+	}
+
+	async listServiceVitals(
+		_scope: PlatformScope,
+		domainId: string,
+		vitals: DomainVitals,
+		total: number
+	): Promise<ServiceVitals[]> {
+		return listServiceVitals(domainId, vitals, total);
 	}
 
 	async findService(_scope: PlatformScope, slug: string): Promise<Service | null> {
