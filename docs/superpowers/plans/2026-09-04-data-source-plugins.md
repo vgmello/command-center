@@ -2501,7 +2501,6 @@ function ttlFor(deps: RouterDeps, capability: Capability): number {
 	);
 }
 
-
 /**
  * The cache key's argument half, scope included.
  *
