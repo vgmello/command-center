@@ -64,8 +64,14 @@ to Octopus. There is no single "open this service elsewhere" button. Consequence
 provenance travels with the data — a panel knows which connection fed it.
 
 **7. First delivery is the framework plus a working Azure provider.**
-Fixture providers stand in for APM and deployment so the framework is provable without
-those tenants, and Azure proves the contract against a real API.
+Fixture providers stand in for APM and deployment. Azure is exercised offline against
+[floci-az](https://github.com/floci-io/floci-az), a local Azure emulator serving ARM,
+Monitor and Entra on `localhost:4577` — so the adapter is testable in CI by anyone with
+Docker, and needs no tenant. A second cloud provider remains the only real way to learn
+whether `CloudProvider` is cloud-shaped rather than Azure-shaped, and the emulator family
+(`floci` for AWS, `floci-gcp`, `floci-oci`) makes that cheap; it is deliberately out of
+this delivery, because building an integration nobody asked for to validate a contract is
+a poor trade against building the wanted one and validating it against a real emulator.
 
 ## Architecture
 
@@ -315,12 +321,24 @@ and not to hand-roll auth.
 **Everything else is `fetch`** against the REST APIs, rather than four `@azure/arm-*`
 SDK packages:
 
-| Capability                                                                          | API                                                |
-| ----------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `cloud.regions`, `cloud.nodes`, `cloud.clusters`, `cloud.databases`, `cloud.queues` | Resource Graph — one KQL query answers all of them |
-| `cloud.utilization`, `cloud.alerts`                                                 | Azure Monitor                                      |
-| `cloud.storage`                                                                     | Resource Graph plus Storage metrics                |
-| `cloud.cost`                                                                        | Cost Management                                    |
+| Capability                                                                          | API                                                                                       | Emulated by floci-az |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | :------------------: |
+| `cloud.regions`, `cloud.nodes`, `cloud.clusters`, `cloud.databases`, `cloud.queues` | ARM resource listing — `GET /subscriptions/{sub}/resources`, grouped by type and location |         yes          |
+| `cloud.utilization`, `cloud.alerts`                                                 | Azure Monitor                                                                             |         yes          |
+| `cloud.storage`                                                                     | ARM listing plus Storage metrics                                                          |         yes          |
+| `cloud.cost`                                                                        | Cost Management                                                                           |        **no**        |
+
+**ARM resource listing rather than Resource Graph.** Resource Graph answers the whole
+inventory in one KQL query and is the better production choice on a large estate — but
+floci-az does not emulate it, which would leave five of the nine capabilities untestable
+without a subscription. Correctness that can be run beats efficiency that cannot. Resource
+Graph is a later optimisation behind the same capability; swapping it in changes one
+provider and no contract.
+
+**Cost Management is the honest gap.** floci-az does not emulate it, so `cloud.cost` is
+the one Azure capability exercised against the mock rather than the emulator. That is not
+a workaround — it is the capability system doing its job, and it gives the `unavailable`
+path a real case to prove rather than a contrived one.
 
 One dependency and three endpoints, which is what the API selection order asks for.
 
@@ -360,20 +378,48 @@ With `SOURCES_CONFIG` unset the app runs on fixtures exactly as it does today.
 
 ## Testing
 
-- **A shared contract suite per kind.** Every `CloudProvider` must pass it. Run against
-  the fixture cloud provider in CI, and optionally against a live tenant behind a flag.
-- **Capability agreement.** A test asserts each provider's declared capabilities match
-  the methods it actually implements, in both directions.
-- **Router tests.** Resource dispatch, aggregate fan-out, unavailable, failed, and the
-  catalog/APM join in `listServiceVitals`.
-- **Cache tests.** TTL expiry, single-flight collapsing concurrent calls, deadline
+Nothing here needs a paid account or a booked tenant. That is a design constraint, not a
+convenience: an integration nobody can run is an integration nobody fixes.
+
+- **A shared contract suite per kind.** Every `CloudProvider` must pass the same suite.
+  It runs against two implementations: the fixture provider, and the Azure provider
+  pointed at floci-az. Two is the minimum that tests anything — a contract only one
+  implementation satisfies has been described rather than tested — and the emulator
+  family makes a third cheap when a second cloud is actually wanted.
+- **Capability agreement.** Each provider's declared capabilities must match the methods
+  it implements, in both directions. A provider declaring `cloud.cost` without
+  `readCost` is a red test, not a runtime hole.
+- **Router tests.** Resource dispatch, aggregate fan-out, `unavailable`, `failed`, and
+  the catalog/APM join in `listServiceVitals`.
+- **Cache tests.** TTL expiry, single-flight collapsing concurrent calls, deadlines
   firing, stale-on-failure.
-- **Azure adapter.** KQL and URL construction, and response mapping, tested against
-  recorded payloads. No live calls in CI.
+
+### Standing in for the real services
+
+Nothing here needs a paid account or a booked tenant. That is a design constraint rather
+than a convenience: an integration nobody can run is an integration nobody fixes.
+
+| Service               | How it is exercised                                                                                                                                                                                                                                         |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Azure                 | **floci-az** — a local Azure emulator on `localhost:4577`, started by Docker Compose. It serves ARM, Monitor and Entra, so `@azure/identity` authenticates against it and the provider talks to it exactly as it would to Azure. Only the endpoint differs. |
+| Azure Cost Management | An in-repo **mock REST server**, since floci-az does not emulate it.                                                                                                                                                                                        |
+| Coralogix, Octopus    | The same mock server, with their response shapes.                                                                                                                                                                                                           |
+
+The mock server is `Bun.serve` and a table of routes — tier 2 on the API selection order,
+no dependency. One server rather than three, because the difference between them is a
+route table and three would be three lifecycles to start and stop.
+
+Providers take their base URL from connection settings, so pointing one at floci-az or at
+the mock is configuration rather than a code path. There is no test-only branch inside a
+provider: the code under test in CI is the code that runs in production, which is the only
+arrangement in which passing tests mean anything.
+
+Recorded payloads for the mock are committed with their provenance noted, so a changed
+response shape is fixed by a new recording rather than by archaeology.
 
 ## Increments
 
-Each is shippable on its own.
+Six, each shippable on its own.
 
 1. **Contracts and registry.** Kinds, capabilities, provider definitions, connection
    config and validation, fixture providers for all three kinds. Ports still resolve as
@@ -382,17 +428,24 @@ Each is shippable on its own.
    empty states. Panels can now say a capability has no source.
 3. **Cache and resilience.** TTL, single-flight, deadlines, the `failed` state, stale
    serving.
-4. **The Azure provider.** Identity, Resource Graph inventory, Monitor metrics, Cost
-   Management, and the portal deep links.
-5. **Bindings and exposure.** `bindings` on domain and service records, and
+4. **The harness.** The floci-az compose file and the route-table mock, wired into the
+   shared contract suite. This lands before the provider deliberately: the harness is what
+   makes the next increment verifiable rather than plausible.
+5. **The Azure provider.** Identity, ARM inventory, Monitor metrics, Cost Management and
+   the portal deep links — run against floci-az in CI, and against a real subscription
+   whenever one is available.
+6. **Bindings and exposure.** `bindings` on domain and service records, and
    `/api/v1/sources` listing connections with their kinds and capabilities.
 
 ## Out of scope
 
 - A settings screen for creating and editing connections. Connections are configuration
   for now; a UI over them is a natural follow-on and is not needed to make Azure work.
-- The Coralogix and Octopus providers. Their kind contracts and fixture providers land
-  in increment 1; the real adapters are separate work against a contract that already
-  runs.
+- The Coralogix and Octopus providers. Their kind contracts, fixture providers and mock
+  route tables land in increments 1 and 4, so the wiring is proven end to end; the real
+  adapters are separate work against a contract that already runs against a mock.
+- A second cloud provider. `floci`, `floci-gcp` and `floci-oci` make one cheap to validate
+  when a second cloud is actually in use; building one now purely to exercise the contract
+  would be an integration nobody asked for.
 - Merging two sources' answers to the same question. Decision 1 rules it out by design.
 - Writing to a source. Every capability here is a read.
