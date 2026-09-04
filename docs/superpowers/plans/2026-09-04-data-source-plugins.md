@@ -2156,7 +2156,7 @@ describe('SourceCache', () => {
 			return attempt;
 		};
 
-		expect(cache.read(key(), load)).rejects.toThrow('flaky');
+		await expect(cache.read(key(), load)).rejects.toThrow('flaky');
 		await new Promise((resolve) => setTimeout(resolve, 5));
 		expect((await cache.read(key(), load)).data).toBe(2);
 	});
@@ -2164,7 +2164,7 @@ describe('SourceCache', () => {
 	test('a load that overruns its deadline fails rather than hanging the page', async () => {
 		const cache = new SourceCache({ deadlineMs: 20 });
 
-		expect(
+		await expect(
 			cache.read(key(), () => new Promise((resolve) => setTimeout(() => resolve(1), 200)))
 		).rejects.toThrow(/deadline/i);
 	});
@@ -2190,7 +2190,7 @@ describe('SourceCache', () => {
 	test('a failure with nothing cached still throws', async () => {
 		const cache = new SourceCache();
 
-		expect(
+		await expect(
 			cache.read(key(), async () => {
 				throw new Error('down');
 			})
@@ -2537,7 +2537,17 @@ export async function fanOutSingle<T>(
 ): Promise<T> {
 	const { data } = await deps.cache.read(
 		{ connectionId: 'fan-out', capability, args, ttlSeconds: ttlFor(deps, capability) },
-		async () => (await deps.dispatcher.all<T>({ capability, scope, call })).data
+		// `all` deals in lists, so a single-valued aggregate is wrapped into a
+		// one-element list and unwrapped again below. The alternative is a third
+		// dispatch rule, and two is the number this design deliberately stopped at.
+		async () =>
+			(
+				await deps.dispatcher.all<T>({
+					capability,
+					scope,
+					call: async (client, ctx) => [await call(client, ctx)]
+				})
+			).data
 	);
 
 	return (data as T[])[0];
