@@ -555,10 +555,16 @@ export function defineProvider<Client>(input: ProviderInput<Client>): ProviderDe
 		}
 	}
 
-	return {
-		...input,
-		capabilities: Object.freeze(new Set(input.capabilities)) as ReadonlySet<Capability>
+	// Object.freeze does NOT make a Set immutable: its contents live in internal slots
+	// rather than own properties, so `.add()` on a frozen Set succeeds silently. The
+	// mutators have to be closed off explicitly, or the test below passes nothing.
+	const capabilities = new Set(input.capabilities);
+	const refuse = () => {
+		throw new TypeError(`Provider "${input.id}" capabilities cannot be mutated.`);
 	};
+	Object.assign(capabilities, { add: refuse, delete: refuse, clear: refuse });
+
+	return { ...input, capabilities: capabilities as ReadonlySet<Capability> };
 }
 ```
 
