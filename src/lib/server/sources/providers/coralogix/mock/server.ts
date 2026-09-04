@@ -13,6 +13,25 @@ import { PromEvaluator } from './promql-eval';
  * DataPrime request without a query is a 400.
  */
 
+/**
+ * The `$d.field == 'value'` conditions of a DataPrime `filter`.
+ *
+ * A deliberately small subset — equality and inequality joined by `&&`, which is what
+ * this provider sends. Anything else is ignored rather than half-understood: a filter
+ * silently mis-parsed would be worse than one plainly unsupported.
+ */
+function parseFilters(query: string): [string, '==' | '!=', string][] {
+	const conditions: [string, '==' | '!=', string][] = [];
+	const pattern = /\$d\.(\w+)\s*(==|!=)\s*'((?:[^'\\]|\\.)*)'/g;
+	let found: RegExpExecArray | null;
+
+	while ((found = pattern.exec(query))) {
+		conditions.push([found[1], found[2] as '==' | '!=', found[3].replace(/\\(.)/g, '$1')]);
+	}
+
+	return conditions;
+}
+
 function unauthorised() {
 	return Response.json({ message: 'Invalid API key.' }, { status: 401 });
 }
@@ -120,13 +139,21 @@ export function coralogixMockHandler(options: { estate?: CoralogixEstate; apiKey
 			const to = body.metadata?.endDate ? Date.parse(body.metadata.endDate) : Date.now();
 			const limit = body.metadata?.limit ?? 1000;
 
-			// The query language itself is not evaluated — what the adapter is tested on is
-			// whether it asks over the right window and reads the NDJSON correctly. The
-			// window IS honoured, because that is the part a wrong request gets wrong.
+			// The full query language is not implemented, but the `filter` clause is —
+			// because a mock that ignores the filter cannot show whether the provider's
+			// own scoping works, and an incident list that quietly includes another
+			// environment is exactly the bug worth catching.
+			const conditions = parseFilters(body.query);
+
 			const rows = estate.events
 				.filter((event) => {
 					const at = Date.parse(event.timestamp);
-					return at >= from && at <= to;
+					if (at < from || at > to) return false;
+
+					return conditions.every(([field, operator, value]) => {
+						const actual = String((event as unknown as Record<string, unknown>)[field] ?? '');
+						return operator === '==' ? actual === value : actual !== value;
+					});
 				})
 				.slice(0, limit)
 				.map((event) => ({

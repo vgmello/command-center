@@ -29,6 +29,7 @@ export interface CoralogixEstate {
 
 export interface MockEvent {
 	timestamp: string;
+	environment: string;
 	severity: 'critical' | 'warning' | 'info';
 	service: string;
 	domain: string;
@@ -135,22 +136,32 @@ export function buildEstate(
 				// tail above — seeding it as a straight line would push the 95th percentile
 				// into the top bucket, and every p95 the app printed would be the same
 				// number.
-				const spread = 0.85 + random() * 0.12;
-				for (let bucket = 0; bucket < LE_BUCKETS.length; bucket++) {
-					const le = LE_BUCKETS[bucket];
-					const cumulative = base * CDF[bucket] * spread;
-					series.push({
-						labels: {
-							__name__: 'http_server_request_duration_bucket',
-							service,
-							environment,
-							domain,
-							domain_name: domainName,
-							http_route: route,
-							le
-						},
-						values: walk(random, cumulative, points, cumulative * 0.1)
-					});
+				//
+				// Emitted per instance as well as per route, because that is how an OTel
+				// collector reports it — one histogram per process. Without the instance
+				// label, `sum by (le, instance)` collapses to a single series and the
+				// per-instance latency heatmap has exactly one row.
+				for (let replica = 0; replica < instances; replica++) {
+					const spread = 0.85 + random() * 0.12;
+
+					for (let bucket = 0; bucket < LE_BUCKETS.length; bucket++) {
+						const le = LE_BUCKETS[bucket];
+						const cumulative = (base / instances) * CDF[bucket] * spread;
+
+						series.push({
+							labels: {
+								__name__: 'http_server_request_duration_bucket',
+								service,
+								environment,
+								domain,
+								domain_name: domainName,
+								http_route: route,
+								instance: `${service}-${replica}`,
+								le
+							},
+							values: walk(random, cumulative, points, cumulative * 0.1)
+						});
+					}
 				}
 			}
 
@@ -189,6 +200,7 @@ export function buildEstate(
 		{
 			timestamp: new Date(now.getTime() - 4 * 60_000).toISOString(),
 			severity: 'critical',
+			environment: 'production',
 			service: 'payment-gateway',
 			domain: 'Payments',
 			title: 'Elevated 5xx on /v1/charge',
@@ -197,6 +209,7 @@ export function buildEstate(
 		{
 			timestamp: new Date(now.getTime() - 26 * 60_000).toISOString(),
 			severity: 'warning',
+			environment: 'production',
 			service: 'token-broker',
 			domain: 'Identity',
 			title: 'P95 latency above 1s',
@@ -205,6 +218,7 @@ export function buildEstate(
 		{
 			timestamp: new Date(now.getTime() - 95 * 60_000).toISOString(),
 			severity: 'warning',
+			environment: 'production',
 			service: 'dispatch-worker',
 			domain: 'Fulfilment',
 			title: 'Queue depth growing',
@@ -213,6 +227,7 @@ export function buildEstate(
 		{
 			timestamp: new Date(now.getTime() - 6 * 3_600_000).toISOString(),
 			severity: 'info',
+			environment: 'production',
 			service: 'catalogue-api',
 			domain: 'Catalogue',
 			title: 'Search index rebuilt',

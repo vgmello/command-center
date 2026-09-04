@@ -1,4 +1,5 @@
 import type { ProviderDefinition } from '../provider';
+import { coralogixProvider } from './coralogix';
 import { octopusProvider } from './octopus';
 
 /**
@@ -10,7 +11,8 @@ import { octopusProvider } from './octopus';
  * something.
  */
 export const REAL_PROVIDERS: readonly ProviderDefinition<unknown>[] = [
-	octopusProvider as ProviderDefinition<unknown>
+	octopusProvider as ProviderDefinition<unknown>,
+	coralogixProvider as ProviderDefinition<unknown>
 ];
 
-export { octopusProvider };
+export { coralogixProvider, octopusProvider };

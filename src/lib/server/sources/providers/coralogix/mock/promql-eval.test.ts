@@ -3,6 +3,7 @@ import { PromEvaluator } from './promql-eval';
 import { buildEstate } from './data';
 import {
 	DEFAULT_METRICS,
+	availability,
 	errorRate,
 	instancesUp,
 	p95ByRoute,
@@ -170,6 +171,25 @@ describe('range evaluation', () => {
 
 		expect(series[0].points.length).toBe(13);
 		expect(series[0].points[0].at).toBe(from);
+	});
+});
+
+describe('operator precedence', () => {
+	test('multiplication binds tighter than subtraction', () => {
+		// Parsed left to right, `1 - 4 / 2` is -1.5 rather than -1. That is exactly how
+		// the availability expression produced a negative percentage.
+		expect(value('1 - 4 / 2')).toBe(-1);
+	});
+
+	test('division binds tighter than addition', () => {
+		expect(value('1 + 6 / 2')).toBe(4);
+	});
+
+	test('an availability expression stays inside nought to one hundred', () => {
+		const percent = value(availability(DEFAULT_METRICS, production, '1d'));
+
+		expect(percent).toBeGreaterThanOrEqual(0);
+		expect(percent).toBeLessThanOrEqual(100);
 	});
 });
 

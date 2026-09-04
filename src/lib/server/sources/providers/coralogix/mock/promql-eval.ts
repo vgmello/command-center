@@ -242,23 +242,42 @@ export class PromEvaluator {
 		return this.evaluate(query, at, at, 60);
 	}
 
+	/**
+	 * Additive level: `or`, `+`, `-`.
+	 *
+	 * Split from the multiplicative level so that PromQL's precedence holds. Parsed
+	 * flat and left to right, `1 - errors / total` becomes `(1 - errors) / total`, which
+	 * turns an availability of 99% into a negative number — a bug that reached a test
+	 * before it reached a screen.
+	 */
 	#expression(tokens: Tokens, at: number[]): EvalSeries[] {
-		let left = this.#term(tokens, at);
+		let left = this.#product(tokens, at);
 
 		for (;;) {
 			if (tokens.take('or')) {
-				const right = this.#term(tokens, at);
+				const right = this.#product(tokens, at);
 				// `or` fills in only where the left side has nothing, which is exactly why
 				// the provider writes `... or vector(0)`.
 				left = left.length > 0 ? left : right;
-			} else if (tokens.take('/')) {
+			} else if (tokens.take('-')) {
+				left = this.#combine(left, this.#product(tokens, at), (a, b) => a - b);
+			} else if (tokens.take('+')) {
+				left = this.#combine(left, this.#product(tokens, at), (a, b) => a + b);
+			} else {
+				return left;
+			}
+		}
+	}
+
+	/** Multiplicative level: `*` and `/`, which bind tighter than `+` and `-`. */
+	#product(tokens: Tokens, at: number[]): EvalSeries[] {
+		let left = this.#term(tokens, at);
+
+		for (;;) {
+			if (tokens.take('/')) {
 				left = this.#combine(left, this.#term(tokens, at), (a, b) => (b === 0 ? 0 : a / b));
 			} else if (tokens.take('*')) {
 				left = this.#combine(left, this.#term(tokens, at), (a, b) => a * b);
-			} else if (tokens.take('-')) {
-				left = this.#combine(left, this.#term(tokens, at), (a, b) => a - b);
-			} else if (tokens.take('+')) {
-				left = this.#combine(left, this.#term(tokens, at), (a, b) => a + b);
 			} else {
 				return left;
 			}
