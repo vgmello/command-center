@@ -58,6 +58,38 @@ describe('SourceCache', () => {
 		expect(calls).toBe(2);
 	});
 
+	test('different connectionId/args pairs do not collide even if they space-join identically', async () => {
+		let calls = 0;
+		const cache = new SourceCache();
+		const load = async () => ++calls;
+
+		// These would collide with space-joined key format:
+		// "a cloud.nodes x y" vs "a x cloud.nodes y"
+		// but not with JSON format.
+		const result1 = await cache.read(
+			{
+				connectionId: 'a',
+				capability: 'cloud.nodes' as const,
+				args: 'x y',
+				ttlSeconds: 60
+			},
+			load
+		);
+		const result2 = await cache.read(
+			{
+				connectionId: 'a x',
+				capability: 'cloud.nodes' as const,
+				args: 'y',
+				ttlSeconds: 60
+			},
+			load
+		);
+
+		expect(calls).toBe(2);
+		expect(result1.data).toBe(1);
+		expect(result2.data).toBe(2);
+	});
+
 	test('concurrent identical reads share one call', async () => {
 		let calls = 0;
 		const cache = new SourceCache();

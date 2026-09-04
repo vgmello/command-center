@@ -61,8 +61,8 @@ interface Entry {
  * protection a rate limit will get, and it is most of what this class is.
  */
 export class SourceCache {
-	readonly entries = new Map<string, Entry>();
-	readonly inFlight = new Map<string, Promise<unknown>>();
+	readonly #entries = new Map<string, Entry>();
+	readonly #inFlight = new Map<string, Promise<unknown>>();
 	readonly now: () => number;
 	readonly deadlineMs: number;
 
@@ -72,28 +72,31 @@ export class SourceCache {
 	}
 
 	async read<T>(key: CacheKey, load: () => Promise<T>): Promise<{ data: T; stale?: true }> {
-		const id = `${key.connectionId} ${key.capability} ${key.args}`;
-		const cached = this.entries.get(id);
+		// JSON, not a space-joined string: a connection id and an args string are both
+		// free-form, so concatenating them lets one pair spell another pair's key — and a
+		// cache collision means one connection served from another's entry.
+		const id = JSON.stringify([key.connectionId, key.capability, key.args]);
+		const cached = this.#entries.get(id);
 
 		if (cached && this.now() - cached.at < key.ttlSeconds * 1000) {
 			return { data: cached.value as T };
 		}
 
-		const existing = this.inFlight.get(id);
+		const existing = this.#inFlight.get(id);
 		if (existing) return { data: (await existing) as T };
 
 		const attempt = this.withDeadline(load())
 			.then((value) => {
-				this.entries.set(id, { value, at: this.now() });
+				this.#entries.set(id, { value, at: this.now() });
 				return value;
 			})
 			.finally(() => {
 				// Cleared whether it resolved or threw, so one failure does not poison the
 				// key for every later caller.
-				this.inFlight.delete(id);
+				this.#inFlight.delete(id);
 			});
 
-		this.inFlight.set(id, attempt);
+		this.#inFlight.set(id, attempt);
 
 		try {
 			return { data: (await attempt) as T };
@@ -105,8 +108,8 @@ export class SourceCache {
 	}
 
 	clear(): void {
-		this.entries.clear();
-		this.inFlight.clear();
+		this.#entries.clear();
+		this.#inFlight.clear();
 	}
 
 	/** A hung upstream must fail one panel rather than hold the page open. */
