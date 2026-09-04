@@ -111,6 +111,16 @@ export function linePath(points: PlotPoint[]): string {
 	return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
 }
 
+/** The line closed down to a baseline, for a soft fill beneath it. */
+export function areaPath(points: PlotPoint[], baseline: number): string {
+	const line = linePath(points);
+	if (!line) return '';
+
+	const first = points[0];
+	const last = points[points.length - 1];
+	return `${line} L ${last.x} ${baseline} L ${first.x} ${baseline} Z`;
+}
+
 export interface PlotBar extends TimeSeriesPoint {
 	x: number;
 	y: number;

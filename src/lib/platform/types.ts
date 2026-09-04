@@ -362,6 +362,148 @@ export interface DeploymentsSnapshot {
 	domains: FacetOption[];
 }
 
+/** A labelled destination outside this app — a repo, a chat channel, a runbook. */
+export interface ExternalLink {
+	label: string;
+	href: string;
+}
+
+/** A deployable unit inside a domain. The thing an on-call engineer actually pages on. */
+export interface Service {
+	id: string;
+	slug: string;
+	name: string;
+	description: string;
+	icon: string;
+	accent: DomainAccent;
+	status: HealthStatus;
+	domainId: string;
+	domainName: string;
+	owner: string;
+	/** What kind of thing it is — "API Gateway", "Worker". Free text from the catalog. */
+	serviceType: string;
+	language: string;
+	runtime: string;
+	repository: ExternalLink;
+	chatChannel: ExternalLink;
+	runbook: ExternalLink;
+	/** Observability console for this service, if the catalog records one. */
+	dashboard: ExternalLink | null;
+	instancesHealthy: number;
+	instancesTotal: number;
+	activeAlerts: number;
+}
+
+/**
+ * One tile in the service header strip.
+ *
+ * A discriminated union rather than one shape with six optional fields: these tiles
+ * genuinely differ in what they carry — a sparkline, a progress bar, a ratio, a link —
+ * and a single type would make every one of them declare five fields it does not use,
+ * with nothing stopping a mismatched pair. The component switches once on `kind`.
+ */
+export type ServiceStat =
+	| {
+			kind: 'trend';
+			id: string;
+			label: string;
+			formatted: string;
+			unit: string;
+			series: Series;
+			changeFormatted: string;
+			comparedToLabel: string;
+			direction: TrendDirection;
+			polarity: TrendPolarity;
+			tone: ToneKey | null;
+	  }
+	| {
+			kind: 'gauge';
+			id: string;
+			label: string;
+			formatted: string;
+			unit: string;
+			/** 0–100. Drives the bar, and is not necessarily the headline number. */
+			progressPct: number;
+			changeFormatted: string;
+			comparedToLabel: string;
+			direction: TrendDirection;
+			polarity: TrendPolarity;
+			tone: ToneKey | null;
+	  }
+	| {
+			kind: 'ratio';
+			id: string;
+			label: string;
+			value: number;
+			total: number;
+			caption: string;
+			tone: ToneKey | null;
+	  }
+	| {
+			kind: 'link';
+			id: string;
+			label: string;
+			formatted: string;
+			action: { label: string; href: string } | null;
+			tone: ToneKey | null;
+	  };
+
+/** One row of the service health table: an SLI, its state and its recent shape. */
+export interface HealthCheck {
+	id: string;
+	label: string;
+	icon: string;
+	status: HealthStatus;
+	/** Already formatted — the unit differs per check, and only the source knows it. */
+	formatted: string;
+	series: Series;
+}
+
+/** A service this one calls, or that calls it. */
+export interface DependencyNode {
+	id: string;
+	name: string;
+	/** How they talk: HTTP, gRPC, PostgreSQL. Not inferable from the name. */
+	protocol: string;
+	status: HealthStatus;
+}
+
+/**
+ * The immediate neighbourhood of one service.
+ *
+ * One hop in each direction, not a whole graph: the panel answers "what breaks if this
+ * breaks, and what breaks this", and a transitive walk would answer neither legibly.
+ */
+export interface ServiceDependencies {
+	upstream: DependencyNode[];
+	downstream: DependencyNode[];
+}
+
+/** One row of the endpoint table, ranked by the latency it contributes. */
+export interface ServiceEndpoint {
+	id: string;
+	method: string;
+	path: string;
+	p95LatencyMs: number;
+	/** Share of the slowest endpoint's latency, 0–100 — what the bar draws. */
+	sharePct: number;
+	status: HealthStatus;
+}
+
+/** Everything the service overview tab renders. */
+export interface ServiceSnapshot {
+	generatedAt: string;
+	environment: EnvironmentId;
+	timeRange: TimeRangeId;
+	service: Service;
+	stats: ServiceStat[];
+	checks: HealthCheck[];
+	dependencies: ServiceDependencies;
+	deployments: Deployment[];
+	requestRate: TimeSeries;
+	endpoints: ServiceEndpoint[];
+}
+
 /** One column of the infrastructure summary: clusters, nodes, databases, queues. */
 export interface InfrastructureGroup {
 	id: string;

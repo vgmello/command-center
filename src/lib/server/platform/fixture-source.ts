@@ -13,13 +13,18 @@ import type {
 	FavoriteItem,
 	Incident,
 	InfrastructureGroup,
+	HealthCheck,
 	RateObservation,
+	Service,
+	ServiceDependencies,
+	ServiceEndpoint,
+	ServiceStat,
 	TimeSeries,
 	TrendGrain
 } from '$lib/platform/types';
 import type { DomainQuery, PlatformScope } from '$lib/platform/query';
 import type { DeploymentQuery } from '$lib/platform/deployments';
-import type { DeploymentSource, PlatformSource, WorkspaceSource } from './source';
+import type { DeploymentSource, PlatformSource, ServiceSource, WorkspaceSource } from './source';
 import {
 	CURRENT_USER,
 	buildDeploymentTrends,
@@ -29,7 +34,6 @@ import {
 	listDeploymentInsights,
 	listDeployments,
 	listDomains,
-	listFavorites,
 	listIncidents,
 	listInfrastructure,
 	listOwners,
@@ -38,6 +42,16 @@ import {
 	readDeploymentSummary
 } from './fixtures';
 import { queryDeploymentsInMemory, queryDomainsInMemory } from './in-memory-query';
+import {
+	findService,
+	listFavorites,
+	listEndpoints,
+	listHealthChecks,
+	listServices,
+	readDependencies,
+	readRequestRate,
+	readServiceStats
+} from './service-fixtures';
 import { buildSeries } from './series';
 
 /**
@@ -181,6 +195,49 @@ export class FixtureDeploymentSource implements DeploymentSource {
 
 	async listDeployingDomains(_scope: PlatformScope): Promise<FacetOption[]> {
 		return listDeployingDomains(new Date());
+	}
+}
+
+/**
+ * The stand-in service catalog.
+ *
+ * Reads through to `service-fixtures.ts`, which is where the seeded data lives — this
+ * class is only the port's shape, so replacing it with a registry adapter means
+ * deleting one file and writing another.
+ */
+export class FixtureServiceSource implements ServiceSource {
+	readonly id = 'fixture';
+
+	async listServices(_scope: PlatformScope): Promise<Service[]> {
+		return listServices();
+	}
+
+	async findService(_scope: PlatformScope, slug: string): Promise<Service | null> {
+		return findService(slug);
+	}
+
+	async readStats(_scope: PlatformScope, slug: string): Promise<ServiceStat[]> {
+		return readServiceStats(slug);
+	}
+
+	async listHealthChecks(_scope: PlatformScope, slug: string): Promise<HealthCheck[]> {
+		return listHealthChecks(slug);
+	}
+
+	async readDependencies(_scope: PlatformScope, slug: string): Promise<ServiceDependencies> {
+		return readDependencies(slug);
+	}
+
+	async readRequestRate(_scope: PlatformScope, slug: string): Promise<TimeSeries> {
+		return readRequestRate(slug, new Date());
+	}
+
+	async listEndpoints(
+		_scope: PlatformScope,
+		slug: string,
+		limit: number
+	): Promise<ServiceEndpoint[]> {
+		return listEndpoints(slug, limit);
 	}
 }
 

@@ -88,19 +88,24 @@ module the UI imports directly:
 
 - `src/lib/server/platform/source.ts` — `PlatformSource` (telemetry: domain counts,
   the domain page, rates, incidents, infrastructure), `DeploymentSource` (the CI/CD
-  feed: the deployment log, its aggregates and its trends) and `WorkspaceSource` (the
-  signed-in user and their pins). Three interfaces, because they are three upstreams
-  that will be replaced independently and on different schedules — and because one
-  interface carrying all of it would stop describing a single responsibility.
+  feed: the deployment log, its aggregates and its trends), `ServiceSource` (the
+  service catalog and per-service telemetry) and `WorkspaceSource` (the signed-in user
+  and their pins). Four interfaces, because they are four upstreams that will be
+  replaced independently and on different schedules — and because one interface
+  carrying all of it would stop describing a single responsibility.
 
   **When to add a port rather than a method.** Deployments got their own the moment
   they stopped being one method: the data comes from a build system, not a metrics
-  pipeline, so a real adapter for one has nothing to do with the other.
+  pipeline, so a real adapter for one has nothing to do with the other. Services
+  followed for the same reason — a catalog entry (owner, repo, runbook, language) comes
+  from a service registry. A real adapter may well stitch a registry and a metrics
+  backend together behind `ServiceSource`; that is the point, the stitching is one
+  adapter's problem rather than every caller's.
 
 - `src/lib/server/platform/fixture-source.ts` — the seeded stand-in.
 - `src/lib/server/platform/index.ts` — resolves one implementation per port from
-  `PLATFORM_SOURCE` / `DEPLOYMENT_SOURCE` / `WORKSPACE_SOURCE`, caches the instance,
-  and **throws on an unknown name**. Falling back to fixtures on a typo would serve invented numbers
+  `PLATFORM_SOURCE` / `DEPLOYMENT_SOURCE` / `SERVICE_SOURCE` / `WORKSPACE_SOURCE`,
+  caches the instance, and **throws on an unknown name**. Falling back to fixtures on a typo would serve invented numbers
   in production with nothing on the page admitting it.
 
 To add a real backend: implement the interface, register it in the resolver, set the
@@ -296,6 +301,20 @@ Anything time-relative takes the clock as an argument (`buildOverview(env, range
 `formatRelativeTime(iso, now)`) rather than calling `new Date()` internally. Untestable
 otherwise, and it lets the client re-render "2m ago" without refetching.
 
+### Detail routes: 404 is an answer, not a failure
+
+`/services/[slug]` asks the source for a service and gets `null` when there is none.
+That is an ordinary answer to an ordinary question — someone edited a URL — so the page
+renders a not-found panel inside the shell rather than throwing. A thrown error would
+replace the nav and the chrome, making a typo look like an outage.
+
+The sub-tabs are the other half of the same rule. The strip has eight destinations and
+every one of them navigates, so back, middle-click and a pasted link all behave; the
+seven that are not built yet share one `[tab]` route that says so. Its `+page.ts`
+validates the segment against `SERVICE_TABS` and 404s anything else — the one case this
+codebase keeps a `load` for, because a route-level guard has to run before render.
+`overview` is rejected there too, so a tab never has two URLs.
+
 ### Do not ship links to routes that do not exist
 
 A row that navigates to a 404 is worse than a row that does not navigate. Render it as
@@ -471,7 +490,7 @@ an `@` costs its full length in every session, whether or not the session touche
 
 ## State
 
-Overview, Domains and Deployments screens built and verified. `bun test` (148 tests), `bun run check`, `bun run lint`,
+Overview, Domains, Deployments and the Service detail view built and verified. `bun test` (168 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
@@ -481,14 +500,16 @@ What exists:
   `geometry.ts` and `pagination.ts`, each with a test file
 - `src/lib/server/platform/` — the `PlatformSource` / `WorkspaceSource` ports, the fixture
   implementation, the resolver, and one assembler per screen (`snapshot.ts` for the
-  overview, `domains-view.ts`, `deployments-view.ts`). **Replacing the fixture with real
+  overview, `domains-view.ts`, `deployments-view.ts`, `service-view.ts`). **Replacing the fixture with real
   telemetry is a new file plus a resolver entry**; nothing above the ports changes
 - `src/lib/server/platform/service.ts` — the in-process API both transports call
 - `src/routes/shell.remote.ts` — `getShell`, `getSystemStatus`
 - `src/routes/overview.remote.ts` — `getOverview`
 - `src/routes/domains.remote.ts` — `getDomainPage`, `getDomainsView`
-- `src/routes/deployments.remote.ts` — `getDeploymentPage`, `getDeploymentsView`. All
-  remote functions are Valibot-validated against the schemas the JSON API shares
+- `src/routes/deployments.remote.ts` — `getDeploymentPage`, `getDeploymentsView`
+- `src/routes/services.remote.ts` — `getServices`, `getServiceView`. All remote
+  functions are Valibot-validated against the schemas the JSON API shares, the service
+  slug included: it arrives from a URL anyone can edit
 - `src/routes/api/v1/` — public JSON API: `domains`, `domains/summary`, `metrics`,
   `incidents`, `deployments`, `infrastructure`, `status`. Token-authenticated,
   frozen DTOs in `src/lib/server/api/v1/dto.ts` with a shape test
@@ -498,7 +519,7 @@ What exists:
   detail to the log
 - `src/lib/platform/chart.ts` — chart layout maths, with a test file
 - `src/lib/components/` — app shell (`app/`), one folder per screen (`overview/`,
-  `domains/`, `deployments/`), the shared table pieces (`DomainToolbar`, `DomainTable`,
+  `domains/`, `deployments/`, `services/`), the shared table pieces (`DomainToolbar`, `DomainTable`,
   `TablePager`), `LineChart` / `BarChart`, the cards, the icon registry and `tone.ts`
 - `src/lib/scope.svelte.ts` — environment / time range / auto-refresh, held in context
 - `src/routes/status/` — the original health-probe slice, kept as the minimal end-to-end reference

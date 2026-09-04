@@ -46,11 +46,36 @@ export default defineConfig(
 		rules: {}
 	},
 	{
-		// The sidebar renders navigation supplied by the server, and SectionCard takes
-		// its destination as a prop. `resolve()` is typed against the literal route
-		// union, so it cannot be applied to an href that is only known at runtime —
-		// the rule has nothing to check here. Every other link in the app still does.
-		files: ['src/lib/components/app/AppSidebar.svelte', 'src/lib/components/SectionCard.svelte'],
+		// Destinations that are only known at runtime: navigation and pins supplied by
+		// the server, a destination taken as a prop, a path built from a slug in the
+		// URL. `resolve()` is typed against the literal route union, so it cannot be
+		// applied to any of these — the rule has nothing to check. Every link the app
+		// writes as a literal still goes through it, including the two in these route
+		// files that could.
+		files: [
+			'src/lib/components/app/AppSidebar.svelte',
+			'src/lib/components/app/Breadcrumb.svelte',
+			'src/lib/components/SectionCard.svelte',
+			'src/lib/components/services/ServiceStats.svelte',
+			'src/lib/components/services/ServiceTabs.svelte',
+			'src/routes/services/+page.svelte',
+			// Wildcards, not the literal path: a route's `[slug]` is a character class to
+			// the glob matcher, so `[slug]/[tab]` would silently match nothing.
+			'src/routes/services/*/*/+page.svelte'
+		],
+		rules: {
+			'svelte/no-navigation-without-resolve': 'off'
+		}
+	},
+	{
+		// These render links *out* of the app — a repository, a chat channel, a runbook,
+		// an observability console — whose URLs come from the service catalog. `resolve()`
+		// resolves internal routes and has nothing to say about an external origin, so
+		// the rule fires on every one of them and is wrong each time.
+		files: [
+			'src/lib/components/services/ServiceHeader.svelte',
+			'src/lib/components/services/ServiceInfoCard.svelte'
+		],
 		rules: {
 			'svelte/no-navigation-without-resolve': 'off'
 		}

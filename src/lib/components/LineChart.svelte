@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { axisTicks, linePath, plotPoints, seriesBounds, thinLabels } from '$lib/platform/chart';
+	import {
+		areaPath,
+		axisTicks,
+		linePath,
+		plotPoints,
+		seriesBounds,
+		thinLabels
+	} from '$lib/platform/chart';
 	import type { Plot } from '$lib/platform/chart';
 	import type { TimeSeries } from '$lib/platform/types';
 
@@ -23,6 +30,8 @@
 		formatValue?: (value: number) => string;
 		/** Gutter for the y labels. Widen it when they carry a unit, or they clip. */
 		axisWidth?: number;
+		/** A fill class per series id. Only the named series get an area under the line. */
+		areas?: Record<string, string>;
 	}
 
 	let {
@@ -32,7 +41,8 @@
 		dots = true,
 		maxLabels = 8,
 		formatValue = (value: number) => String(Math.round(value)),
-		axisWidth = 30
+		axisWidth = 30,
+		areas = {}
 	}: Props = $props();
 
 	const width = 460;
@@ -82,6 +92,9 @@
 	{/each}
 
 	{#each plotted as one (one.id)}
+		{#if areas[one.id]}
+			<path d={areaPath(one.points, baseline)} stroke="none" class={areas[one.id]} />
+		{/if}
 		<path d={linePath(one.points)} fill="none" stroke-width="1.6" class={strokes[one.id]} />
 		{#if dots}
 			{#each one.points as point, index (index)}

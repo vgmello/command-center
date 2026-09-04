@@ -11,7 +11,6 @@ import type {
 	EnvironmentId,
 	EnvironmentOption,
 	FacetOption,
-	FavoriteItem,
 	Incident,
 	InfrastructureGroup,
 	NavItem,
@@ -550,7 +549,10 @@ const DEPLOYMENT_SEEDS: DeploymentSeed[] = [
 	['order-service', 'v1.8.3', 'Order Domain', 'development', 'success', 'ci-cd', 372, 131],
 	['payment-refunds', 'v1.7.8', 'Payment Domain', 'production', 'success', 'gitops', 390, 233],
 	['payment-settlements', 'v2.1.4', 'Payment Domain', 'production', 'success', 'ci-cd', 408, 285],
-	['order-pricing', 'v1.4.0', 'Order Domain', 'staging', 'success', 'ci-cd', 425, 147]
+	['order-pricing', 'v1.4.0', 'Order Domain', 'staging', 'success', 'ci-cd', 425, 147],
+	['payment-api', 'v2.4.0', 'Payment Domain', 'staging', 'success', 'ci-cd', 2880, 192],
+	['payment-api', 'v2.3.9', 'Payment Domain', 'production', 'failed', 'ci-cd', 8640, 96],
+	['payment-api', 'v2.3.8', 'Payment Domain', 'production', 'success', 'ci-cd', 10080, 186]
 ];
 
 /** Who ran it. A pipeline for automated triggers, a person for a manual one. */
@@ -969,18 +971,6 @@ export const NAV_ITEMS: NavItem[] = [
 ];
 
 /** Favourites are pinned by the user; the dot reflects the pin, not the health. */
-export function listFavorites(): FavoriteItem[] {
-	return listDomains()
-		.filter((domain) => domain.favorite)
-		.map((domain, index) => ({
-			id: domain.id,
-			label: domain.name,
-			href: `/domains?domain=${domain.slug}`,
-			status: domain.status,
-			pinned: index === 0
-		}));
-}
-
 export const CURRENT_USER: CurrentUser = {
 	name: 'Alex Morgan',
 	role: 'Platform Admin',

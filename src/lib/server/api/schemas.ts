@@ -56,6 +56,7 @@ export const deploymentQuerySchema = v.object({
 	state: v.picklist(DEPLOYMENT_STATES),
 	// Open sets, so bounded strings rather than picklists — same reasoning as `owner`.
 	domain: v.pipe(v.string(), v.maxLength(120)),
+	service: v.pipe(v.string(), v.maxLength(120)),
 	environment: v.union([environmentSchema, v.literal(ALL_ENVIRONMENTS)]),
 	window: v.picklist(DEPLOYMENT_WINDOWS),
 	page: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(10_000)),
@@ -76,6 +77,25 @@ export const scopedDeploymentQuerySchema = v.object({
 });
 
 export const trendGrainSchema = v.picklist(TREND_GRAINS);
+
+/**
+ * A service slug from the URL.
+ *
+ * Bounded and character-restricted rather than a free string: it is interpolated into
+ * a lookup by an adapter that may not be an in-memory array, and "as long as you like,
+ * any bytes" is not a shape a query builder should be handed.
+ */
+export const serviceSlugSchema = v.pipe(
+	v.string(),
+	v.minLength(1),
+	v.maxLength(120),
+	v.regex(/^[a-z0-9][a-z0-9-]*$/, 'Must be a lowercase slug.')
+);
+
+export const scopedServiceSchema = v.object({
+	...scopeSchema.entries,
+	slug: serviceSlugSchema
+});
 
 /** The deployments page asks for its scope and the grain its two charts bucket at. */
 export const scopedTrendSchema = v.object({

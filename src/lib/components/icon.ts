@@ -20,6 +20,8 @@ import Calendar from '@lucide/svelte/icons/calendar';
 import Cloud from '@lucide/svelte/icons/cloud';
 import Database from '@lucide/svelte/icons/database';
 import Ellipsis from '@lucide/svelte/icons/ellipsis';
+import Code from '@lucide/svelte/icons/code';
+import ExternalLink from '@lucide/svelte/icons/external-link';
 import FileChartColumn from '@lucide/svelte/icons/file-chart-column';
 import FileText from '@lucide/svelte/icons/file-text';
 import Funnel from '@lucide/svelte/icons/funnel';
@@ -88,11 +90,13 @@ const ICONS = {
 	'clipboard-check': ClipboardCheck,
 	calendar: Calendar,
 	clock: Clock,
+	code: Code,
 	cloud: Cloud,
 	database: Database,
 	ellipsis: Ellipsis,
 	'file-chart-column': FileChartColumn,
 	'file-text': FileText,
+	'external-link': ExternalLink,
 	funnel: Funnel,
 	gauge: Gauge,
 	gift: Gift,

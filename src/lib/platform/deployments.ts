@@ -85,9 +85,10 @@ export const DEPLOYMENT_TRIGGER_LABELS: Record<DeploymentTrigger, string> = {
 	rollback: 'Rollback'
 };
 
-/** `all` is a filter value, not a domain or an environment, so it is a sentinel. */
+/** `all` is a filter value, not a domain, service or environment, so it is a sentinel. */
 export const ALL_DOMAINS = 'all';
 export const ALL_ENVIRONMENTS = 'all';
+export const ALL_SERVICES = 'all';
 
 export const DEPLOYMENT_PAGE_SIZES = [8, 25, 50] as const;
 
@@ -97,6 +98,14 @@ export interface DeploymentQuery {
 	state: DeploymentStateFilter;
 	/** A domain id, or `ALL_DOMAINS`. Open set, so validated as a bounded string. */
 	domain: string;
+	/**
+	 * An exact service name, or `ALL_SERVICES`.
+	 *
+	 * Deliberately not folded into `search`: search is a substring match, so filtering
+	 * a service's own history that way would pull in every service whose name contains
+	 * it — `payment-api` would show `payment-api-worker`'s deployments as its own.
+	 */
+	service: string;
 	/** An environment id, or `ALL_ENVIRONMENTS`. */
 	environment: EnvironmentId | typeof ALL_ENVIRONMENTS;
 	window: DeploymentWindow;

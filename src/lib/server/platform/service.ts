@@ -13,14 +13,17 @@ import type {
 	InfrastructureGroup,
 	OverviewSnapshot,
 	RateObservation,
+	Service,
+	ServiceSnapshot,
 	SystemStatus,
 	TrendGrain
 } from '$lib/platform/types';
 import type { DeploymentQuery } from '$lib/platform/deployments';
-import { deploymentSource, platformSource } from './index';
+import { deploymentSource, platformSource, serviceSource } from './index';
 import { DEPLOYMENT_LIMIT, INCIDENT_LIMIT, buildOverview, buildSystemStatus } from './snapshot';
 import { RECENT_CHANGE_LIMIT, buildDomainsSnapshot } from './domains-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
+import { buildServiceSnapshot } from './service-view';
 
 /**
  * The application's in-process API: one function per thing a caller can ask for.
@@ -110,6 +113,27 @@ export function readOverview(scope: PlatformScope): Promise<OverviewSnapshot> {
  */
 export function readDomainsView(scope: PlatformScope): Promise<DomainsSnapshot> {
 	return buildDomainsSnapshot(platformSource(), scope);
+}
+
+export function readServices(scope: PlatformScope): Promise<Service[]> {
+	return serviceSource().listServices(scope);
+}
+
+export function readService(scope: PlatformScope, slug: string): Promise<Service | null> {
+	return serviceSource().findService(scope, slug);
+}
+
+/**
+ * One service's overview tab.
+ *
+ * `null` when the slug matches nothing, so the route can answer 404 rather than
+ * rendering a page about a service that does not exist.
+ */
+export function readServiceView(
+	scope: PlatformScope,
+	slug: string
+): Promise<ServiceSnapshot | null> {
+	return buildServiceSnapshot(serviceSource(), deploymentSource(), scope, slug);
 }
 
 /** The deployments page's aggregate. Screen-shaped, and unexposed for the same reason. */

@@ -14,6 +14,7 @@
 	import {
 		ALL_DOMAINS,
 		ALL_ENVIRONMENTS,
+		ALL_SERVICES,
 		durationAxisFormatter,
 		formatDuration
 	} from '$lib/platform/deployments';
@@ -70,6 +71,8 @@
 			search,
 			state: tab,
 			domain,
+			// This screen lists every service; the service page is where one is singled out.
+			service: ALL_SERVICES,
 			environment,
 			window: dateWindow,
 			page: pageNumber,

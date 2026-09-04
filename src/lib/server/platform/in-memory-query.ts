@@ -8,6 +8,7 @@ import type {
 import {
 	ALL_DOMAINS,
 	ALL_ENVIRONMENTS,
+	ALL_SERVICES,
 	DEPLOYMENT_WINDOW_DAYS,
 	matchesDeploymentState,
 	type DeploymentQuery
@@ -69,6 +70,7 @@ export function queryDeploymentsInMemory(
 	const filtered = deployments.filter((deployment) => {
 		if (!matchesDeploymentState(deployment.status, query.state)) return false;
 		if (query.domain !== ALL_DOMAINS && deployment.domainId !== query.domain) return false;
+		if (query.service !== ALL_SERVICES && deployment.service !== query.service) return false;
 		if (query.environment !== ALL_ENVIRONMENTS && deployment.environment !== query.environment) {
 			return false;
 		}

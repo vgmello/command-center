@@ -13,7 +13,12 @@ import type {
 	FavoriteItem,
 	Incident,
 	InfrastructureGroup,
+	HealthCheck,
 	RateObservation,
+	Service,
+	ServiceDependencies,
+	ServiceEndpoint,
+	ServiceStat,
 	TimeSeries,
 	TrendGrain
 } from '$lib/platform/types';
@@ -134,6 +139,49 @@ export interface DeploymentSource {
 
 	/** The domain filter's options, counted over deployments rather than domains. */
 	listDeployingDomains(scope: PlatformScope): Promise<FacetOption[]>;
+}
+
+/**
+ * The service catalog, and what each service is currently doing.
+ *
+ * A fourth port for the same reason there is a third: a catalog entry — owner, repo,
+ * runbook, language — comes from a service registry, not from a metrics pipeline. The
+ * two are queried together on this screen and maintained by different teams with
+ * different release cadences, which is exactly the case for keeping them separable.
+ *
+ * A real implementation may well stitch a registry and a metrics backend together
+ * behind this interface. That is the point: the stitching is the adapter's problem,
+ * not every caller's.
+ */
+export interface ServiceSource {
+	readonly id: string;
+
+	/** Every service, newest catalog entry order. Feeds the index and the sidebar pins. */
+	listServices(scope: PlatformScope): Promise<Service[]>;
+
+	/**
+	 * One service by slug, or `null` when there is no such service.
+	 *
+	 * `null` rather than a throw: "no service called this" is an ordinary answer to an
+	 * ordinary question — someone edited a URL — and the route turns it into a 404.
+	 * A thrown error would make a typo look like an outage.
+	 */
+	findService(scope: PlatformScope, slug: string): Promise<Service | null>;
+
+	/** The header strip: availability, rates, instances, alerts. */
+	readStats(scope: PlatformScope, slug: string): Promise<ServiceStat[]>;
+
+	/** The SLI table, each with its recent shape. */
+	listHealthChecks(scope: PlatformScope, slug: string): Promise<HealthCheck[]>;
+
+	/** One hop each way. Not a transitive graph — see `ServiceDependencies`. */
+	readDependencies(scope: PlatformScope, slug: string): Promise<ServiceDependencies>;
+
+	/** Requests per second across the scope's window. */
+	readRequestRate(scope: PlatformScope, slug: string): Promise<TimeSeries>;
+
+	/** Slowest endpoints first, already ranked and shared out by the source. */
+	listEndpoints(scope: PlatformScope, slug: string, limit: number): Promise<ServiceEndpoint[]>;
 }
 
 /**
