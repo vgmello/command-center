@@ -229,7 +229,7 @@ export const healthCheckSchema = v.object({
 	label: v.string(),
 	status: healthStatusSchema,
 	value: v.number(),
-	unit: v.picklist(['percent', 'milliseconds'])
+	unit: v.picklist(['percent', 'milliseconds', 'count'])
 });
 
 export const dependencySchema = v.object({
@@ -643,15 +643,26 @@ export function toServiceDto(service: Service): ServiceDto {
  * "517 ms".
  */
 export function toHealthCheckDto(check: HealthCheck): HealthCheckDto {
-	const percent = check.formatted.trim().endsWith('%');
-	const value = Number.parseFloat(check.formatted);
+	const formatted = check.formatted.trim();
+	const value = Number.parseFloat(formatted);
+
+	// Not every check is a duration. A liveness check reads "3/3 up", and publishing
+	// that as three milliseconds is a plainly wrong measurement under a confident unit —
+	// the exact failure `unit` exists to prevent. `count` was added to the picklist when
+	// a real provider emitted one; the enum is additive, so a v1 client that only knows
+	// the first two still parses the document.
+	const unit = formatted.endsWith('%')
+		? 'percent'
+		: /^\d+\s*\/\s*\d+/.test(formatted)
+			? 'count'
+			: 'milliseconds';
 
 	return {
 		id: check.id,
 		label: check.label,
 		status: check.status,
 		value: Number.isFinite(value) ? value : 0,
-		unit: percent ? 'percent' : 'milliseconds'
+		unit
 	};
 }
 

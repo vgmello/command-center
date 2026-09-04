@@ -97,6 +97,7 @@ export function buildEstate(
 
 			for (const route of ROUTES) {
 				const base = (8 + random() * 40) * scale;
+				const ok = walk(random, base, points, base * 0.3);
 
 				series.push({
 					labels: {
@@ -108,12 +109,20 @@ export function buildEstate(
 						http_route: route,
 						http_response_status_code: '200'
 					},
-					values: walk(random, base, points, base * 0.3)
+					values: ok
 				});
 
 				// A trickle of 5xx on the write paths only, so an error rate is neither
 				// uniformly zero nor implausibly high.
+				//
+				// Derived from the success series rather than walked on its own. An
+				// independent walk over a long window wanders: seeded at 1% of traffic it
+				// drifted to nearly 4%, which pegged the error budget at zero and made
+				// every SLO figure on the page a consequence of the mock's arithmetic
+				// rather than of anything a reader could reason about.
 				if (route === '/v1/charge' || route === '/v1/refund') {
+					const share = 0.002 + random() * 0.004;
+
 					series.push({
 						labels: {
 							__name__: 'http_server_request_duration_count',
@@ -124,7 +133,7 @@ export function buildEstate(
 							http_route: route,
 							http_response_status_code: '500'
 						},
-						values: walk(random, base * 0.01, points, base * 0.01)
+						values: ok.map((value, index) => value * share * (0.6 + ((index * 37) % 100) / 125))
 					});
 				}
 
@@ -142,12 +151,15 @@ export function buildEstate(
 				// label, `sum by (le, instance)` collapses to a single series and the
 				// per-instance latency heatmap has exactly one row.
 				for (let replica = 0; replica < instances; replica++) {
-					const spread = 0.85 + random() * 0.12;
+					// One walk for the replica's total, and every bucket derived from it.
+					//
+					// Walking each bucket independently would let bucket 4 drift below
+					// bucket 3 at some timestamp, and a cumulative histogram that is not
+					// monotonic makes quantile interpolation meaningless — it read as a
+					// four-second p95 against data whose 95th percentile is under a second.
+					const totals = walk(random, base / instances, points, base / instances / 3);
 
 					for (let bucket = 0; bucket < LE_BUCKETS.length; bucket++) {
-						const le = LE_BUCKETS[bucket];
-						const cumulative = (base / instances) * CDF[bucket] * spread;
-
 						series.push({
 							labels: {
 								__name__: 'http_server_request_duration_bucket',
@@ -157,9 +169,9 @@ export function buildEstate(
 								domain_name: domainName,
 								http_route: route,
 								instance: `${service}-${replica}`,
-								le
+								le: LE_BUCKETS[bucket]
 							},
-							values: walk(random, cumulative, points, cumulative * 0.1)
+							values: totals.map((total) => total * CDF[bucket])
 						});
 					}
 				}

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { MetricInsight } from '$lib/platform/types';
 import { METRIC_ENDPOINT_LIMIT, buildServiceMetricsSnapshot } from './service-metrics-view';
 import { FixtureServiceSource } from './fixture-source';
 import type { PlatformScope } from '$lib/platform/query';
@@ -160,9 +161,19 @@ describe('the latency heatmap', () => {
 });
 
 describe('metric insights', () => {
+	/**
+	 * The snapshot carries a `Panel`, because a source may decline to offer insights.
+	 * Against the fixture source it is always `ok`, and asserting that here is what
+	 * would catch it silently becoming a gap.
+	 */
+	function insightsOf(snapshot: { insights: { status: string } }) {
+		expect(snapshot.insights.status).toBe('ok');
+		return (snapshot.insights as { status: 'ok'; data: MetricInsight[] }).data;
+	}
+
 	test('an anomaly states the range it left', async () => {
 		const snapshot = (await build('payment-api'))!;
-		const anomaly = snapshot.insights.find((one) => one.id === 'error-rate');
+		const anomaly = insightsOf(snapshot).find((one) => one.id === 'error-rate');
 
 		expect(anomaly?.kind).toBe('anomaly');
 		expect(anomaly?.detail).toContain('normal range');
@@ -171,13 +182,13 @@ describe('metric insights', () => {
 	test('a service inside its normal range raises no error-rate anomaly', async () => {
 		const snapshot = (await build('user-profile'))!;
 
-		expect(snapshot.insights.some((one) => one.id === 'error-rate')).toBe(false);
+		expect(insightsOf(snapshot).some((one) => one.id === 'error-rate')).toBe(false);
 	});
 
 	test('every insight says what it was observed on', async () => {
 		const snapshot = (await build('payment-api'))!;
 
-		expect(snapshot.insights.length).toBeGreaterThan(0);
-		expect(snapshot.insights.every((one) => one.affects.length > 0)).toBe(true);
+		expect(insightsOf(snapshot).length).toBeGreaterThan(0);
+		expect(insightsOf(snapshot).every((one) => one.affects.length > 0)).toBe(true);
 	});
 });

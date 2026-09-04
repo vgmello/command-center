@@ -739,6 +739,7 @@ components:
           enum:
             - percent
             - milliseconds
+            - count
           type: string
         value:
           type: number

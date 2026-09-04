@@ -5,12 +5,17 @@
 	import StatusBadge from '../StatusBadge.svelte';
 	import { severityTone } from '../tone';
 	import type { MetricInsight } from '$lib/platform/types';
+	import type { Panel } from '$lib/platform/sources';
 
 	interface Props {
-		insights: MetricInsight[];
+		insights: Panel<MetricInsight[]>;
 	}
 
 	let { insights }: Props = $props();
+
+	// "No source does this" and "this source found nothing" are different sentences a
+	// reader acts on differently — one is a configuration gap, the other is good news.
+	let rows = $derived(insights.status === 'ok' ? insights.data : []);
 
 	const ICONS = { critical: 'circle-alert', warning: 'triangle-alert', info: 'info' } as const;
 
@@ -24,7 +29,7 @@
 
 <SectionCard title="Metric Insights" href="/alerts" viewAllLabel="View all insights">
 	<div class="grid gap-4 px-4 pb-4 lg:grid-cols-3">
-		{#each insights as insight (insight.id)}
+		{#each rows as insight (insight.id)}
 			{@const tone = severityTone(insight.severity)}
 			<article class="min-w-0">
 				<div class="flex items-center gap-2">
@@ -46,7 +51,13 @@
 			</article>
 		{:else}
 			<p class="py-6 text-center text-[12px] text-muted-foreground lg:col-span-3">
-				Nothing outside its normal range.
+				{#if insights.status === 'unavailable'}
+					No connected APM source reports insights.
+				{:else if insights.status === 'failed'}
+					{insights.source?.name ?? 'The APM source'} did not answer.
+				{:else}
+					Nothing outside its normal range.
+				{/if}
 			</p>
 		{/each}
 	</div>

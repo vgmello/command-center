@@ -1,5 +1,6 @@
 import type { ServiceMetricsSnapshot, ServiceStat, TimeSeries } from '$lib/platform/types';
 import type { PlatformScope } from '$lib/platform/query';
+import { panel } from '../sources/panel';
 import type { ServiceSource } from './source';
 import { formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
 import { describeInstanceHealth } from '$lib/platform/services';
@@ -146,7 +147,9 @@ export async function buildServiceMetricsSnapshot(
 		services.readMetricSeries(scope, slug),
 		services.readSloBudget(scope, slug),
 		services.readLatencyHeatmap(scope, slug),
-		services.listMetricInsights(scope, slug),
+		// Coralogix reports what happened, not what it means, so this is the one read
+		// here a source may legitimately decline. Wrapped so the page states the gap.
+		panel('apm.insights', async () => ({ data: await services.listMetricInsights(scope, slug) })),
 		services.listEndpoints(scope, slug, METRIC_ENDPOINT_LIMIT)
 	]);
 

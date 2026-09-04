@@ -200,3 +200,62 @@ describe('unsupported input', () => {
 		expect(() => evaluator.evaluateAt('topk(3, foo)', at)).toThrow();
 	});
 });
+
+describe('the seeded histograms are usable', () => {
+	test('buckets are monotonic, as a cumulative histogram must be', () => {
+		// A bucket that dips below the one before it makes quantile interpolation
+		// meaningless — it produced a four-second p95 against sub-second data.
+		const buckets = estate.series.filter(
+			(one) =>
+				one.labels.__name__ === 'http_server_request_duration_bucket' &&
+				one.labels.service === 'payment-api' &&
+				one.labels.environment === 'production' &&
+				one.labels.http_route === '/v1/charge' &&
+				one.labels.instance === 'payment-api-0'
+		);
+
+		expect(buckets.length).toBe(8);
+
+		const order = ['0.05', '0.1', '0.25', '0.5', '1', '2.5', '5', '+Inf'];
+		const sorted = order.map((le) => buckets.find((one) => one.labels.le === le)!);
+
+		for (let point = 0; point < estate.points; point++) {
+			for (let index = 1; index < sorted.length; index++) {
+				expect(sorted[index].values[point]).toBeGreaterThanOrEqual(sorted[index - 1].values[point]);
+			}
+		}
+	});
+
+	test('the p95 lands where a healthy service’s p95 actually lands', () => {
+		const p95 = value(p95Latency(DEFAULT_METRICS, production, '1h'));
+
+		// Between 200ms and 2s. Outside that, either the distribution or the
+		// interpolation is wrong, and every latency the app prints is wrong with it.
+		expect(p95).toBeGreaterThan(200);
+		expect(p95).toBeLessThan(2000);
+	});
+});
+
+describe('the seeded error rate stays plausible', () => {
+	test('is a fraction of a percent, not several percent', () => {
+		// Walked independently it drifted to nearly 4% over a long window, which pegs a
+		// 99.9% error budget at zero and makes the SLO panel a fact about the mock.
+		const rate = value(errorRate(DEFAULT_METRICS, production, '1h'));
+
+		expect(rate).toBeGreaterThan(0);
+		expect(rate).toBeLessThan(1);
+	});
+
+	test('holds across the whole window, not just at the end', () => {
+		const series = evaluator.evaluate(
+			errorRate(DEFAULT_METRICS, production, '1h'),
+			at - 20 * 3600,
+			at,
+			3600
+		);
+
+		for (const point of series[0].points) {
+			expect(point.value).toBeLessThan(1.5);
+		}
+	});
+});

@@ -427,3 +427,33 @@ describe('v1 metric and estate shapes', () => {
 		expect((dto as unknown as Record<string, unknown>).totalFormatted).toBeUndefined();
 	});
 });
+
+describe('toHealthCheckDto units', () => {
+	const base = {
+		id: 'x',
+		label: 'X',
+		icon: 'i',
+		status: 'healthy' as const,
+		series: { values: [], min: 0, max: 0 }
+	};
+
+	test('a ratio is a count, not a duration', () => {
+		// "3/3 up" published as three milliseconds is a wrong measurement under a
+		// confident unit — which is worse than no measurement.
+		expect(toHealthCheckDto({ ...base, formatted: '3/3 up' })).toMatchObject({
+			value: 3,
+			unit: 'count'
+		});
+	});
+
+	test('a percentage is a percentage', () => {
+		expect(toHealthCheckDto({ ...base, formatted: '1.66%' })).toMatchObject({ unit: 'percent' });
+	});
+
+	test('a duration is still milliseconds', () => {
+		expect(toHealthCheckDto({ ...base, formatted: '517 ms' })).toMatchObject({
+			value: 517,
+			unit: 'milliseconds'
+		});
+	});
+});

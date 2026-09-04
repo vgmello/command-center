@@ -690,7 +690,14 @@ export interface ServiceMetricsSnapshot {
 	endpoints: ServiceEndpoint[];
 	slo: SloBudget;
 	heatmap: LatencyHeatmap;
-	insights: MetricInsight[];
+	/**
+	 * Flagged movements, or an account of why there are none.
+	 *
+	 * A `Panel` for the same reason the deployment insights are: not every APM source
+	 * offers an opinion, and an empty list would say "nothing moved" rather than "this
+	 * source does not do insights".
+	 */
+	insights: Panel<MetricInsight[]>;
 }
 
 /** Everything the service overview tab renders. */
