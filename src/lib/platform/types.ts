@@ -945,6 +945,14 @@ export interface OverviewSnapshot {
 	deployments: Deployment[];
 	infrastructure: InfrastructureGroup[];
 	system: SystemStatus;
+	/**
+	 * Fleet-wide findings, or an account of why there are none.
+	 *
+	 * A `Panel` because not every APM source derives them, and because the two questions
+	 * worth asking here — which service is the outlier, and did several move together —
+	 * are ones a per-service view cannot answer at all.
+	 */
+	insights: Panel<MetricInsight[]>;
 }
 
 /**

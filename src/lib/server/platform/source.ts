@@ -93,6 +93,14 @@ export interface PlatformSource {
 
 	/** Headline rates, as observed. The pure layer decides how they are printed. */
 	readRates(scope: PlatformScope): Promise<RateObservation[]>;
+	/**
+	 * Anomalies and outliers across the whole estate.
+	 *
+	 * Platform-wide rather than per-service, because the two most useful aggregate
+	 * findings are invisible one service at a time: which service is the outlier, and
+	 * whether several moved together.
+	 */
+	listPlatformInsights(scope: PlatformScope): Promise<MetricInsight[]>;
 
 	/** Most recent open incidents, worst first. */
 	listIncidents(scope: PlatformScope, limit: number): Promise<Incident[]>;

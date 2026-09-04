@@ -26,6 +26,8 @@ export const DEFAULT_TTL_SECONDS: Record<Capability, number> = {
 	'apm.slo': 300,
 	'apm.latencyHeatmap': 60,
 	'apm.insights': 120,
+	// Fleet-wide, so it costs more to compute and moves more slowly than one service's.
+	'apm.platformInsights': 180,
 	'apm.domainVitals': 30,
 	'apm.rates': 30,
 	'apm.incidents': 30,

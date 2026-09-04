@@ -1,3 +1,5 @@
+import { deriveFleetInsights } from '$lib/platform/metric-insights';
+import type { PlatformScope } from '$lib/platform/query';
 import type {
 	DependencyNode,
 	DomainVitals,
@@ -871,4 +873,56 @@ export function listFavorites(): FavoriteItem[] {
 			status: service.status,
 			pinned: index === 0
 		}));
+}
+
+/**
+ * Fleet-wide findings, derived the same way a real APM adapter derives them.
+ *
+ * The seeds carry a current reading per service; a baseline is built around each so the
+ * shared rules in `metric-insights.ts` have a window to judge. Deriving rather than
+ * hand-writing the findings is what keeps the fixture honest: if the rules change, the
+ * fixture's answers change with them, and a screen built against the fixture cannot show
+ * something a real source never would.
+ */
+export function listPlatformInsights(scope: PlatformScope, now: Date): MetricInsight[] {
+	const points = 24;
+
+	/** A plausible window ending at the seed's current value. */
+	const windowFor = (slug: string, current: number, baseline: number) => {
+		const random = seededRandom(hashSeed(`${slug}-${scope.environment}`));
+		const history = Array.from({ length: points - 1 }, () => baseline * (0.9 + random() * 0.2));
+		return [...history, current];
+	};
+
+	const errorRates = SERVICE_SEEDS.map((seed) => ({
+		service: seed.name,
+		// A healthy service's error rate sits near a fifth of a percent; the seeds that
+		// exceed that are the ones the estate should be told about.
+		values: windowFor(`${seed.name}-errors`, seed.errorRatePct, Math.min(seed.errorRatePct, 0.2))
+	}));
+
+	const latencies = SERVICE_SEEDS.map((seed) => ({
+		service: seed.name,
+		values: windowFor(`${seed.name}-latency`, seed.p95LatencyMs, seed.p95LatencyMs / 1.2)
+	}));
+
+	return [
+		...deriveFleetInsights(
+			{ id: 'error-rate', label: 'Error rate', kind: 'percent', direction: 'higher-is-worse' },
+			errorRates,
+			now,
+			'24h'
+		),
+		...deriveFleetInsights(
+			{
+				id: 'p95-latency',
+				label: 'P95 latency',
+				kind: 'duration-ms',
+				direction: 'higher-is-worse'
+			},
+			latencies,
+			now,
+			'24h'
+		)
+	];
 }

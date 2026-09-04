@@ -55,7 +55,22 @@ async function readParams(request: Request): Promise<URLSearchParams> {
 	return url.searchParams;
 }
 
-export function coralogixMockHandler(options: { estate?: CoralogixEstate; apiKey?: string } = {}) {
+/**
+ * How many requests the mock has answered, per path.
+ *
+ * Exposed so a test can assert the *shape* of a provider's traffic, not just its
+ * answers: "one query for the whole fleet" is a claim about request count, and counting
+ * is the only way to check it.
+ */
+export interface RequestLog {
+	counts: Map<string, number>;
+	total(): number;
+	reset(): void;
+}
+
+export function coralogixMockHandler(
+	options: { estate?: CoralogixEstate; apiKey?: string; log?: RequestLog } = {}
+) {
 	const estate = options.estate ?? buildEstate({ now: new Date() });
 	const apiKey = options.apiKey ?? 'cxtp-mockmockmockmock';
 	const evaluator = new PromEvaluator(estate);
@@ -63,6 +78,10 @@ export function coralogixMockHandler(options: { estate?: CoralogixEstate; apiKey
 	return async function handle(request: Request): Promise<Response> {
 		const url = new URL(request.url);
 		const path = url.pathname.replace(/\/+$/, '');
+
+		if (options.log) {
+			options.log.counts.set(path, (options.log.counts.get(path) ?? 0) + 1);
+		}
 
 		if (request.headers.get('authorization') !== `Bearer ${apiKey}`) return unauthorised();
 
@@ -179,9 +198,20 @@ export function coralogixMockHandler(options: { estate?: CoralogixEstate; apiKey
 	};
 }
 
+/** A fresh request log, for a test that cares how many calls a provider makes. */
+export function requestLog(): RequestLog {
+	const counts = new Map<string, number>();
+
+	return {
+		counts,
+		total: () => [...counts.values()].reduce((sum, one) => sum + one, 0),
+		reset: () => counts.clear()
+	};
+}
+
 /** `port: 0` asks the OS for a free port, so parallel test files never collide. */
 export function startCoralogixMock(
-	options: { estate?: CoralogixEstate; apiKey?: string; port?: number } = {}
+	options: { estate?: CoralogixEstate; apiKey?: string; port?: number; log?: RequestLog } = {}
 ) {
 	const handle = coralogixMockHandler(options);
 	const server = Bun.serve({ port: options.port ?? 0, fetch: handle });

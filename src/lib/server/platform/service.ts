@@ -70,6 +70,16 @@ export function readRates(scope: PlatformScope): Promise<RateObservation[]> {
 	return platformSource().readRates(scope);
 }
 
+/**
+ * Findings across the whole estate.
+ *
+ * Platform-wide rather than per-service: the outlier and the correlated move are both
+ * comparisons between services, and neither can be produced one service at a time.
+ */
+export function listPlatformInsights(scope: PlatformScope): Promise<MetricInsight[]> {
+	return platformSource().listPlatformInsights(scope);
+}
+
 export function readIncidents(scope: PlatformScope, limit = INCIDENT_LIMIT): Promise<Incident[]> {
 	return platformSource().listIncidents(scope, limit);
 }

@@ -74,6 +74,7 @@ import {
 	listServiceVitals,
 	listEndpoints,
 	listMetricInsights,
+	listPlatformInsights,
 	readLatencyHeatmap,
 	readMetricSeries,
 	readSloBudget,
@@ -125,6 +126,10 @@ export class FixturePlatformSource implements PlatformSource {
 	 * Delegates to `readPlatformRates` in `fixtures.ts` so the class and the fixture
 	 * APM provider (Task 7) read one definition instead of two copies drifting apart.
 	 */
+	async listPlatformInsights(scope: PlatformScope): Promise<MetricInsight[]> {
+		return listPlatformInsights(scope, new Date());
+	}
+
 	async readRates(scope: PlatformScope): Promise<RateObservation[]> {
 		return readPlatformRates(scope.timeRange);
 	}

@@ -24,6 +24,7 @@ export const fixtureApmProvider = defineProvider<ApmProvider>({
 		'apm.slo',
 		'apm.latencyHeatmap',
 		'apm.insights',
+		'apm.platformInsights',
 		'apm.domainVitals',
 		'apm.rates',
 		'apm.incidents',
@@ -55,6 +56,9 @@ export const fixtureApmProvider = defineProvider<ApmProvider>({
 		},
 		async readLatencyHeatmap(ctx) {
 			return catalog.readLatencyHeatmap(subject(ctx), new Date());
+		},
+		async listPlatformInsights(ctx) {
+			return catalog.listPlatformInsights(ctx.scope, new Date());
 		},
 		async listMetricInsights(ctx) {
 			return catalog.listMetricInsights(subject(ctx), new Date());

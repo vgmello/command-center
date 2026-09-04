@@ -12,6 +12,7 @@ import type { PlatformScope } from '$lib/platform/query';
 import type { DeploymentSource, InfrastructureSource, PlatformSource } from './source';
 import { STATUS_LABELS, buildDistribution } from '$lib/platform/health';
 import { formatChange, formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
+import { panel } from '../sources/panel';
 
 /**
  * Assembles one overview snapshot from whatever source is configured.
@@ -168,13 +169,20 @@ export async function buildOverview(
 	scope: PlatformScope,
 	now: Date = new Date()
 ): Promise<OverviewSnapshot> {
-	const [counts, rates, incidents, recentDeployments, infrastructure] = await Promise.all([
-		source.readDomainStatusCounts(scope),
-		source.readRates(scope),
-		source.listIncidents(scope, INCIDENT_LIMIT),
-		deployments.listDeployments(scope, DEPLOYMENT_LIMIT),
-		estate.listGroups(scope)
-	]);
+	const [counts, rates, incidents, recentDeployments, infrastructure, insights] = await Promise.all(
+		[
+			source.readDomainStatusCounts(scope),
+			source.readRates(scope),
+			source.listIncidents(scope, INCIDENT_LIMIT),
+			deployments.listDeployments(scope, DEPLOYMENT_LIMIT),
+			estate.listGroups(scope),
+			// Wrapped: a source that does not derive insights leaves a stated gap here
+			// rather than taking the whole overview down with it.
+			panel('apm.platformInsights', async () => ({
+				data: await source.listPlatformInsights(scope)
+			}))
+		]
+	);
 
 	return {
 		generatedAt: now.toISOString(),
@@ -186,6 +194,7 @@ export async function buildOverview(
 		incidents,
 		deployments: recentDeployments,
 		infrastructure,
-		system: buildSystemStatus(counts)
+		system: buildSystemStatus(counts),
+		insights
 	};
 }

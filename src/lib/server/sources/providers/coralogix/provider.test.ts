@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { coralogixProvider } from './index';
 import { buildEstate } from './mock/data';
-import { startCoralogixMock } from './mock/server';
+import { requestLog, startCoralogixMock } from './mock/server';
 import { capabilityDrift } from '../../agreement';
 import { CAPABILITIES } from '$lib/platform/sources';
 import type { ApmProvider } from '../../contracts';
@@ -16,6 +16,7 @@ const NOW = new Date();
 const estate = buildEstate({ now: NOW, points: 1500, stepSeconds: 60 });
 
 let mock: ReturnType<typeof startCoralogixMock>;
+const log = requestLog();
 let client: ApmProvider;
 
 function context(
@@ -38,7 +39,7 @@ function context(
 }
 
 beforeAll(() => {
-	mock = startCoralogixMock({ estate, apiKey: KEY });
+	mock = startCoralogixMock({ estate, apiKey: KEY, log });
 	client = coralogixProvider.connect({
 		baseUrl: mock.url,
 		apiKey: KEY,
@@ -80,11 +81,11 @@ describe('the provider definition', () => {
 	test('does not declare what Coralogix cannot answer', () => {
 		const declared = [...coralogixProvider.capabilities];
 
-		// A service map is a different API; deployments are not an APM fact; insights
-		// are editorial. Each is a stated gap rather than an invented answer.
+		// A service map is a different API, and deployment counts are not an APM fact.
+		// Insights are NOT on this list: they are derived from the metrics API by stated
+		// arithmetic, which is a different thing from an opinion.
 		expect(declared).not.toContain('apm.dependencies');
 		expect(declared).not.toContain('apm.activity');
-		expect(declared).not.toContain('apm.insights');
 	});
 
 	test('refuses settings with no base URL', () => {
@@ -357,5 +358,59 @@ describe('scoping, proved against the mock’s own filters', () => {
 
 		expect(production.length).toBeGreaterThan(0);
 		expect(staging.length).toBe(0);
+	});
+});
+
+describe('insights derived from the metrics API', () => {
+	test('declares both, because both are arithmetic rather than opinion', () => {
+		const declared = [...coralogixProvider.capabilities];
+
+		expect(declared).toContain('apm.insights');
+		expect(declared).toContain('apm.platformInsights');
+	});
+
+	test('a service inside its normal range raises nothing', async () => {
+		const insights = await client.listMetricInsights!(context('catalogue-api'));
+
+		// Filler findings are how a panel trains people to stop reading it.
+		for (const insight of insights) {
+			expect(['critical', 'warning']).toContain(insight.severity);
+		}
+	});
+
+	test('every finding states its number, its baseline and why it was flagged', async () => {
+		const insights = await client.listMetricInsights!(context('payment-gateway'));
+
+		for (const insight of insights) {
+			expect(insight.detail).toMatch(/mean of/);
+			expect(insight.detail).toMatch(/σ|previously steady/);
+			expect(insight.affects).toBe('payment-gateway');
+			expect(Number.isNaN(Date.parse(insight.startedAt))).toBe(false);
+		}
+	});
+
+	test('no binding means no per-service finding, rather than the whole account', async () => {
+		expect(await client.listMetricInsights!(context())).toEqual([]);
+	});
+
+	test('the fleet view compares services against each other', async () => {
+		const insights = await client.listPlatformInsights!(context());
+
+		// It must be able to answer without a binding — that is the whole point of it.
+		for (const insight of insights) {
+			expect(insight.id.startsWith('fleet-')).toBe(true);
+			expect(insight.detail.length).toBeGreaterThan(0);
+		}
+	});
+
+	test('the fleet query asks for every service at once, not one at a time', async () => {
+		// Two range queries — error rate and latency, each grouped by service. Asking per
+		// service would be N round trips to answer a question about the fleet, and the
+		// readings would come from slightly different moments.
+		log.reset();
+		await client.listPlatformInsights!(context());
+
+		expect(log.counts.get('/metrics/api/v1/query_range')).toBe(2);
+		expect(log.total()).toBe(2);
 	});
 });

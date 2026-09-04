@@ -38,6 +38,10 @@ function stubSource(overrides: Partial<PlatformSource> = {}) {
 			calls.push('rates');
 			return [];
 		},
+		async listPlatformInsights() {
+			calls.push('platform-insights');
+			return [];
+		},
 		async queryDomains() {
 			calls.push('domains');
 			return {

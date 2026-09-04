@@ -271,3 +271,16 @@ describe('routes have distinguishable latency', () => {
 		expect(new Set([...byRoute.values()].map((one) => Math.round(one))).size).toBe(byRoute.size);
 	});
 });
+
+describe('the estate has something worth finding', () => {
+	test('one service is genuinely worse than the rest', () => {
+		// A uniformly healthy estate renders every aggregate view empty, and nobody finds
+		// out whether the aggregate view works.
+		const bad = value(
+			errorRate(DEFAULT_METRICS, { service: 'payment-gateway', environment: 'production' }, '1h')
+		);
+		const ok = value(errorRate(DEFAULT_METRICS, production, '1h'));
+
+		expect(bad).toBeGreaterThan(ok * 5);
+	});
+});

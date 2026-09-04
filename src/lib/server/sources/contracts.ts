@@ -72,6 +72,14 @@ export interface ApmProvider {
 	readSloBudget?(ctx: SourceContext): Promise<SloBudget>;
 	readLatencyHeatmap?(ctx: SourceContext): Promise<LatencyHeatmap>;
 	listMetricInsights?(ctx: SourceContext): Promise<MetricInsight[]>;
+	/**
+	 * Findings across every service, which a per-service read cannot produce.
+	 *
+	 * A service can sit well inside its own range and still be the worst in the estate,
+	 * and several services moving together is a different event from one moving alone.
+	 * Both are questions about the fleet, so they are asked of the fleet.
+	 */
+	listPlatformInsights?(ctx: SourceContext): Promise<MetricInsight[]>;
 	readDomainVitals?(ctx: SourceContext): Promise<DomainVitals | null>;
 	readRates?(ctx: SourceContext): Promise<RateObservation[]>;
 	listIncidents?(ctx: SourceContext, limit: number): Promise<Incident[]>;

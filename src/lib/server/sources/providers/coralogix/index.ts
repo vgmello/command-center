@@ -4,6 +4,7 @@ import type {
 	HealthCheck,
 	Incident,
 	LatencyHeatmap,
+	MetricInsight,
 	RateObservation,
 	ServiceEndpoint,
 	ServiceStat,
@@ -11,6 +12,11 @@ import type {
 	TimeRangeId,
 	TimeSeries
 } from '$lib/platform/types';
+import {
+	deriveFleetInsights,
+	deriveInsights,
+	type MetricObservation
+} from '$lib/platform/metric-insights';
 import { defineProvider } from '../../provider';
 import type { ApmProvider } from '../../contracts';
 import type { LinkView, SourceBinding, SourceContext } from '../../provider';
@@ -31,9 +37,11 @@ import {
 	RANGE_SECONDS,
 	availability,
 	errorRate,
+	errorRateByService,
 	instancesUp,
 	p95ByInstance,
 	p95ByRoute,
+	p95ByService,
 	p95Latency,
 	rateByRoute,
 	requestRate,
@@ -56,7 +64,12 @@ import {
  * - `apm.activity` reports deployment counts alongside incident counts. An APM tool does
  *   not know what deployed; that half belongs to a deployment source, and serving it from
  *   here would mean inventing it.
- * - `apm.insights` is editorial. Coralogix reports what happened.
+ * `apm.insights` and `apm.platformInsights` ARE declared, and are derived from the
+ * metrics API rather than invented: each finding is a reading compared against a baseline
+ * drawn from the same series, by the shared rules in `metric-insights.ts`. That is
+ * arithmetic with stated thresholds, not an opinion — the distinction being that a reader
+ * can be told exactly why something was flagged, and two providers cannot disagree about
+ * what "anomalous" means.
  *
  * The router turns each undeclared capability into a stated gap, which is the whole point
  * of declaring capabilities rather than implementing an interface with stubs.
@@ -97,6 +110,17 @@ export const coralogixSettings = v.object({
 });
 
 export type CoralogixSettings = v.InferOutput<typeof coralogixSettings>;
+
+/**
+ * The window an insight's baseline is drawn from.
+ *
+ * A day, sampled every half hour. Long enough that a daily traffic cycle is inside the
+ * baseline rather than being flagged as an anomaly every morning, and coarse enough that
+ * one panel is two range queries rather than a thousand points per service.
+ */
+const BASELINE_SECONDS = 24 * 60 * 60;
+const BASELINE_POINTS = 48;
+const BASELINE_LABEL = '24h';
 
 /** What a Coralogix event looks like once read back out of DataPrime. */
 interface CoralogixEvent {
@@ -146,11 +170,17 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 		'apm.latencyHeatmap',
 		'apm.domainVitals',
 		'apm.rates',
-		'apm.incidents'
+		'apm.incidents',
+		'apm.insights',
+		'apm.platformInsights'
 	],
 	settings: coralogixSettings,
 	connect: (raw) => {
-		const settings = raw as CoralogixSettings;
+		// Parsed, not cast. `loadConnections` validates before it ever gets here, but a
+		// cast would mean the schema's defaults never apply to any other caller — and a
+		// provider whose defaults depend on who called it is a provider that behaves
+		// differently in a test than in production.
+		const settings: CoralogixSettings = v.parse(coralogixSettings, raw);
 		const metrics = settings.metrics as MetricNames;
 		const client = new CoralogixClient({ baseUrl: settings.baseUrl, apiKey: settings.apiKey });
 
@@ -586,6 +616,115 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 				];
 
 				return observations;
+			},
+
+			/**
+			 * Per-service findings, derived from the metrics API.
+			 *
+			 * A long window is fetched once and the shared rules judge its tail against
+			 * everything before it. The baseline is the service's own recent history rather
+			 * than a threshold someone typed, which is what makes the finding defensible:
+			 * "3.2% error rate, 700% above its 24h mean" is an argument, "3.2% is high" is
+			 * an assertion.
+			 */
+			async listMetricInsights(ctx) {
+				const slug = slugOf(ctx);
+				if (!slug) return [];
+
+				const labels = labelsFor(ctx, slug);
+				const now = new Date();
+				const from = new Date(now.getTime() - BASELINE_SECONDS * 1000);
+				const step = Math.round(BASELINE_SECONDS / BASELINE_POINTS);
+
+				const [errors, latency, traffic] = await Promise.all([
+					client.range(errorRate(metrics, labels, ctx.scope.timeRange), from, now, step),
+					client.range(p95Latency(metrics, labels, ctx.scope.timeRange), from, now, step),
+					client.range(requestRate(metrics, labels, ctx.scope.timeRange), from, now, step)
+				]);
+
+				const observations: MetricObservation[] = [
+					{
+						id: 'error-rate',
+						label: 'Error rate',
+						kind: 'percent',
+						affects: slug,
+						values: toSeries(errors).values,
+						direction: 'higher-is-worse'
+					},
+					{
+						id: 'p95-latency',
+						label: 'P95 latency',
+						kind: 'duration-ms',
+						affects: slug,
+						values: toSeries(latency).values,
+						direction: 'higher-is-worse'
+					},
+					{
+						id: 'request-rate',
+						label: 'Request rate',
+						kind: 'rate',
+						affects: slug,
+						values: toSeries(traffic).values,
+						// Traffic vanishing is the outage; traffic rising is ordinary.
+						direction: 'lower-is-worse'
+					}
+				];
+
+				return deriveInsights(observations, now, BASELINE_LABEL);
+			},
+
+			/**
+			 * Fleet-wide findings.
+			 *
+			 * Two range queries grouped `by (service)` rather than one per service: the
+			 * whole point of asking at the aggregate level is that the comparison is
+			 * *between* services, and fetching them one at a time would be N round trips to
+			 * answer a question the metrics API answers in one.
+			 */
+			async listPlatformInsights(ctx) {
+				const labels = labelsFor(ctx);
+				const now = new Date();
+				const from = new Date(now.getTime() - BASELINE_SECONDS * 1000);
+				const step = Math.round(BASELINE_SECONDS / BASELINE_POINTS);
+				const span = BASELINE_SECONDS;
+
+				const [errors, latency] = await Promise.all([
+					client.range(errorRateByService(metrics, labels, ctx.scope.timeRange), from, now, step),
+					client.range(p95ByService(metrics, labels, ctx.scope.timeRange), from, now, step)
+				]);
+
+				const perService = (matrix: Parameters<typeof toTimeSeriesByLabel>[0]) =>
+					toTimeSeriesByLabel(matrix, settings.serviceLabel, span, 100).map((one) => ({
+						service: one.id,
+						values: one.points.map((point) => point.value)
+					}));
+
+				const insights: MetricInsight[] = [
+					...deriveFleetInsights(
+						{
+							id: 'error-rate',
+							label: 'Error rate',
+							kind: 'percent',
+							direction: 'higher-is-worse'
+						},
+						perService(errors),
+						now,
+						BASELINE_LABEL
+					),
+					...deriveFleetInsights(
+						{
+							id: 'p95-latency',
+							label: 'P95 latency',
+							kind: 'duration-ms',
+							direction: 'higher-is-worse'
+						},
+						perService(latency),
+						now,
+						BASELINE_LABEL
+					)
+				];
+
+				return insights;
 			},
 
 			async listIncidents(ctx, limit) {

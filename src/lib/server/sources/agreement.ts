@@ -26,6 +26,7 @@ export const CAPABILITY_METHODS: Record<Capability, string> = {
 	'apm.slo': 'readSloBudget',
 	'apm.latencyHeatmap': 'readLatencyHeatmap',
 	'apm.insights': 'listMetricInsights',
+	'apm.platformInsights': 'listPlatformInsights',
 	'apm.domainVitals': 'readDomainVitals',
 	'apm.rates': 'readRates',
 	'apm.incidents': 'listIncidents',

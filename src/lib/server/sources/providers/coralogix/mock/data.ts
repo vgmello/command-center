@@ -136,7 +136,12 @@ export function buildEstate(
 				// every SLO figure on the page a consequence of the mock's arithmetic
 				// rather than of anything a reader could reason about.
 				if (route === '/v1/charge' || route === '/v1/refund') {
-					const share = 0.002 + random() * 0.004;
+					// One service is genuinely worse than the rest, and it is the one whose
+					// instance is already down. A uniformly healthy estate is a fine thing
+					// to have and a useless thing to develop against: every aggregate view
+					// renders empty, and nobody finds out whether it works.
+					const struggling = service === 'payment-gateway' && environment === 'production';
+					const share = struggling ? 0.05 + random() * 0.02 : 0.002 + random() * 0.004;
 
 					series.push({
 						labels: {

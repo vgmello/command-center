@@ -31,6 +31,15 @@ export function createPlatformRouter(deps: RouterDeps, catalog: PlatformSource):
 				})
 			),
 
+		/**
+		 * Fleet-wide, so it takes no binding — the question is about every service at
+		 * once, and a source that cannot answer it says so rather than answering for one.
+		 */
+		listPlatformInsights: (scope) =>
+			fanOut(deps, 'apm.platformInsights', scope, '', (client, ctx) =>
+				(client as ApmProvider).listPlatformInsights!(ctx)
+			),
+
 		readRates: (scope) =>
 			fanOut(deps, 'apm.rates', scope, '', (client, ctx) =>
 				(client as ApmProvider).readRates!(ctx)

@@ -4,6 +4,7 @@
 	import DomainHealthTable from '$lib/components/overview/DomainHealthTable.svelte';
 	import HealthDistributionCard from '$lib/components/HealthDistributionCard.svelte';
 	import IncidentsCard from '$lib/components/IncidentsCard.svelte';
+	import PlatformInsightsCard from '$lib/components/overview/PlatformInsightsCard.svelte';
 	import InfrastructureCard from '$lib/components/overview/InfrastructureCard.svelte';
 	import MetricStrip from '$lib/components/overview/MetricStrip.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
@@ -136,6 +137,7 @@
 			{@const snapshot = await getOverview(scopeArgs)}
 			<HealthDistributionCard distribution={snapshot.distribution} />
 			<IncidentsCard incidents={snapshot.incidents} />
+			<PlatformInsightsCard insights={snapshot.insights} />
 			<DeploymentsCard deployments={snapshot.deployments} />
 			<InfrastructureCard groups={snapshot.infrastructure} />
 

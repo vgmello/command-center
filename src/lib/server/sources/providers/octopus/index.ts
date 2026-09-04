@@ -105,7 +105,9 @@ export const octopusProvider = defineProvider<DeploymentProvider>({
 	],
 	settings: octopusSettings,
 	connect: (raw) => {
-		const settings = raw as OctopusSettings;
+		// Parsed, not cast — see the note in the Coralogix provider. A cast leaves the
+		// schema's defaults unapplied for any caller that is not `loadConnections`.
+		const settings: OctopusSettings = v.parse(octopusSettings, raw);
 		const client = new OctopusClient({
 			baseUrl: settings.baseUrl,
 			apiKey: settings.apiKey,

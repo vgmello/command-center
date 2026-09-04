@@ -180,3 +180,31 @@ export function rateByService(
 ): string {
 	return `sum by (service) (rate(${metrics.requests}${selector(labels)}[${RATE_WINDOW[range]}]))`;
 }
+
+/**
+ * Error rate per service, in one query.
+ *
+ * The aggregate insight compares services *to each other*, so they have to come back
+ * together — asking per service would be one round trip each to answer a question the
+ * metrics API answers in one, and the readings would be from slightly different moments.
+ */
+export function errorRateByService(
+	metrics: MetricNames,
+	labels: Record<string, string | undefined>,
+	range: TimeRangeId
+): string {
+	const scoped = selector(labels);
+	const errors = `sum by (service) (rate(${metrics.errors}${scoped.slice(0, -1)}${scoped === '{}' ? '' : ','}http_response_status_code=~"5.."}[${RATE_WINDOW[range]}]))`;
+	const total = `sum by (service) (rate(${metrics.requests}${scoped}[${RATE_WINDOW[range]}]))`;
+
+	return `(${errors} or vector(0)) / clamp_min(${total}, 1) * 100`;
+}
+
+/** P95 per service, in one query, for the same reason. */
+export function p95ByService(
+	metrics: MetricNames,
+	labels: Record<string, string | undefined>,
+	range: TimeRangeId
+): string {
+	return `histogram_quantile(0.95, sum by (le,service) (rate(${metrics.duration}${selector(labels)}[${RATE_WINDOW[range]}]))) * 1000`;
+}
