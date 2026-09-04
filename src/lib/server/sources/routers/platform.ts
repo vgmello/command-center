@@ -1,6 +1,12 @@
 import type { PlatformSource } from '../../platform/source';
 import type { ApmProvider } from '../contracts';
 import { fanOut, fanOutSingle, type RouterDeps } from './shared';
+import type { CatalogSource } from '../../catalog/source';
+import { identityFor } from '$lib/platform/catalog';
+import { rollUpDomain, type ServiceReading } from '$lib/platform/catalog-merge';
+import { queryDomainsInMemory } from '../../platform/in-memory-query';
+import type { PlatformScope } from '$lib/platform/query';
+import type { Domain } from '$lib/platform/types';
 
 /**
  * `PlatformSource`, split between the catalog and an APM source.
@@ -10,15 +16,89 @@ import { fanOut, fanOutSingle, type RouterDeps } from './shared';
  * it. What a domain is currently *doing* comes from APM. Serving the first from the
  * catalog is why the domains table keeps working with nothing connected.
  */
-export function createPlatformRouter(deps: RouterDeps, catalog: PlatformSource): PlatformSource {
+export function createPlatformRouter(
+	deps: RouterDeps,
+	catalog: PlatformSource,
+	services: CatalogSource
+): PlatformSource {
+	/** Readings keyed by catalog slug, or empty when nothing answers. */
+	async function readings(scope: PlatformScope) {
+		try {
+			const rows = await fanOut<ServiceReading>(
+				deps,
+				'apm.serviceHealth',
+				scope,
+				'',
+				(client, ctx) => (client as ApmProvider).readServiceHealth!(ctx)
+			);
+
+			return new Map(rows.map((one) => [one.service, one]));
+		} catch {
+			return new Map<string, ServiceReading>();
+		}
+	}
+
+	/**
+	 * Every domain the catalog declares, rolled up from its own services.
+	 *
+	 * The service count is the number declared rather than a figure carried beside it,
+	 * so the domains table and a domain's own service table cannot disagree.
+	 */
+	async function domains(scope: PlatformScope): Promise<Domain[]> {
+		const [entries, allServices, byService] = await Promise.all([
+			services.listDomains(),
+			services.listServices(),
+			readings(scope)
+		]);
+
+		return entries.map((entry) =>
+			rollUpDomain(
+				entry,
+				allServices.filter((one) => one.domainId === entry.id),
+				new Map(
+					allServices
+						.filter((one) => one.domainId === entry.id)
+						.flatMap((one) => {
+							const reading = byService.get(identityFor(one, 'apm'));
+							return reading ? [[one.slug, reading] as const] : [];
+						})
+				)
+			)
+		);
+	}
+
 	const source: PlatformSource = {
 		id: 'routed-platform',
 
-		// App-owned: delegated to the catalog unchanged.
-		queryDomains: (scope, query) => catalog.queryDomains(scope, query),
-		findDomain: (scope, slug) => catalog.findDomain(scope, slug),
-		readDomainStatusCounts: (scope) => catalog.readDomainStatusCounts(scope),
-		listOwners: (scope) => catalog.listOwners(scope),
+		// Declared by the catalog, rolled up from what the sources report.
+		queryDomains: async (scope, query) =>
+			// Filtering and paging in memory: the catalog cannot sort by a health score it
+			// does not hold, so pushing the query down is impossible in principle. This is
+			// one adapter's strategy, not the contract.
+			queryDomainsInMemory(await domains(scope), query),
+
+		findDomain: async (scope, slug) =>
+			(await domains(scope)).find((one) => one.slug === slug) ?? null,
+
+		readDomainStatusCounts: async (scope) => {
+			const counts = { healthy: 0, degraded: 0, down: 0, unknown: 0 };
+			for (const domain of await domains(scope)) counts[domain.status]++;
+			return counts;
+		},
+
+		listOwners: async () => {
+			const owners = await services.listOwners();
+			// Counted across domains, because that is what the filter narrows.
+			const all = await services.listDomains();
+
+			return owners.map((owner) => ({
+				id: owner,
+				label: owner,
+				count: all.filter((one) => one.owner === owner).length
+			}));
+		},
+
+		// Still the fixture's: a change feed is neither declared nor a reading.
 		listRecentChanges: (scope, limit) => catalog.listRecentChanges(scope, limit),
 		readDomainDependencies: (scope, slug) => catalog.readDomainDependencies(scope, slug),
 

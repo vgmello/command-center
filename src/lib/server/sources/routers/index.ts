@@ -1,4 +1,5 @@
-import type { PlatformSource, ServiceSource } from '../../platform/source';
+import type { PlatformSource } from '../../platform/source';
+import type { CatalogSource } from '../../catalog/source';
 import { createDeploymentRouter } from './deployment';
 import { createInfrastructureRouter } from './infrastructure';
 import { createPlatformRouter } from './platform';
@@ -21,11 +22,11 @@ export type { RouterDeps } from './shared';
  */
 export function createRouters(
 	deps: RouterDeps,
-	catalog: { platform: PlatformSource; service: ServiceSource }
+	catalog: { platform: PlatformSource; services: CatalogSource }
 ) {
 	return {
-		platform: createPlatformRouter(deps, catalog.platform),
-		service: createServiceRouter(deps, catalog.service),
+		platform: createPlatformRouter(deps, catalog.platform, catalog.services),
+		service: createServiceRouter(deps, catalog.services),
 		deployment: createDeploymentRouter(deps),
 		infrastructure: createInfrastructureRouter(deps)
 	};

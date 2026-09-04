@@ -1,5 +1,6 @@
 import { deriveFleetInsights } from '$lib/platform/metric-insights';
 import type { PlatformScope } from '$lib/platform/query';
+import type { ServiceReading } from '$lib/platform/catalog-merge';
 import type {
 	DependencyNode,
 	DomainVitals,
@@ -925,4 +926,23 @@ export function listPlatformInsights(scope: PlatformScope, now: Date): MetricIns
 			'24h'
 		)
 	];
+}
+
+/**
+ * A reading per service, the way a real APM source reports them.
+ *
+ * The seeds hold both identity and readings; this exposes the reading half only, so the
+ * fixture APM provider answers the same shape Coralogix does and the join above cannot
+ * tell them apart.
+ */
+export function readServiceHealth(): ServiceReading[] {
+	return SERVICE_SEEDS.map((seed) => ({
+		service: slugify(seed.name),
+		errorRatePct: seed.errorRatePct,
+		p95LatencyMs: seed.p95LatencyMs,
+		requestsPerSecond: seed.requestRate,
+		instancesHealthy: seed.instancesHealthy,
+		instancesTotal: seed.instancesTotal,
+		activeAlerts: seed.activeAlerts
+	}));
 }

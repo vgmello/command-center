@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { FixtureCatalogSource } from '../catalog/fixture-source';
 import * as v from 'valibot';
 import { buildSources } from './boot';
 import { SourceCache } from './cache';
@@ -8,11 +9,11 @@ import { FIXTURE_CONNECTIONS, FIXTURE_PROVIDERS } from './fixtures';
 import { defineProvider } from './provider';
 import { SourceRegistry } from './registry';
 import { createInfrastructureRouter, createRouters } from './routers';
-import { FixturePlatformSource, FixtureServiceSource } from '../platform/fixture-source';
+import { FixturePlatformSource } from '../platform/fixture-source';
 import type { PlatformScope } from '$lib/platform/query';
 
 const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
-const catalog = { platform: new FixturePlatformSource(), service: new FixtureServiceSource() };
+const catalog = { platform: new FixturePlatformSource(), services: new FixtureCatalogSource() };
 
 describe('buildSources', () => {
 	test('with no config it connects the fixture providers, so the app runs as it does today', async () => {

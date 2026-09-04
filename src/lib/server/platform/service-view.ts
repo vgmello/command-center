@@ -2,6 +2,7 @@ import type { ServiceSnapshot } from '$lib/platform/types';
 import type { PlatformScope } from '$lib/platform/query';
 import type { DeploymentSource, ServiceSource } from './source';
 import { ALL_DOMAINS, ALL_ENVIRONMENTS } from '$lib/platform/deployments';
+import { panel } from '../sources/panel';
 
 /**
  * Assembles one service's overview tab.
@@ -37,7 +38,10 @@ export async function buildServiceSnapshot(
 	const [stats, checks, dependencies, requestRate, endpoints, deploymentPage] = await Promise.all([
 		services.readStats(scope, slug),
 		services.listHealthChecks(scope, slug),
-		services.readDependencies(scope, slug),
+		// A service map is a different API from metrics; a source may not have one.
+		panel('apm.dependencies', async () => ({
+			data: await services.readDependencies(scope, slug)
+		})),
 		services.readRequestRate(scope, slug),
 		services.listEndpoints(scope, slug, SERVICE_ENDPOINT_LIMIT),
 		deployments.queryDeployments(scope, {

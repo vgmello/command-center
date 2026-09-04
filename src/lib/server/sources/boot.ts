@@ -1,4 +1,5 @@
-import type { PlatformSource, ServiceSource } from '../platform/source';
+import type { PlatformSource } from '../platform/source';
+import type { CatalogSource } from '../catalog/source';
 import { SourceCache } from './cache';
 import { createDispatcher } from './dispatch';
 import { FIXTURE_CONNECTIONS, FIXTURE_PROVIDERS } from './fixtures';
@@ -67,7 +68,7 @@ function providersFor(options: {
 export function buildSources(options: {
 	config: unknown;
 	env: Record<string, string | undefined>;
-	catalog: { platform: PlatformSource; service: ServiceSource };
+	catalog: { platform: PlatformSource; services: CatalogSource };
 	/**
 	 * Which providers may be named.
 	 *

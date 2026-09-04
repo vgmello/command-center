@@ -1,3 +1,4 @@
+import type { ServiceReading } from '$lib/platform/catalog-merge';
 import type {
 	ClusterLoad,
 	CostBreakdown,
@@ -80,6 +81,16 @@ export interface ApmProvider {
 	 * Both are questions about the fleet, so they are asked of the fleet.
 	 */
 	listPlatformInsights?(ctx: SourceContext): Promise<MetricInsight[]>;
+
+	/**
+	 * A reading per service, for every service at once.
+	 *
+	 * The catalog says which services exist; this says how each is doing, and the two are
+	 * joined above. One call rather than one per service: a table of forty rows must not
+	 * be forty round trips, and the readings would otherwise come from forty slightly
+	 * different moments.
+	 */
+	readServiceHealth?(ctx: SourceContext): Promise<ServiceReading[]>;
 	readDomainVitals?(ctx: SourceContext): Promise<DomainVitals | null>;
 	readRates?(ctx: SourceContext): Promise<RateObservation[]>;
 	listIncidents?(ctx: SourceContext, limit: number): Promise<Incident[]>;

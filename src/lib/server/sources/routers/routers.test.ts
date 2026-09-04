@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { FixtureCatalogSource } from '../../catalog/fixture-source';
 import { createRouters } from './index';
 import { createDispatcher } from '../dispatch';
 import { SourceCache } from '../cache';
 import { SourceRegistry } from '../registry';
 import { CapabilityUnavailableError } from '../errors';
 import { FIXTURE_CONNECTIONS, FIXTURE_PROVIDERS } from '../fixtures';
-import { FixturePlatformSource, FixtureServiceSource } from '../../platform/fixture-source';
+import { FixturePlatformSource } from '../../platform/fixture-source';
 import type { PlatformScope } from '$lib/platform/query';
 
 const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
@@ -23,7 +24,7 @@ function build(connections: unknown = FIXTURE_CONNECTIONS) {
 		},
 		{
 			platform: new FixturePlatformSource(),
-			service: new FixtureServiceSource()
+			services: new FixtureCatalogSource()
 		}
 	);
 }
@@ -46,7 +47,20 @@ describe('the platform router', () => {
 			).domains
 		).toHaveLength(5);
 		expect(await platform.findDomain(scope, 'payment-domain')).not.toBeNull();
-		expect((await platform.readDomainStatusCounts(scope)).healthy).toBeGreaterThan(0);
+
+		// Declared, but nothing is watching them — so every domain is `unknown` rather
+		// than healthy. Those are different statements, and reporting the second would be
+		// the catalog claiming a health it has no way to know.
+		const counts = await platform.readDomainStatusCounts(scope);
+		expect(counts.healthy).toBe(0);
+		expect(counts.unknown).toBeGreaterThan(0);
+	});
+
+	test('with an APM source connected, the domains are actually scored', async () => {
+		const { platform } = build();
+		const counts = await platform.readDomainStatusCounts(scope);
+
+		expect(counts.healthy + counts.degraded + counts.down).toBeGreaterThan(0);
 	});
 
 	test('dispatches the APM-backed methods', async () => {
@@ -76,16 +90,21 @@ describe('the service router', () => {
 		expect((await service.readSloBudget(scope, 'payment-api')).targetPct).toBe(99.9);
 	});
 
-	test('listServiceVitals stays on the catalog in this increment', async () => {
-		// Recorded as a decision: the fixture catalog already produces the readings, and
-		// the APM half of this join arrives with the real Coralogix provider.
+	test('listServiceVitals returns the services the catalog declares, and no others', async () => {
+		// It used to generate rows to reach a count the domain claimed separately, which
+		// is how a header said 24 over a table listing 2. The count is the catalog's now,
+		// so the two cannot disagree — and a domain with two declared services has two
+		// rows, however many it once claimed.
 		const { service } = build({ connections: [] });
+		const catalog = new FixtureCatalogSource();
 		const platform = new FixturePlatformSource();
-		const domain = (await platform.findDomain(scope, 'payment-domain'))!;
 		const vitals = (await platform.readDomainVitals(scope, 'payment-domain'))!;
 
-		const rows = await service.listServiceVitals(scope, domain.id, vitals, domain.serviceCount);
-		expect(rows).toHaveLength(domain.serviceCount);
+		const declared = await catalog.listServices('payment-domain');
+		const rows = await service.listServiceVitals(scope, 'payment-domain', vitals, declared.length);
+
+		expect(rows).toHaveLength(declared.length);
+		expect(rows.map((one) => one.slug)).toEqual(declared.map((one) => one.slug));
 	});
 });
 

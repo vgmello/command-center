@@ -42,6 +42,7 @@ import {
 	p95ByInstance,
 	p95ByRoute,
 	p95ByService,
+	rateByService,
 	p95Latency,
 	rateByRoute,
 	requestRate,
@@ -172,7 +173,8 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 		'apm.rates',
 		'apm.incidents',
 		'apm.insights',
-		'apm.platformInsights'
+		'apm.platformInsights',
+		'apm.serviceHealth'
 	],
 	settings: coralogixSettings,
 	connect: (raw) => {
@@ -320,7 +322,9 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 						kind: 'trend',
 						id: 'error-rate',
 						label: 'Error rate',
-						formatted: formatPercent(errors, 2),
+						// The number alone: `formatPercent` already carries the sign and the tile
+						// prints `unit` beside it, which together read "0.00%%".
+						formatted: errors.toFixed(2),
 						unit: '%',
 						series: errorSamples,
 						changeFormatted: formatChange(changeOf(errorSamples.values), '%', 2),
@@ -337,8 +341,13 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 						value: answering,
 						total: instances.size,
 						caption:
-							answering === instances.size ? 'All reporting' : `${instances.size - answering} down`,
-						tone: answering === instances.size ? null : 'degraded',
+							instances.size === 0
+								? 'Nothing reporting'
+								: answering === instances.size
+									? 'All reporting'
+									: `${instances.size - answering} down`,
+						tone:
+							instances.size === 0 ? 'unknown' : answering === instances.size ? null : 'degraded',
 						icon: 'server'
 					}
 				];
@@ -725,6 +734,76 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 				];
 
 				return insights;
+			},
+
+			/**
+			 * A reading per service, in four grouped queries rather than four per service.
+			 *
+			 * The catalog decides which services exist; this only says how the ones the
+			 * account is emitting for are doing. A service in the catalog that Coralogix
+			 * has never seen simply has no reading, and the join above turns that into
+			 * `unknown` — which is the honest answer for something nothing is watching.
+			 */
+			async readServiceHealth(ctx) {
+				const range = ctx.scope.timeRange;
+				const labels = labelsFor(ctx);
+				const now = new Date();
+				const { from, to, step, span } = window(range);
+
+				const [errors, latency, traffic, up, errorHistory] = await Promise.all([
+					client.instant(errorRateByService(metrics, labels, range), now),
+					client.instant(p95ByService(metrics, labels, range), now),
+					client.instant(rateByService(metrics, labels, range), now),
+					client.instant(instancesUp(metrics, labels), now),
+					client.range(errorRateByService(metrics, labels, range), from, to, step)
+				]);
+
+				const errorByService = scalarsByLabel(errors, settings.serviceLabel);
+				const latencyByService = scalarsByLabel(latency, settings.serviceLabel);
+				const rateByServiceName = scalarsByLabel(traffic, settings.serviceLabel);
+
+				// `up` is one series per instance, so the counts are tallied per service.
+				const instances = new Map<string, { healthy: number; total: number }>();
+				for (const row of up.result) {
+					const service = row.metric[settings.serviceLabel];
+					if (!service) continue;
+
+					const tally = instances.get(service) ?? { healthy: 0, total: 0 };
+					tally.total++;
+					if (Number(row.value[1]) > 0) tally.healthy++;
+					instances.set(service, tally);
+				}
+
+				const history = new Map(
+					toTimeSeriesByLabel(errorHistory, settings.serviceLabel, span, 200).map((one) => [
+						one.id,
+						one.points.map((point) => point.value)
+					])
+				);
+
+				const names = new Set([
+					...errorByService.keys(),
+					...latencyByService.keys(),
+					...rateByServiceName.keys(),
+					...instances.keys()
+				]);
+
+				return [...names].map((service) => {
+					const tally = instances.get(service) ?? { healthy: 0, total: 0 };
+
+					return {
+						service,
+						errorRatePct: errorByService.get(service) ?? 0,
+						p95LatencyMs: latencyByService.get(service) ?? 0,
+						requestsPerSecond: rateByServiceName.get(service) ?? 0,
+						instancesHealthy: tally.healthy,
+						instancesTotal: tally.total,
+						// Coralogix alerts are events, not metrics; the incident list already
+						// carries them and counting them here would read the same rows twice.
+						activeAlerts: 0,
+						errorSeries: history.get(service)
+					};
+				});
 			},
 
 			async listIncidents(ctx, limit) {

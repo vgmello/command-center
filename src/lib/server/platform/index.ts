@@ -1,10 +1,7 @@
 import { env } from '$env/dynamic/private';
+import { catalogSource } from '../catalog';
 import { buildSources, readSourceConfig } from '../sources/boot';
-import {
-	FixturePlatformSource,
-	FixtureServiceSource,
-	FixtureWorkspaceSource
-} from './fixture-source';
+import { FixturePlatformSource, FixtureWorkspaceSource } from './fixture-source';
 import { selectSource } from './select-source';
 import type {
 	DeploymentSource,
@@ -33,7 +30,7 @@ import type {
 const routers = buildSources({
 	config: await readSourceConfig(env.SOURCES_CONFIG),
 	env,
-	catalog: { platform: new FixturePlatformSource(), service: new FixtureServiceSource() }
+	catalog: { platform: new FixturePlatformSource(), services: catalogSource() }
 });
 
 export function platformSource(): PlatformSource {

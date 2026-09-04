@@ -709,7 +709,14 @@ export interface ServiceSnapshot {
 	service: Service;
 	stats: ServiceStat[];
 	checks: HealthCheck[];
-	dependencies: ServiceDependencies;
+	/**
+	 * The service's immediate neighbourhood, or an account of why it is unknown.
+	 *
+	 * A `Panel` because a service map is a different API from metrics and logs, and an
+	 * APM source may legitimately not have one. An empty graph would say "this service
+	 * talks to nothing", which is a much stronger claim than "we cannot see".
+	 */
+	dependencies: Panel<ServiceDependencies>;
 	deployments: Deployment[];
 	requestRate: TimeSeries;
 	endpoints: ServiceEndpoint[];

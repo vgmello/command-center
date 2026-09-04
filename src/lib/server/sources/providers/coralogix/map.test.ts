@@ -185,9 +185,12 @@ describe('healthOf', () => {
 });
 
 describe('healthFromUp', () => {
-	test('no instances reporting at all is down, not healthy', () => {
-		// An empty answer must never read as "everything is fine".
-		expect(healthFromUp(new Map())).toBe('down');
+	test('no instances reporting at all is unknown — not healthy, and not down', () => {
+		// An empty answer must never read as "everything is fine". It must not read as an
+		// outage either: a service the catalog declares and nothing has ever emitted for
+		// is not down, and a red badge on it sends someone to page a team about a service
+		// nobody has deployed.
+		expect(healthFromUp(new Map())).toBe('unknown');
 	});
 
 	test('every instance answering is healthy', () => {

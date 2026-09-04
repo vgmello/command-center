@@ -28,6 +28,9 @@ export const DEFAULT_TTL_SECONDS: Record<Capability, number> = {
 	'apm.insights': 120,
 	// Fleet-wide, so it costs more to compute and moves more slowly than one service's.
 	'apm.platformInsights': 180,
+	// The table every screen leans on; short, because a service going down is the
+	// thing a reader is watching for.
+	'apm.serviceHealth': 30,
 	'apm.domainVitals': 30,
 	'apm.rates': 30,
 	'apm.incidents': 30,

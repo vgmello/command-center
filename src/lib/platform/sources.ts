@@ -34,6 +34,7 @@ export const CAPABILITIES = [
 	'apm.latencyHeatmap',
 	'apm.insights',
 	'apm.platformInsights',
+	'apm.serviceHealth',
 	'apm.domainVitals',
 	'apm.rates',
 	'apm.incidents',

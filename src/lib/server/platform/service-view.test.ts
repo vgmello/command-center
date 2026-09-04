@@ -92,11 +92,18 @@ describe('buildServiceSnapshot', () => {
 
 	test('dependencies stay one hop each way', async () => {
 		const snapshot = await build('payment-api');
+		const panel = snapshot!.dependencies;
 
-		expect(snapshot!.dependencies.upstream.length).toBeGreaterThan(0);
-		expect(snapshot!.dependencies.downstream.length).toBeGreaterThan(0);
+		// A `Panel`, because a source may have no service map at all. Against the fixture
+		// it always answers, and asserting that is what would catch it silently becoming
+		// a gap.
+		expect(panel.status).toBe('ok');
+		const graph = (panel as Extract<typeof panel, { status: 'ok' }>).data;
+
+		expect(graph.upstream.length).toBeGreaterThan(0);
+		expect(graph.downstream.length).toBeGreaterThan(0);
 		// Every node names the protocol, because a name does not imply one.
-		const all = [...snapshot!.dependencies.upstream, ...snapshot!.dependencies.downstream];
+		const all = [...graph.upstream, ...graph.downstream];
 		expect(all.every((node) => node.protocol.length > 0)).toBe(true);
 	});
 

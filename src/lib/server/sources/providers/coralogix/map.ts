@@ -152,7 +152,10 @@ export function healthOf(errorPct: number, p95Ms: number): HealthStatus {
 
 /** `up` is 1 or 0 per instance; a service is down only when none of them answers. */
 export function healthFromUp(up: Map<string, number>): HealthStatus {
-	if (up.size === 0) return 'down';
+	// No instances reporting at all is `unknown`, not `down`. A service the account has
+	// never seen — one the catalog declares and nothing emits for — is not an outage, and
+	// calling it one puts a red badge on something nobody has deployed yet.
+	if (up.size === 0) return 'unknown';
 
 	const answering = [...up.values()].filter((one) => one > 0).length;
 	if (answering === 0) return 'down';
