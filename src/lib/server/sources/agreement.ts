@@ -31,7 +31,6 @@ export const CAPABILITY_METHODS: Record<Capability, string> = {
 	'apm.domainVitals': 'readDomainVitals',
 	'apm.rates': 'readRates',
 	'apm.incidents': 'listIncidents',
-	'apm.activity': 'readActivitySummary',
 	'apm.dependencies': 'readServiceDependencies',
 	'deployment.log': 'queryDeployments',
 	'deployment.summary': 'readSummary',

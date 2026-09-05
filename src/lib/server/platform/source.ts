@@ -1,5 +1,4 @@
 import type {
-	ActivitySummary,
 	CurrentUser,
 	DeploymentInsight,
 	DeploymentPage,
@@ -124,7 +123,6 @@ export interface PlatformSource {
 	 * because a backend answers them from the same activity store. Splitting it would
 	 * buy an adapter nothing and cost it a second round trip.
 	 */
-	readActivitySummary(scope: PlatformScope): Promise<ActivitySummary>;
 }
 
 /**

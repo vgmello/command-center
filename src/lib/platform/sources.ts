@@ -38,7 +38,6 @@ export const CAPABILITIES = [
 	'apm.domainVitals',
 	'apm.rates',
 	'apm.incidents',
-	'apm.activity',
 	'apm.dependencies',
 	'deployment.log',
 	'deployment.summary',

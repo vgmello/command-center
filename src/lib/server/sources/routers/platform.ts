@@ -128,11 +128,6 @@ export function createPlatformRouter(
 		listIncidents: (scope, limit) =>
 			fanOut(deps, 'apm.incidents', scope, `limit=${limit}`, (client, ctx) =>
 				(client as ApmProvider).listIncidents!(ctx, limit)
-			),
-
-		readActivitySummary: (scope) =>
-			fanOutSingle(deps, 'apm.activity', scope, '', (client, ctx) =>
-				(client as ApmProvider).readActivitySummary!(ctx)
 			)
 	};
 

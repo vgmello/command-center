@@ -37,7 +37,6 @@ export const DEFAULT_TTL_SECONDS: Record<Capability, number> = {
 	'apm.domainVitals': 30,
 	'apm.rates': 30,
 	'apm.incidents': 30,
-	'apm.activity': 60,
 	'apm.dependencies': 600,
 	'deployment.log': 30,
 	'deployment.summary': 60,

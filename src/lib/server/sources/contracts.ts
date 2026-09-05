@@ -21,7 +21,6 @@ import type {
 	NodeCounts,
 	RateObservation,
 	ResourceUsage,
-	ActivitySummary,
 	ServiceDependencies,
 	ServiceEndpoint,
 	ServiceStat,
@@ -94,7 +93,6 @@ export interface ApmProvider {
 	readDomainVitals?(ctx: SourceContext): Promise<DomainVitals | null>;
 	readRates?(ctx: SourceContext): Promise<RateObservation[]>;
 	listIncidents?(ctx: SourceContext, limit: number): Promise<Incident[]>;
-	readActivitySummary?(ctx: SourceContext): Promise<ActivitySummary>;
 	resourceLink(binding: SourceBinding | undefined, view: LinkView): ExternalLink | null;
 }
 

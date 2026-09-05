@@ -1,5 +1,4 @@
 import type {
-	ActivitySummary,
 	CurrentUser,
 	Deployment,
 	DeploymentInsight,
@@ -54,7 +53,6 @@ import {
 	readDomainVitals,
 	buildDeploymentTrends,
 	buildStatusTrend,
-	listActivitySummary,
 	listDeployingDomains,
 	listDeploymentInsights,
 	listDeployments,
@@ -152,10 +150,6 @@ export class FixturePlatformSource implements PlatformSource {
 		return listRecentChanges(new Date())
 			.sort((a, b) => Date.parse(b.changedAt) - Date.parse(a.changedAt))
 			.slice(0, limit);
-	}
-
-	async readActivitySummary(_scope: PlatformScope): Promise<ActivitySummary> {
-		return listActivitySummary();
 	}
 }
 

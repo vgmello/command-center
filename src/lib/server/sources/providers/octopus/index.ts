@@ -8,6 +8,7 @@ import {
 } from '$lib/platform/deployment-aggregates';
 import { DEPLOYMENT_WINDOW_DAYS } from '$lib/platform/deployments';
 import type { Deployment, EnvironmentId, TrendGrain } from '$lib/platform/types';
+import { ALL_SERVICES } from '$lib/platform/deployments';
 import { queryDeploymentsInMemory } from '../../../platform/in-memory-query';
 import { defineProvider } from '../../provider';
 import type { DeploymentProvider } from '../../contracts';
@@ -87,6 +88,15 @@ interface OctopusReleaseRow {
  * seconds — so sharing never serves data staler than the capability that wanted it.
  */
 const SHARED_WINDOW_MS = 30_000;
+
+/**
+ * How many pages beyond the asked-for page a project-scoped query walks.
+ *
+ * The in-memory filters — search, window, state — still run over what comes back, so a
+ * page of five needs more than five rows fetched to fill it. Small, because a single
+ * project's history is short.
+ */
+const PROJECT_OVERSCAN = 6;
 
 /** Octopus caps a page at thirty, whatever `take` asks for. */
 const PAGE_SIZE = 30;
@@ -257,7 +267,20 @@ export const octopusProvider = defineProvider<DeploymentProvider>({
 			return shared !== null && Date.now() - shared.at <= SHARED_WINDOW_MS;
 		}
 
-		async function loadWindow(want: number, scan = settings.windowSize): Promise<Deployment[]> {
+		async function loadWindow(
+			want: number,
+			scan = settings.windowSize,
+			params: Record<string, string | undefined> = {},
+			/**
+			 * Stop once a row is older than this.
+			 *
+			 * Octopus returns deployments newest first, so a bounded window is a prefix of
+			 * the list — and walking the whole four hundred to answer "how many today" is
+			 * fourteen pages to read one. There is no date filter on the endpoint, so
+			 * stopping early is the only way to push the bound down at all.
+			 */
+			notBefore?: Date
+		): Promise<Deployment[]> {
 			const catalogue = await readCatalogue();
 			const mapped: Deployment[] = [];
 			let skip = 0;
@@ -266,7 +289,7 @@ export const octopusProvider = defineProvider<DeploymentProvider>({
 				const take = Math.min(PAGE_SIZE, scan - skip);
 				const body = await client.get<{ Items: OctopusDeploymentRow[]; TotalResults: number }>(
 					client.spaced('deployments'),
-					{ skip, take }
+					{ ...params, skip, take }
 				);
 
 				if (body.Items.length === 0) break;
@@ -275,9 +298,33 @@ export const octopusProvider = defineProvider<DeploymentProvider>({
 				skip += body.Items.length;
 
 				if (skip >= body.TotalResults) break;
+
+				// The page's oldest row already precedes the window, so every later page
+				// does too.
+				if (notBefore) {
+					const oldest = body.Items.at(-1);
+					if (oldest && Date.parse(oldest.Created) < notBefore.getTime()) break;
+				}
 			}
 
 			return mapped.slice(0, want);
+		}
+
+		/**
+		 * The Octopus project id for one of our service names, if there is one.
+		 *
+		 * Matched on slug and on name, because a caller may hold either — the catalog's
+		 * identity block exists so a service can say which, but a query carries only the
+		 * one string.
+		 */
+		async function projectFor(service: string): Promise<string | null> {
+			const { projects } = await readCatalogue();
+
+			for (const project of projects.values()) {
+				if (project.Slug === service || project.Name === service) return project.Id;
+			}
+
+			return null;
 		}
 
 		/** Rows inside a window, and the equal window before it, for the change figures. */
@@ -299,10 +346,34 @@ export const octopusProvider = defineProvider<DeploymentProvider>({
 
 		return {
 			async queryDeployments(_ctx, query) {
-				// Octopus can filter by project, environment and task state, but not by our
-				// search, window or domain semantics. Fetching the window and querying it
-				// here keeps one definition of what a filter means across every adapter —
-				// the in-memory strategy the fixture source already uses.
+				// A query naming one service is pushed down. Octopus filters by project
+				// server-side, and a service's own deployment history is the commonest such
+				// query there is — one service page was loading four hundred deployments to
+				// show five of them, which is forty-five requests for two.
+				const project = query.service === ALL_SERVICES ? null : await projectFor(query.service);
+
+				if (project) {
+					const rows = await loadWindow(query.pageSize * PROJECT_OVERSCAN, settings.windowSize, {
+						projects: project
+					});
+
+					return queryDeploymentsInMemory(rows, query, new Date());
+				}
+
+				// A bounded window is a prefix of a newest-first list, so it need not walk the
+				// whole thing. Only an unbounded query pays for the shared window.
+				const days = DEPLOYMENT_WINDOW_DAYS[query.window];
+
+				if (days !== null) {
+					const notBefore = new Date(Date.now() - days * 86_400_000);
+					const rows = await loadWindow(settings.windowSize, settings.windowSize, {}, notBefore);
+
+					return queryDeploymentsInMemory(rows, query, new Date());
+				}
+
+				// Everything else stays in memory. Octopus cannot express our search or
+				// domain semantics, and keeping one definition of what a filter means across
+				// every adapter is worth more than pushing half of it down.
 				const all = await loadSharedWindow();
 				return queryDeploymentsInMemory(all, query, new Date());
 			},

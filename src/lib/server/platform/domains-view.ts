@@ -5,7 +5,16 @@ import type {
 	DomainsSnapshot
 } from '$lib/platform/types';
 import type { PlatformScope } from '$lib/platform/query';
-import type { PlatformSource } from './source';
+import { ALL_DOMAINS, ALL_ENVIRONMENTS, ALL_SERVICES } from '$lib/platform/deployments';
+
+/**
+ * How many of today's deployments to page in for the tile.
+ *
+ * The count itself comes from the page total, so this only bounds how many rows are
+ * scanned to learn which domains they touched — a number that saturates quickly.
+ */
+const TODAY_PAGE_SIZE = 200;
+import type { DeploymentSource, PlatformSource } from './source';
 import { buildDistribution } from '$lib/platform/health';
 import { buildCountTiles } from './snapshot';
 
@@ -76,17 +85,39 @@ function acrossDomains(count: number): string {
  */
 export async function buildDomainsSnapshot(
 	source: PlatformSource,
+	deployments: DeploymentSource,
 	scope: PlatformScope,
 	now: Date = new Date(),
 	incidentLimit = RECENT_CHANGE_LIMIT
 ): Promise<DomainsSnapshot> {
-	const [counts, activity, incidents, changes, owners] = await Promise.all([
+	const [counts, incidents, changes, owners, deployedToday] = await Promise.all([
 		source.readDomainStatusCounts(scope),
-		source.readActivitySummary(scope),
 		source.listIncidents(scope, incidentLimit),
 		source.listRecentChanges(scope, RECENT_CHANGE_LIMIT),
-		source.listOwners(scope)
+		source.listOwners(scope),
+		deployments.queryDeployments(scope, {
+			search: '',
+			state: 'all',
+			domain: ALL_DOMAINS,
+			service: ALL_SERVICES,
+			environment: ALL_ENVIRONMENTS,
+			window: 'today',
+			page: 1,
+			pageSize: TODAY_PAGE_SIZE
+		})
 	]);
+
+	// Derived from the rows already in hand rather than asked of a source.
+	//
+	// The tile used to come from an `apm.activity` capability, which was wrong twice
+	// over: an APM tool cannot know what deployed, and a separately-sourced count can
+	// disagree with the very list printed beneath it. Counting what was fetched cannot.
+	const activity: ActivitySummary = {
+		activeIncidents: incidents.length,
+		incidentDomains: new Set(incidents.map((one) => one.domainId)).size,
+		deploymentsToday: deployedToday.page.totalItems,
+		deploymentDomains: new Set(deployedToday.deployments.map((one) => one.domainId)).size
+	};
 
 	return {
 		generatedAt: now.toISOString(),

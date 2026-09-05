@@ -6,6 +6,8 @@ import {
 	buildRateTiles
 } from './deployments-view';
 import { FixtureDeploymentSource, FixturePlatformSource } from './fixture-source';
+import { buildDomainsSnapshot } from './domains-view';
+import { ALL_DOMAINS, ALL_ENVIRONMENTS, ALL_SERVICES } from '$lib/platform/deployments';
 import { matchesDeploymentState } from '$lib/platform/deployments';
 import type { DeploymentSummary } from '$lib/platform/types';
 import type { PlatformScope } from '$lib/platform/query';
@@ -180,16 +182,40 @@ describe('the deployment log', () => {
 });
 
 describe('the two activity totals', () => {
-	test('the deployment count agrees with the deployment summary', async () => {
-		const platform = new FixturePlatformSource();
-		const [activity, summary] = await Promise.all([
-			platform.readActivitySummary(scope),
-			source.readSummary(scope)
-		]);
+	test('the tile is derived from the deployments, so the two cannot disagree', async () => {
+		// They used to be sourced separately — an `apm.activity` capability and the
+		// deployment summary — and a caller comparing the two endpoints could find two
+		// different totals for one day. Derived from the same rows, that is now impossible
+		// rather than merely unlikely.
+		const snapshot = await buildDomainsSnapshot(
+			new FixturePlatformSource(),
+			new FixtureDeploymentSource(),
+			scope
+		);
 
-		// Two endpoints publish these separately; a caller comparing them must not find
-		// two different totals for one day.
-		expect(activity.deploymentsToday).toBe(summary.total);
-		expect(activity.deploymentDomains).toBe(summary.domainCount);
+		const tile = snapshot.counts.find((one) => one.id === 'deployments-today');
+		const today = await source.queryDeployments(scope, {
+			search: '',
+			state: 'all',
+			domain: ALL_DOMAINS,
+			service: ALL_SERVICES,
+			environment: ALL_ENVIRONMENTS,
+			window: 'today',
+			page: 1,
+			pageSize: 200
+		});
+
+		expect(tile?.value).toBe(today.page.totalItems);
+	});
+
+	test('the incident tile counts the very incidents listed beside it', async () => {
+		const snapshot = await buildDomainsSnapshot(
+			new FixturePlatformSource(),
+			new FixtureDeploymentSource(),
+			scope
+		);
+
+		const tile = snapshot.counts.find((one) => one.id === 'active-incidents');
+		expect(tile?.value).toBe(snapshot.incidents.length);
 	});
 });

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { RECENT_CHANGE_LIMIT, buildDomainCountTiles, buildDomainsSnapshot } from './domains-view';
-import { FixturePlatformSource } from './fixture-source';
+import { FixtureDeploymentSource, FixturePlatformSource } from './fixture-source';
 import type { ActivitySummary, DomainStatusCounts } from '$lib/platform/types';
 import type { PlatformScope } from '$lib/platform/query';
 
@@ -72,7 +72,12 @@ describe('buildDomainCountTiles', () => {
 
 describe('buildDomainsSnapshot', () => {
 	test('carries the scope it was assembled for', async () => {
-		const snapshot = await buildDomainsSnapshot(new FixturePlatformSource(), scope, new Date(0));
+		const snapshot = await buildDomainsSnapshot(
+			new FixturePlatformSource(),
+			new FixtureDeploymentSource(),
+			scope,
+			new Date(0)
+		);
 
 		expect(snapshot.environment).toBe('production');
 		expect(snapshot.timeRange).toBe('15m');
@@ -80,7 +85,11 @@ describe('buildDomainsSnapshot', () => {
 	});
 
 	test('the donut and the total tile agree', async () => {
-		const snapshot = await buildDomainsSnapshot(new FixturePlatformSource(), scope);
+		const snapshot = await buildDomainsSnapshot(
+			new FixturePlatformSource(),
+			new FixtureDeploymentSource(),
+			scope
+		);
 		const total = snapshot.counts.find((tile) => tile.id === 'total');
 
 		expect(total).toBeDefined();
@@ -88,13 +97,21 @@ describe('buildDomainsSnapshot', () => {
 	});
 
 	test('honours the change limit rather than trusting the source to slice', async () => {
-		const snapshot = await buildDomainsSnapshot(new FixturePlatformSource(), scope);
+		const snapshot = await buildDomainsSnapshot(
+			new FixturePlatformSource(),
+			new FixtureDeploymentSource(),
+			scope
+		);
 
 		expect(snapshot.changes.length).toBeLessThanOrEqual(RECENT_CHANGE_LIMIT);
 	});
 
 	test('sends the owner options, so the filter is not declared by the client', async () => {
-		const snapshot = await buildDomainsSnapshot(new FixturePlatformSource(), scope);
+		const snapshot = await buildDomainsSnapshot(
+			new FixturePlatformSource(),
+			new FixtureDeploymentSource(),
+			scope
+		);
 
 		expect(snapshot.owners.length).toBeGreaterThan(0);
 		expect(snapshot.owners.every((owner) => owner.count > 0)).toBe(true);

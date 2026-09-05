@@ -68,7 +68,6 @@ describe('the platform router', () => {
 
 		expect(await platform.readRates(scope)).toHaveLength(3);
 		expect(await platform.listIncidents(scope, 2)).toHaveLength(2);
-		expect((await platform.readActivitySummary(scope)).activeIncidents).toBeGreaterThan(0);
 		expect(await platform.readDomainVitals(scope, 'payment-domain')).not.toBeNull();
 	});
 

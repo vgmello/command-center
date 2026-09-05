@@ -40,6 +40,7 @@ import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
 import { buildDomainSnapshot } from './domain-view';
 import { buildInfrastructureSnapshot } from './infrastructure-view';
+import { ALL_DOMAINS, ALL_ENVIRONMENTS, ALL_SERVICES } from '$lib/platform/deployments';
 
 /**
  * The application's in-process API: one function per thing a caller can ask for.
@@ -117,8 +118,35 @@ export function readRecentDomainChanges(
 	return platformSource().listRecentChanges(scope, limit);
 }
 
-export function readActivitySummary(scope: PlatformScope): Promise<ActivitySummary> {
-	return platformSource().readActivitySummary(scope);
+/**
+ * Incidents and deployments today, composed rather than sourced.
+ *
+ * It used to be an `apm.activity` capability, which was wrong twice over: an APM tool has
+ * no idea what deployed, and a separately-sourced count can disagree with the list printed
+ * beneath it. Composed here, from the two ports that actually hold the facts — which is
+ * what this layer is for.
+ */
+export async function readActivitySummary(scope: PlatformScope): Promise<ActivitySummary> {
+	const [incidents, deployedToday] = await Promise.all([
+		platformSource().listIncidents(scope, INCIDENT_LIMIT),
+		deploymentSource().queryDeployments(scope, {
+			search: '',
+			state: 'all',
+			domain: ALL_DOMAINS,
+			service: ALL_SERVICES,
+			environment: ALL_ENVIRONMENTS,
+			window: 'today',
+			page: 1,
+			pageSize: 200
+		})
+	]);
+
+	return {
+		activeIncidents: incidents.length,
+		incidentDomains: new Set(incidents.map((one) => one.domainId)).size,
+		deploymentsToday: deployedToday.page.totalItems,
+		deploymentDomains: new Set(deployedToday.deployments.map((one) => one.domainId)).size
+	};
 }
 
 export async function readSystemStatus(scope: PlatformScope): Promise<SystemStatus> {
@@ -142,7 +170,7 @@ export function readOverview(scope: PlatformScope): Promise<OverviewSnapshot> {
  * stay stable while the screen changes.
  */
 export function readDomainsView(scope: PlatformScope): Promise<DomainsSnapshot> {
-	return buildDomainsSnapshot(platformSource(), scope);
+	return buildDomainsSnapshot(platformSource(), deploymentSource(), scope);
 }
 
 export function readServices(scope: PlatformScope): Promise<Service[]> {

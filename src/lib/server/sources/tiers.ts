@@ -46,7 +46,6 @@ export const CAPABILITY_TIER: Record<Capability, CapabilityTier> = {
 	'apm.incidents': 'reference',
 	'apm.insights': 'reference',
 	'apm.platformInsights': 'reference',
-	'apm.activity': 'reference',
 	'deployment.summary': 'reference',
 	'deployment.breakdown': 'reference',
 	'deployment.domains': 'reference',

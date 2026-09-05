@@ -29,7 +29,6 @@ export const fixtureApmProvider = defineProvider<ApmProvider>({
 		'apm.domainVitals',
 		'apm.rates',
 		'apm.incidents',
-		'apm.activity',
 		'apm.dependencies'
 	],
 	settings: v.object({}),
@@ -76,9 +75,6 @@ export const fixtureApmProvider = defineProvider<ApmProvider>({
 		},
 		async listIncidents(_ctx, limit) {
 			return platform.listIncidents(new Date()).slice(0, limit);
-		},
-		async readActivitySummary() {
-			return platform.listActivitySummary(new Date());
 		},
 		resourceLink(binding: SourceBinding | undefined, view: LinkView) {
 			if (!binding) return null;
