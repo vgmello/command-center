@@ -1,6 +1,8 @@
 import type { PlatformSource } from '../platform/source';
 import type { CatalogSource } from '../catalog/source';
 import { SourceCache } from './cache';
+import type { ConnectionLimits } from './rate-limit';
+import type { SourceStore } from '../store/source-store';
 import { createDispatcher } from './dispatch';
 import { FIXTURE_CONNECTIONS, FIXTURE_PROVIDERS } from './fixtures';
 import type { ProviderDefinition } from './provider';
@@ -78,6 +80,15 @@ export function buildSources(options: {
 	 * page admitting it.
 	 */
 	providers?: readonly ProviderDefinition<unknown>[];
+	/**
+	 * Where answers outlive the process.
+	 *
+	 * Absent means memory only, which is correct and simply asks the upstream far more
+	 * often — a deployment with no database still works.
+	 */
+	store?: SourceStore | null;
+	/** What bounds how often the sources may be asked. Absent means unbounded. */
+	limits?: ConnectionLimits | null;
 }) {
 	const registry = new SourceRegistry();
 	for (const provider of providersFor(options)) registry.register(provider);
@@ -86,7 +97,14 @@ export function buildSources(options: {
 
 	// One cache across all four routers: two screens asking different ports for the same
 	// capability should still issue one call.
-	const deps = { registry, dispatcher: createDispatcher(registry), cache: new SourceCache() };
+	//
+	// The store and the limiter are optional. With neither, this is exactly the behaviour
+	// it has always had — memory only, and the upstream asked whenever it misses.
+	const deps = {
+		registry,
+		dispatcher: createDispatcher(registry),
+		cache: new SourceCache({ store: options.store ?? null, limits: options.limits ?? null })
+	};
 
 	return createRouters(deps, options.catalog);
 }

@@ -142,10 +142,13 @@ describe('SourceCache', () => {
 		await cache.read(key('', 60), load);
 		now = 61_000;
 
-		expect(await cache.read(key('', 60), load)).toEqual({
-			data: 'fresh',
-			stale: true
-		});
+		const served = await cache.read(key('', 60), load);
+
+		expect(served.data).toBe('fresh');
+		expect(served.stale).toBe(true);
+		// The age travels with it, so a panel can say how old the answer is rather than
+		// implying it is current. Serving stale silently is the failure being avoided.
+		expect(served.fetchedAt?.getTime()).toBe(0);
 	});
 
 	test('a failure with nothing cached still throws', async () => {

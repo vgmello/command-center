@@ -159,6 +159,14 @@ export class PostgresSourceStore implements SourceStore {
 		return taken.length > 0 && taken[0].holder === holder;
 	}
 
+	async release(key: StoreKey, holder: string): Promise<void> {
+		// Scoped to the holder: a straggler whose lease already expired and was taken by
+		// someone else must not free the new owner's claim.
+		await this.#db
+			.delete(sourceLeases)
+			.where(and(eq(sourceLeases.key, hashKey(key)), eq(sourceLeases.holder, holder)));
+	}
+
 	async prune(now: Date, retentionHours: number): Promise<void> {
 		const horizon = new Date(now.getTime() - retentionHours * 3_600_000);
 

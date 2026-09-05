@@ -71,6 +71,16 @@ export interface SourceStore {
 	 */
 	claim(key: StoreKey, holder: string, seconds: number): Promise<boolean>;
 
+	/**
+	 * Give the lease back, having written the answer.
+	 *
+	 * Without this a winner holds its lease for the full duration even though the row is
+	 * already there, and every other instance waits out a poll window for an answer it
+	 * could have had immediately. Only the holder may release, so a late straggler cannot
+	 * free someone else's live claim.
+	 */
+	release(key: StoreKey, holder: string): Promise<void>;
+
 	/** Drop expired documents, dead leases, and samples past their retention. */
 	prune(now: Date, retentionHours: number): Promise<void>;
 

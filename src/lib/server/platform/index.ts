@@ -1,5 +1,7 @@
 import { env } from '$env/dynamic/private';
 import { catalogSource } from '../catalog';
+import { PostgresSourceStore } from '../store/postgres-store';
+import { ConnectionLimits } from '../sources/rate-limit';
 import { buildSources, readSourceConfig } from '../sources/boot';
 import { FixturePlatformSource, FixtureWorkspaceSource } from './fixture-source';
 import { selectSource } from './select-source';
@@ -27,10 +29,35 @@ import type {
  * lazy `Proxy` that resolves on first use; a synchronous boot is simpler to reason about
  * and the config is only ever read once, so there is nothing to gain by deferring it.
  */
+/**
+ * Where answers outlive the process, when a database is configured.
+ *
+ * Unset means memory only — correct, and simply asking the upstream far more often. A
+ * deployment with no database still works, which is why this is a null rather than a
+ * refusal to start.
+ */
+const store = env.DATABASE_URL ? new PostgresSourceStore(env.DATABASE_URL) : null;
+
+/**
+ * What bounds how often the sources may be asked.
+ *
+ * Caching lowers how often we ask; it does not cap it. Eight instances starting cold
+ * after a deploy miss on everything at once, so the limiter is what makes exceeding a
+ * documented rate limit impossible rather than merely unlikely. The default is
+ * deliberately modest — the APIs behind these ports have low limits, and a connection
+ * that can afford more should say so.
+ */
+const limits = new ConnectionLimits({
+	perSecond: Number(env.SOURCE_RATE_PER_SECOND ?? 5),
+	burst: Number(env.SOURCE_RATE_BURST ?? 10)
+});
+
 const routers = buildSources({
 	config: await readSourceConfig(env.SOURCES_CONFIG),
 	env,
-	catalog: { platform: new FixturePlatformSource(), services: catalogSource() }
+	catalog: { platform: new FixturePlatformSource(), services: catalogSource() },
+	store,
+	limits
 });
 
 export function platformSource(): PlatformSource {
