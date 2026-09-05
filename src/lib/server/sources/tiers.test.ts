@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { CAPABILITIES } from '$lib/platform/sources';
+import { CAPABILITIES, type Capability } from '$lib/platform/sources';
 import { CAPABILITY_TIER, isDocument, isPersisted } from './tiers';
 
 describe('CAPABILITY_TIER', () => {
@@ -28,7 +28,23 @@ describe('CAPABILITY_TIER', () => {
 		// 24-hour view would share nothing — which is the entire point of accumulating.
 		expect(isPersisted('apm.metricSeries')).toBe(true);
 		expect(isDocument('apm.metricSeries')).toBe(false);
-		expect(isDocument('deployment.trends')).toBe(false);
+	});
+
+	test('only capabilities a router actually accumulates are classified series', () => {
+		// The defect this guards against was silent and expensive. `deployment.trends`,
+		// `deployment.statusTrend` and `apm.latencyHeatmap` were all declared `series`
+		// while `fanOutSeries` was called for none of them, so they fell through both
+		// strategies: not documents, so the cache never persisted them, and not
+		// accumulated, so they never reached `source_series` either. Every read fetched a
+		// four-hundred-row window, forever, with nothing anywhere reporting a problem.
+		//
+		// `series` is a promise that something accumulates the capability. Until a router
+		// reads one through `fanOutSeries`, it does not belong in this tier — and adding
+		// it here without that wiring must fail rather than go quiet.
+		const accumulated = new Set<Capability>(['apm.metricSeries']);
+		const declared = CAPABILITIES.filter((one) => CAPABILITY_TIER[one] === 'series');
+
+		expect(new Set(declared)).toEqual(accumulated);
 	});
 
 	test('every tier is actually used', () => {

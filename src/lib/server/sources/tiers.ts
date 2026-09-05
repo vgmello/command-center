@@ -50,14 +50,28 @@ export const CAPABILITY_TIER: Record<Capability, CapabilityTier> = {
 	'deployment.breakdown': 'reference',
 	'deployment.domains': 'reference',
 	'deployment.insights': 'reference',
+	// Windows over time, and genuinely series-shaped — but `series` is a promise that a
+	// router accumulates them, and only `apm.metricSeries` is accumulated today. Declared
+	// `series` they fell through both strategies: `isDocument` false, so the cache never
+	// persisted them, and no router called `fanOutSeries` for them either. The result was
+	// silent, which is the worst part — no error and no gap, just a four-hundred-row window
+	// re-fetched on every read. Measured, that was the whole cost of the deployments page:
+	// 45 requests warm, of which the live log was 6.
+	//
+	// So they sit here until they are actually accumulated. As documents they key on the
+	// question — switching trend grain pays full price again — which is a real limitation
+	// and a much smaller one than paying it every time.
+	// See `docs/superpowers/specs/2026-09-06-deployment-trend-accumulation-design.md`.
+	'deployment.trends': 'reference',
+	'deployment.statusTrend': 'reference',
+	'apm.latencyHeatmap': 'reference',
 
 	// Series: accumulated buckets. Persisted as samples by the series path, not as
 	// documents — a whole-answer copy would key on the window and share nothing between
 	// a fifteen-minute view and a twenty-four-hour one.
-	'apm.metricSeries': 'series',
-	'apm.latencyHeatmap': 'series',
-	'deployment.trends': 'series',
-	'deployment.statusTrend': 'series'
+	//
+	// Nothing belongs here until a router reads it through `fanOutSeries`.
+	'apm.metricSeries': 'series'
 };
 
 /** Whether an answer to this capability is worth keeping past the process. */

@@ -338,48 +338,43 @@ second page view, served by an instance with an empty memory tier over a warm Po
 Fresh routers on purpose, because reusing them would measure the memory tier, which
 answers in zero requests and is lost on every restart.
 
-The measured answer is that the store works and mostly does not help yet:
+The measured answer, after the fix below:
 
 | Screen          | Cold | Warm |
 | --------------- | ---: | ---: |
 | overview        |   20 |   17 |
 | domains         |   14 |   14 |
 | domain detail   |    9 |    9 |
-| deployments     |   45 |   45 |
+| deployments     |   48 |    6 |
 | service detail  |   30 |   28 |
-| service metrics |   18 |   13 |
+| service metrics |   18 |   12 |
+| infrastructure  |    0 |    0 |
 
-The store is not at fault, and a test pins that down: a warm instance answers the three
-`reference`-tier deployment aggregates in **zero** requests, having never spoken to
-Octopus. Measured per capability, the whole 45 belongs to two of them:
+Deployments was 45 warm — the same as cold — and it was the whole reason to look. Measured
+per capability, the live log cost 6 of that and `readTrends` and `readStatusTrend` cost 45
+each. Both were declared `series` in `tiers.ts` while `fanOutSeries` was called in exactly
+one place, for `apm.metricSeries`, so they fell through **both** strategies: `isDocument`
+false, so the cache never persisted them, and no router accumulated them, so they never
+reached `source_series` either. Every read paged a four-hundred-row window — fourteen pages
+at three requests each, since every page carries a `/api/tasks` and a
+`/api/Spaces-1/releases` enrichment call — and nothing anywhere reported a problem.
 
-| Warm read on the deployments page | Requests |
-| --------------------------------- | -------: |
-| `readSummary`                     |        0 |
-| `readDomainBreakdown`             |        0 |
-| `listDeployingDomains`            |        0 |
-| `listDeployments(8)` — the log    |        6 |
-| `readTrends`                      |       45 |
-| `readStatusTrend`                 |       45 |
+**`series` is a promise that a router accumulates the capability.** Declaring one there
+without that wiring buys nothing and says nothing, which is why `tiers.test.ts` now asserts
+the `series` tier holds exactly what `fanOutSeries` reads. `deployment.trends`,
+`deployment.statusTrend` and `apm.latencyHeatmap` are `reference` until they are actually
+accumulated.
 
-`deployment.trends` and `deployment.statusTrend` are `series` tier in `tiers.ts`, but
-`fanOutSeries` is called in exactly one place — `service.ts`, for `apm.metricSeries`. The
-deployment router uses `fanOut`/`fanOutSingle`, so those two never reach `source_series`.
-Each therefore asks the provider afresh, and the provider answers by paging its whole
-four-hundred-row window: fourteen pages at three requests each — the deployment page plus
-a `/api/tasks` and a `/api/Spaces-1/releases` enrichment call — plus three for the
-catalogue.
+That is a whole-answer cache, so it keys on the question: `grain=daily` and `grain=weekly`
+share no rows, and switching grain still pays 48. Making the three grains read the same
+stored rows is the next increment, specified in
+`docs/superpowers/specs/2026-09-06-deployment-trend-accumulation-design.md`. It cannot
+reuse `fanOutSeries` unchanged — these capabilities take their window from `TREND_DAYS`
+rather than the scope, every grain exceeds the 24-hour stored horizon, and a 60-second
+bucket is wrong for sparse events.
 
-**The live log is not the expensive part.** At six requests it is already cheap, and it
-stays `live` on purpose: a deployment feed read back off disk is a feed that has stopped
-reporting.
-
-**Wiring those two into the accumulation path is the fix**, and it needs no new table —
-they are numeric buckets over time, which is what `source_series` holds. Two details
-decide it: deployment counts are additive, so downsampling must sum rather than average
-the way the APM path does; and `grain=daily` currently sits in the cache key, which is the
-"keys on the question" problem accumulation exists to remove — daily and weekly should
-share rows.
+The live log stays `live` and stays cheap. A deployment feed read back off disk is a feed
+that has stopped reporting.
 
 ### Charts are arithmetic, not a dependency
 
@@ -660,7 +655,7 @@ an `@` costs its full length in every session, whether or not the session touche
 ## State
 
 Overview, Domains, Deployments, the Service detail view and Infrastructure built and
-verified, plus the service Metrics tab and the Domain detail view. `bun test` (711 tests), `bun run check`, `bun run lint`,
+verified, plus the service Metrics tab and the Domain detail view. `bun test` (714 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:

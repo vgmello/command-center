@@ -189,10 +189,10 @@ const WARM_CEILING: Record<string, number> = {
 	overview: 22,
 	domains: 18,
 	'domain detail': 14,
-	// Not a typo, and the number this file exists to explain — see the test below.
-	deployments: 50,
+	// Was 50, and the reason this file exists. See the two deployment tests below.
+	deployments: 10,
 	'service detail': 33,
-	'service metrics': 18,
+	'service metrics': 16,
 	infrastructure: 5
 };
 
@@ -259,21 +259,40 @@ describeWarm('what the store actually buys', () => {
 		}
 	});
 
-	test('the two deployment series are what cost the page, because nothing accumulates them', async () => {
-		// The actual finding. Both are `series` tier in `tiers.ts`, but `fanOutSeries` is
-		// called in exactly one place — the service router, for `apm.metricSeries` — so the
-		// deployment router's `fanOut`/`fanOutSingle` never reach `source_series`. Each read
-		// therefore asks the provider afresh, and the provider answers by paging its whole
-		// window: fourteen pages at three requests each, plus the catalogue.
+	test('the two deployment series are served from the store, now that they are documents', async () => {
+		// They used to cost 45 each warm. Both were declared `series` while `fanOutSeries`
+		// was called for neither, so they fell through the cache and the accumulator alike
+		// and re-fetched a four-hundred-row window on every read. Classified `reference`
+		// they take the path the sibling aggregates already take, and cost nothing.
+		const h = harness();
+
+		try {
+			await h.build().deployment.readTrends(scope, 'daily');
+			await h.build().deployment.readStatusTrend(scope);
+			// The write is fire-and-forget, so let it land before a fresh instance looks.
+			await Bun.sleep(400);
+
+			const warm = h.build();
+			h.reset();
+
+			await warm.deployment.readTrends(scope, 'daily');
+			await warm.deployment.readStatusTrend(scope);
+
+			expect(h.count()).toBe(0);
+		} finally {
+			h.stop();
+		}
+	});
+
+	test('but a different grain pays full price, because a document keys on the question', async () => {
+		// The limitation this buys, stated rather than discovered. `grain=daily` is part of
+		// the cache key, so `weekly` is a different question and shares no rows with it —
+		// even though both are renderings of the same underlying runs.
 		//
-		// They are numeric buckets over time, which is exactly what `source_series` holds,
-		// so wiring them into the accumulation path needs no new table. Two things decide
-		// it: deployment counts are additive, so downsampling must sum rather than average
-		// the way the APM path does; and `grain=daily` currently sits in the cache key,
-		// which is the "keys on the question" problem accumulation exists to remove.
-		//
-		// This test is here so that is not rediscovered by measuring again, and so it turns
-		// red — as an unexpected pass — on the day someone does wire them up.
+		// Accumulating them into `source_series` is what makes the grains share rows, and
+		// it is the next increment. This test is the reason it is worth doing, and it turns
+		// red as an unexpected pass on the day it lands.
+		// See docs/superpowers/specs/2026-09-06-deployment-trend-accumulation-design.md.
 		const h = harness();
 
 		try {
@@ -282,9 +301,8 @@ describeWarm('what the store actually buys', () => {
 
 			const warm = h.build();
 			h.reset();
-			await warm.deployment.readTrends(scope, 'daily');
+			await warm.deployment.readTrends(scope, 'weekly');
 
-			// Warm and still paying full price: no accumulation, so the whole window again.
 			expect(h.count()).toBeGreaterThan(30);
 		} finally {
 			h.stop();
