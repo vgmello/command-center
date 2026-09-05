@@ -237,18 +237,11 @@ describeWarm('what the store actually buys', () => {
 		}
 	});
 
-	test('and cannot help the live log, which is why the deployments page does not improve', async () => {
-		// The finding this file was written to record. The deployments page costs one
-		// window of four hundred rows, and the window sits behind `deployment.log` — a
-		// `live` capability, deliberately never persisted, because a deployment feed read
-		// back off disk is a feed that has stopped reporting.
-		//
-		// Everything else on that page is computed from the window in memory, so the store
-		// saves nothing there: the aggregates it holds were already free once the window
-		// existed. Making that page cheaper means fetching the log incrementally against a
-		// high-water mark, the way the series path already does — settled history never
-		// changes, so only entries newer than the last one need fetching. That is its own
-		// increment; this test is here so the reason is not rediscovered from scratch.
+	test('the live log stays cheap, so it is not what the page is paying for', async () => {
+		// Worth pinning because it is the obvious suspect and it is the wrong one. The log
+		// is `live` tier and deliberately never persisted — a deployment feed read back off
+		// disk is a feed that has stopped reporting — so it does cost requests warm. It
+		// costs few: one page of rows plus the provider's catalogue.
 		const h = harness();
 
 		try {
@@ -260,6 +253,39 @@ describeWarm('what the store actually buys', () => {
 			await warm.deployment.listDeployments(scope, 8);
 
 			expect(h.count()).toBeGreaterThan(0);
+			expect(h.count()).toBeLessThan(12);
+		} finally {
+			h.stop();
+		}
+	});
+
+	test('the two deployment series are what cost the page, because nothing accumulates them', async () => {
+		// The actual finding. Both are `series` tier in `tiers.ts`, but `fanOutSeries` is
+		// called in exactly one place — the service router, for `apm.metricSeries` — so the
+		// deployment router's `fanOut`/`fanOutSingle` never reach `source_series`. Each read
+		// therefore asks the provider afresh, and the provider answers by paging its whole
+		// window: fourteen pages at three requests each, plus the catalogue.
+		//
+		// They are numeric buckets over time, which is exactly what `source_series` holds,
+		// so wiring them into the accumulation path needs no new table. Two things decide
+		// it: deployment counts are additive, so downsampling must sum rather than average
+		// the way the APM path does; and `grain=daily` currently sits in the cache key,
+		// which is the "keys on the question" problem accumulation exists to remove.
+		//
+		// This test is here so that is not rediscovered by measuring again, and so it turns
+		// red — as an unexpected pass — on the day someone does wire them up.
+		const h = harness();
+
+		try {
+			await h.build().deployment.readTrends(scope, 'daily');
+			await Bun.sleep(400);
+
+			const warm = h.build();
+			h.reset();
+			await warm.deployment.readTrends(scope, 'daily');
+
+			// Warm and still paying full price: no accumulation, so the whole window again.
+			expect(h.count()).toBeGreaterThan(30);
 		} finally {
 			h.stop();
 		}

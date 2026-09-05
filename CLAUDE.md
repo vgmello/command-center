@@ -351,16 +351,35 @@ The measured answer is that the store works and mostly does not help yet:
 
 The store is not at fault, and a test pins that down: a warm instance answers the three
 `reference`-tier deployment aggregates in **zero** requests, having never spoken to
-Octopus. The deployments page still costs 45 because it also needs the log, and the log is
-`live` — deliberately never persisted, since a deployment feed read back off disk is a
-feed that has stopped reporting. Asking for it makes the Octopus provider page one window
-of four hundred rows, and every aggregate on that page is then computed from the window in
-memory. The store's copies were saving work that was already free.
+Octopus. Measured per capability, the whole 45 belongs to two of them:
 
-**Making that page cheaper means fetching the log incrementally**, against a high-water
-mark, the way the series path already does — settled history never changes, so only
-entries newer than the last one need fetching. That is its own increment. The test records
-the reason so it is not rediscovered by measuring again.
+| Warm read on the deployments page | Requests |
+| --------------------------------- | -------: |
+| `readSummary`                     |        0 |
+| `readDomainBreakdown`             |        0 |
+| `listDeployingDomains`            |        0 |
+| `listDeployments(8)` — the log    |        6 |
+| `readTrends`                      |       45 |
+| `readStatusTrend`                 |       45 |
+
+`deployment.trends` and `deployment.statusTrend` are `series` tier in `tiers.ts`, but
+`fanOutSeries` is called in exactly one place — `service.ts`, for `apm.metricSeries`. The
+deployment router uses `fanOut`/`fanOutSingle`, so those two never reach `source_series`.
+Each therefore asks the provider afresh, and the provider answers by paging its whole
+four-hundred-row window: fourteen pages at three requests each — the deployment page plus
+a `/api/tasks` and a `/api/Spaces-1/releases` enrichment call — plus three for the
+catalogue.
+
+**The live log is not the expensive part.** At six requests it is already cheap, and it
+stays `live` on purpose: a deployment feed read back off disk is a feed that has stopped
+reporting.
+
+**Wiring those two into the accumulation path is the fix**, and it needs no new table —
+they are numeric buckets over time, which is what `source_series` holds. Two details
+decide it: deployment counts are additive, so downsampling must sum rather than average
+the way the APM path does; and `grain=daily` currently sits in the cache key, which is the
+"keys on the question" problem accumulation exists to remove — daily and weekly should
+share rows.
 
 ### Charts are arithmetic, not a dependency
 
