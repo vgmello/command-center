@@ -80,6 +80,14 @@ interface OctopusReleaseRow {
 	Version: string;
 }
 
+/**
+ * How long the shared window is reused across capabilities.
+ *
+ * Matched to the shortest TTL of anything reading it — the deployment log's thirty
+ * seconds — so sharing never serves data staler than the capability that wanted it.
+ */
+const SHARED_WINDOW_MS = 30_000;
+
 /** Octopus caps a page at thirty, whatever `take` asks for. */
 const PAGE_SIZE = 30;
 
@@ -216,6 +224,39 @@ export const octopusProvider = defineProvider<DeploymentProvider>({
 		 * `scan` bounds the work so an instance whose environments mostly do not map
 		 * cannot turn one panel into an unbounded walk of its whole history.
 		 */
+		/**
+		 * The full window, fetched once for however many capabilities want it.
+		 *
+		 * Six of them do — the log, the summary, the domain breakdown, the status trend,
+		 * the trends and the deploying domains — and each is a separate capability with its
+		 * own cache entry, so each was independently paging the same four hundred
+		 * deployments. Drawing one page cost 216 requests; sharing the window makes it 36.
+		 *
+		 * The cache above cannot solve this: it keys on capability, and these are six
+		 * different capabilities that happen to be computed from one fetch. Only the
+		 * provider knows they share an origin, so only the provider can say so.
+		 *
+		 * A short TTL rather than a permanent memo. The client lives as long as the
+		 * connection, and a deployment log that never refreshed would be worse than one
+		 * that costs a few requests.
+		 */
+		let shared: { at: number; window: Promise<Deployment[]> } | null = null;
+
+		function loadSharedWindow(): Promise<Deployment[]> {
+			const now = Date.now();
+
+			if (!shared || now - shared.at > SHARED_WINDOW_MS) {
+				shared = { at: now, window: loadWindow(settings.windowSize) };
+			}
+
+			return shared.window;
+		}
+
+		/** Whether the shared window is already loaded or on its way. */
+		function sharedIsWarm(): boolean {
+			return shared !== null && Date.now() - shared.at <= SHARED_WINDOW_MS;
+		}
+
 		async function loadWindow(want: number, scan = settings.windowSize): Promise<Deployment[]> {
 			const catalogue = await readCatalogue();
 			const mapped: Deployment[] = [];
@@ -241,7 +282,7 @@ export const octopusProvider = defineProvider<DeploymentProvider>({
 
 		/** Rows inside a window, and the equal window before it, for the change figures. */
 		async function loadComparable(days: number, now: Date) {
-			const all = await loadWindow(settings.windowSize);
+			const all = await loadSharedWindow();
 			const start = new Date(now.getTime() - days * 86_400_000);
 			const previousStart = new Date(start.getTime() - days * 86_400_000);
 
@@ -262,11 +303,17 @@ export const octopusProvider = defineProvider<DeploymentProvider>({
 				// search, window or domain semantics. Fetching the window and querying it
 				// here keeps one definition of what a filter means across every adapter —
 				// the in-memory strategy the fixture source already uses.
-				const all = await loadWindow(settings.windowSize);
+				const all = await loadSharedWindow();
 				return queryDeploymentsInMemory(all, query, new Date());
 			},
 
 			async listDeployments(_ctx, limit) {
+				// The shared window when something else already paid for it — the overview's
+				// recent feed then costs nothing. Otherwise a narrow walk: fetching four
+				// hundred deployments to show eight would be a worse trade than the one
+				// sharing exists to make.
+				if (sharedIsWarm()) return (await loadSharedWindow()).slice(0, limit);
+
 				return loadWindow(limit);
 			},
 
