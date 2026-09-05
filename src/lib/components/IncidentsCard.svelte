@@ -2,19 +2,25 @@
 	import RelativeTime from './RelativeTime.svelte';
 	import SectionCard from './SectionCard.svelte';
 	import StatusBadge from './StatusBadge.svelte';
+	import PanelGap from './PanelGap.svelte';
 	import { SEVERITY_LABELS, severityTone } from './tone';
+	import type { Panel } from '$lib/platform/sources';
 	import type { Incident } from '$lib/platform/types';
 
 	interface Props {
-		incidents: Incident[];
+		/** A panel because not every deployment has an APM source that tracks incidents. */
+		incidents: Panel<Incident[]>;
 	}
 
 	let { incidents }: Props = $props();
+
+	const rows = $derived(incidents.status === 'ok' ? incidents.data : []);
 </script>
 
 <SectionCard title="Top Active Incidents" href="/alerts">
+	<PanelGap panel={incidents} noun="incidents" class="px-4 pb-4" />
 	<ul class="pb-2">
-		{#each incidents as incident (incident.id)}
+		{#each rows as incident (incident.id)}
 			{@const tone = severityTone(incident.severity)}
 			<li>
 				<div class="flex items-start gap-2 px-4 py-[7px] transition-colors hover:bg-accent/40">

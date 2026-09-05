@@ -1,5 +1,5 @@
 import type {
-	ActivitySummary,
+	ActivityCounts,
 	CountTile,
 	DomainStatusCounts,
 	DomainsSnapshot
@@ -17,6 +17,7 @@ const TODAY_PAGE_SIZE = 200;
 import type { DeploymentSource, PlatformSource } from './source';
 import { buildDistribution } from '$lib/platform/health';
 import { buildCountTiles } from './snapshot';
+import { panel } from '../sources/panel';
 
 /**
  * Assembles the domains page from whatever source is configured.
@@ -45,7 +46,7 @@ export const RECENT_CHANGE_LIMIT = 5;
  */
 export function buildDomainCountTiles(
 	counts: DomainStatusCounts,
-	activity: ActivitySummary
+	activity: ActivityCounts
 ): CountTile[] {
 	return [
 		...buildCountTiles(counts),
@@ -56,7 +57,10 @@ export function buildDomainCountTiles(
 			value: activity.activeIncidents,
 			percentage: null,
 			caption: acrossDomains(activity.incidentDomains),
-			tone: activity.activeIncidents > 0 ? 'down' : 'healthy'
+			// No tone when there is no number: an unknown count must not be tinted the
+			// healthy green that "zero incidents" earns.
+			tone:
+				activity.activeIncidents === null ? null : activity.activeIncidents > 0 ? 'down' : 'healthy'
 		},
 		{
 			id: 'deployments-today',
@@ -70,7 +74,10 @@ export function buildDomainCountTiles(
 	];
 }
 
-function acrossDomains(count: number): string {
+function acrossDomains(count: number | null): string {
+	// A caption, not a null: the tile's second line is where a reader looks to find out
+	// why the first one is a dash, and an empty string tells them nothing.
+	if (count === null) return 'Not reported';
 	return `Across ${count} domain${count === 1 ? '' : 's'}`;
 }
 
@@ -91,20 +98,26 @@ export async function buildDomainsSnapshot(
 	incidentLimit = RECENT_CHANGE_LIMIT
 ): Promise<DomainsSnapshot> {
 	const [counts, incidents, changes, owners, deployedToday] = await Promise.all([
+		// The catalog reads stay unwrapped: they are this app's own record, and without
+		// them the page has no rows to hang a gap on.
 		source.readDomainStatusCounts(scope),
-		source.listIncidents(scope, incidentLimit),
+		panel('apm.incidents', async () => ({
+			data: await source.listIncidents(scope, incidentLimit)
+		})),
 		source.listRecentChanges(scope, RECENT_CHANGE_LIMIT),
 		source.listOwners(scope),
-		deployments.queryDeployments(scope, {
-			search: '',
-			state: 'all',
-			domain: ALL_DOMAINS,
-			service: ALL_SERVICES,
-			environment: ALL_ENVIRONMENTS,
-			window: 'today',
-			page: 1,
-			pageSize: TODAY_PAGE_SIZE
-		})
+		panel('deployment.log', async () => ({
+			data: await deployments.queryDeployments(scope, {
+				search: '',
+				state: 'all',
+				domain: ALL_DOMAINS,
+				service: ALL_SERVICES,
+				environment: ALL_ENVIRONMENTS,
+				window: 'today',
+				page: 1,
+				pageSize: TODAY_PAGE_SIZE
+			})
+		}))
 	]);
 
 	// Derived from the rows already in hand rather than asked of a source.
@@ -112,11 +125,18 @@ export async function buildDomainsSnapshot(
 	// The tile used to come from an `apm.activity` capability, which was wrong twice
 	// over: an APM tool cannot know what deployed, and a separately-sourced count can
 	// disagree with the very list printed beneath it. Counting what was fetched cannot.
-	const activity: ActivitySummary = {
-		activeIncidents: incidents.length,
-		incidentDomains: new Set(incidents.map((one) => one.domainId)).size,
-		deploymentsToday: deployedToday.page.totalItems,
-		deploymentDomains: new Set(deployedToday.deployments.map((one) => one.domainId)).size
+	//
+	// A gap therefore propagates as null rather than as zero, for the same reason: the
+	// count describes the rows fetched, and no rows were.
+	const activity: ActivityCounts = {
+		activeIncidents: incidents.status === 'ok' ? incidents.data.length : null,
+		incidentDomains:
+			incidents.status === 'ok' ? new Set(incidents.data.map((one) => one.domainId)).size : null,
+		deploymentsToday: deployedToday.status === 'ok' ? deployedToday.data.page.totalItems : null,
+		deploymentDomains:
+			deployedToday.status === 'ok'
+				? new Set(deployedToday.data.deployments.map((one) => one.domainId)).size
+				: null
 	};
 
 	return {

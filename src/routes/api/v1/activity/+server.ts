@@ -10,8 +10,9 @@ import { readActivitySummary } from '$lib/server/platform/service';
  *   get:
  *     summary: Summarise incident and deployment activity
  *     description: >-
- *       Open incidents and today's deployments, with how many domains each spans. One
- *       call because both come from the same activity store.
+ *       Open incidents and today's deployments, with how many domains each spans.
+ *       Composed from the incident and deployment sources rather than read from one
+ *       place, so the counts always agree with the lists the other endpoints return.
  *     operationId: getActivitySummary
  *     tags:
  *       - Activity

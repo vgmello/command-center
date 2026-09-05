@@ -16,7 +16,7 @@
 	<p class="text-[12px] font-medium text-muted-foreground">{tile.label}</p>
 	<div class="mt-1.5 flex items-center justify-between gap-2">
 		<span class="tabular text-[26px] leading-none font-semibold {tone?.text ?? 'text-foreground'}">
-			{tile.value}
+			{tile.value ?? '—'}
 		</span>
 		<span
 			class="grid size-9 shrink-0 place-items-center rounded-lg {tone
@@ -27,6 +27,6 @@
 		</span>
 	</div>
 	<p class="tabular mt-2 text-[11.5px] text-muted-foreground">
-		{tile.caption ?? `${tile.percentage}%`}
+		{tile.caption ?? (tile.percentage === null ? '—' : `${tile.percentage}%`)}
 	</p>
 </article>

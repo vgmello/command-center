@@ -99,7 +99,13 @@ export interface CountTile {
 	label: string;
 	/** Icon key, named by the server for the same reason every other icon is. */
 	icon: string;
-	value: number;
+	/**
+	 * `null` when the source that would state it is not connected.
+	 *
+	 * Printing 0 there would be a fabrication — "no incidents" and "nothing is watching
+	 * for incidents" are opposite readings of the same tile.
+	 */
+	value: number | null;
 	/** Share of the platform total, 0–100. `null` on the total tile itself. */
 	percentage: number | null;
 	caption: string | null;
@@ -940,18 +946,42 @@ export interface ActivitySummary {
 	deploymentDomains: number;
 }
 
+/**
+ * The same four counts, as the domains screen can know them.
+ *
+ * Separate from `ActivitySummary` rather than a nullable version of it, because the two
+ * answer different questions. `/api/v1/activity` publishes a fact and owes a caller a
+ * 501 when it cannot state one — a null there would be a frozen contract quietly
+ * growing a new value. A screen has the rest of a page to draw and prints a dash.
+ */
+export interface ActivityCounts {
+	/** `null` when no connected APM source tracks incidents. */
+	activeIncidents: number | null;
+	incidentDomains: number | null;
+	/** `null` when no connected deployment source keeps a log. */
+	deploymentsToday: number | null;
+	deploymentDomains: number | null;
+}
+
 /** Everything the overview page needs except the paged domain table. */
 export interface OverviewSnapshot {
 	/** ISO 8601 timestamp of assembly — drives the "last updated" affordance. */
 	generatedAt: string;
 	environment: EnvironmentId;
 	timeRange: TimeRangeId;
+	/**
+	 * The spine: read from the catalog, this app's own record, so it is never a panel.
+	 *
+	 * Everything below that comes from a connected source is, because a deployment may
+	 * legitimately have no cloud account or no APM tenant — and a missing queue metric
+	 * must cost the reader the queue tile, not the dashboard.
+	 */
 	counts: CountTile[];
-	metrics: RateMetric[];
+	metrics: Panel<RateMetric[]>;
 	distribution: HealthDistribution;
-	incidents: Incident[];
-	deployments: Deployment[];
-	infrastructure: InfrastructureGroup[];
+	incidents: Panel<Incident[]>;
+	deployments: Panel<Deployment[]>;
+	infrastructure: Panel<InfrastructureGroup[]>;
 	system: SystemStatus;
 	/**
 	 * Fleet-wide findings, or an account of why there are none.
@@ -976,7 +1006,8 @@ export interface DomainsSnapshot {
 	timeRange: TimeRangeId;
 	counts: CountTile[];
 	distribution: HealthDistribution;
-	incidents: Incident[];
+	/** A panel, for the same reason the overview's is: incidents come from an APM source. */
+	incidents: Panel<Incident[]>;
 	changes: DomainChange[];
 	/** The owner filter's options, read from the source rather than declared by the UI. */
 	owners: FacetOption[];

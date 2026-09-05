@@ -93,7 +93,7 @@ describe('buildDomainsSnapshot', () => {
 		const total = snapshot.counts.find((tile) => tile.id === 'total');
 
 		expect(total).toBeDefined();
-		expect(snapshot.distribution.total).toBe(total!.value);
+		expect(snapshot.distribution.total).toBe(total!.value!);
 	});
 
 	test('honours the change limit rather than trusting the source to slice', async () => {

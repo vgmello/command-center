@@ -3,19 +3,25 @@
 	import RelativeTime from '../RelativeTime.svelte';
 	import SectionCard from '../SectionCard.svelte';
 	import StatusBadge from '../StatusBadge.svelte';
+	import PanelGap from '../PanelGap.svelte';
 	import { DEPLOYMENT_LABELS, deploymentTone } from '../tone';
+	import type { Panel } from '$lib/platform/sources';
 	import type { Deployment } from '$lib/platform/types';
 
 	interface Props {
-		deployments: Deployment[];
+		/** A panel because a deployment with no CI/CD source connected still has an overview. */
+		deployments: Panel<Deployment[]>;
 	}
 
 	let { deployments }: Props = $props();
+
+	const rows = $derived(deployments.status === 'ok' ? deployments.data : []);
 </script>
 
 <SectionCard title="Recent Deployments" href="/deployments">
+	<PanelGap panel={deployments} noun="recent deployments" class="px-4 pb-4" />
 	<ul class="pb-2">
-		{#each deployments as deployment (deployment.id)}
+		{#each rows as deployment (deployment.id)}
 			{@const tone = deploymentTone(deployment.status)}
 			<li>
 				<div class="flex items-center gap-1.5 px-4 py-[7px] transition-colors hover:bg-accent/40">

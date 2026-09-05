@@ -189,7 +189,7 @@ describe('buildCountTiles', () => {
 		const [total, ...statuses] = buildCountTiles(counts(18, 4, 3));
 
 		expect(total.value).toBe(25);
-		expect(statuses.reduce((sum, tile) => sum + tile.value, 0)).toBe(25);
+		expect(statuses.reduce((sum, tile) => sum + (tile.value ?? 0), 0)).toBe(25);
 		expect(statuses.map((tile) => tile.percentage)).toEqual([72, 16, 12]);
 	});
 
@@ -321,7 +321,7 @@ describe('buildOverview', () => {
 		const healthySlice = snapshot.distribution.slices.find((slice) => slice.status === 'healthy');
 
 		expect(healthyTile?.value).toBe(healthySlice?.count);
-		expect(snapshot.distribution.total).toBe(snapshot.counts[0].value);
+		expect(snapshot.distribution.total).toBe(snapshot.counts[0].value!);
 	});
 
 	test('asks the source for the panel limits rather than trimming afterwards', async () => {
@@ -349,5 +349,22 @@ describe('buildOverview', () => {
 		expect(buildOverview(source, deployments, estate, scope)).rejects.toThrow(
 			'metrics backend unreachable'
 		);
+	});
+});
+
+describe('domains whose health nothing reports', () => {
+	test('the total tile accounts for them, so three zeros under 25 are explained', () => {
+		// With no APM source connected every domain is `unknown`: healthy, degraded and
+		// down are all 0 while the total is not, and only this caption says why.
+		const [total] = buildCountTiles({ healthy: 0, degraded: 0, down: 0, unknown: 25 });
+
+		expect(total.value).toBe(25);
+		expect(total.caption).toBe('25 of 25 unreported');
+	});
+
+	test('and says nothing when every domain is reported', () => {
+		const [total] = buildCountTiles(counts(18, 4, 3));
+
+		expect(total.caption).toBe('Across platform');
 	});
 });

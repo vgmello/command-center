@@ -34,7 +34,7 @@ describe('buildDeploymentTiles', () => {
 		const [total, ...statuses] = buildDeploymentTiles(summary());
 
 		expect(total.value).toBe(29);
-		expect(statuses.reduce((sum, tile) => sum + tile.value, 0)).toBe(29);
+		expect(statuses.reduce((sum, tile) => sum + (tile.value ?? 0), 0)).toBe(29);
 	});
 
 	test('a run in flight is tinted as in flight, not as an outcome it has not reached', () => {
@@ -89,7 +89,7 @@ describe('buildDeploymentsSnapshot', () => {
 		const total = snapshot.counts.find((tile) => tile.id === 'total');
 
 		expect(total).toBeDefined();
-		expect(snapshot.byDomain.total).toBe(total!.value);
+		expect(snapshot.byDomain.total).toBe(total!.value!);
 	});
 
 	test('the donut slices account for every run', async () => {
@@ -216,6 +216,9 @@ describe('the two activity totals', () => {
 		);
 
 		const tile = snapshot.counts.find((one) => one.id === 'active-incidents');
-		expect(tile?.value).toBe(snapshot.incidents.length);
+		expect(snapshot.incidents.status).toBe('ok');
+		expect(tile?.value).toBe(
+			snapshot.incidents.status === 'ok' ? snapshot.incidents.data.length : -1
+		);
 	});
 });

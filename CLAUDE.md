@@ -156,9 +156,32 @@ nobody is looking.
 **A capability nobody implements is stated, never faked.** The router throws
 `CapabilityUnavailableError` rather than returning zeros, which would reproduce exactly
 the failure the resolver's throw-on-unknown-name exists to prevent. `panel()` and
-`Panel<T>` are the contract that turns one of those into a rendered empty state; the
-assemblers adopt them in the increment that gives the panel components their
-`unavailable` and `failed` states, and until then nothing calls `panel()`.
+`Panel<T>` are the contract that turns one of those into a rendered empty state, and
+`PanelGap.svelte` is the one place the two sentences a gap can produce are written.
+
+**A screen falls over only when the source kind it is dedicated to cannot answer.** The
+infrastructure page is a view of a cloud account and the deployments page is a view of a
+CI/CD system; with those absent there is no page left to draw. Every other screen composes
+several kinds, so a gap in one costs the reader that panel and nothing else — a missing
+queue metric must not take down the dashboard.
+
+That rule was reactive for four rounds. `deployment.insights`, `apm.insights`,
+`apm.dependencies` and `apm.activity` each took a page down in production and each got
+wrapped afterwards, which fixes the case that broke and defends against nothing.
+`capability-gaps.test.ts` is the sweep that replaced waiting: it drops one capability at a
+time, and then a whole kind at a time, and runs every screen against the result. It found
+seventeen more, and it is what makes the eighteenth a red test instead of a blank page.
+
+Two consequences for new work:
+
+- **An assembler's source-backed reads are wrapped; its catalog reads are not.** The
+  catalog is this app's own record, and a screen with no rows has nothing to hang a gap
+  on — failing there is honest.
+- **A gap propagates as `null`, never as zero.** "No incidents" and "nothing is watching
+  for incidents" are opposite readings of the same tile, so `CountTile.value` is nullable
+  and prints a dash. The published `ActivitySummary` keeps non-null numbers and 501s
+  instead: a frozen contract must not quietly grow a new value, and a caller who asked
+  for a fact is owed a status code rather than a null.
 
 ### Two transports, one service
 
@@ -586,7 +609,7 @@ an `@` costs its full length in every session, whether or not the session touche
 ## State
 
 Overview, Domains, Deployments, the Service detail view and Infrastructure built and
-verified, plus the service Metrics tab and the Domain detail view. `bun test` (252 tests), `bun run check`, `bun run lint`,
+verified, plus the service Metrics tab and the Domain detail view. `bun test` (702 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:

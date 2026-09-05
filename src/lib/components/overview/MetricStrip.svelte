@@ -1,18 +1,29 @@
 <script lang="ts">
 	import Sparkline from '../Sparkline.svelte';
 	import { sentimentStroke, sentimentText } from '../tone';
+	import PanelGap from '../PanelGap.svelte';
 	import { trendSentiment } from '$lib/platform/format';
+	import type { Panel } from '$lib/platform/sources';
 	import type { RateMetric } from '$lib/platform/types';
 
 	interface Props {
-		metrics: RateMetric[];
+		/** A panel because the rates come from an APM source, which may not be connected. */
+		metrics: Panel<RateMetric[]>;
 	}
 
 	let { metrics }: Props = $props();
+
+	const rows = $derived(metrics.status === 'ok' ? metrics.data : []);
 </script>
 
-<article class="grid grid-cols-3 divide-x divide-border rounded-xl border border-border bg-card">
-	{#each metrics as metric (metric.id)}
+<article
+	class="grid divide-x divide-border rounded-xl border border-border bg-card {metrics.status ===
+	'ok'
+		? 'grid-cols-3'
+		: 'place-items-center'}"
+>
+	<PanelGap panel={metrics} noun="request, latency and error rates" class="p-4" />
+	{#each rows as metric (metric.id)}
 		{@const sentiment = trendSentiment(metric.direction, metric.polarity)}
 		<div class="min-w-0 px-3.5 py-2.5">
 			<p class="text-[12px] font-medium text-muted-foreground">{metric.label}</p>

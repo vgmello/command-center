@@ -49,7 +49,11 @@ export function buildCountTiles(counts: DomainStatusCounts): CountTile[] {
 			icon: COUNT_TILE_ICONS.total,
 			value: total,
 			percentage: null,
-			caption: 'Across platform',
+			// The three tiles beside this one cover healthy, degraded and down; `unknown`
+			// has no tile of its own, because a fifth would not fit the strip beside the
+			// metrics panel. Left unsaid, a reader with no APM source connected sees three
+			// zeros under a total of 25 and no account of where the 25 went.
+			caption: counts.unknown > 0 ? `${counts.unknown} of ${total} unreported` : 'Across platform',
 			tone: null
 		},
 		...(['healthy', 'degraded', 'down'] as const).map((status) => ({
@@ -169,27 +173,33 @@ export async function buildOverview(
 	scope: PlatformScope,
 	now: Date = new Date()
 ): Promise<OverviewSnapshot> {
-	const [counts, rates, incidents, recentDeployments, infrastructure, insights] = await Promise.all(
-		[
+	const [counts, metrics, incidents, recentDeployments, infrastructure, insights] =
+		await Promise.all([
+			// Unwrapped on purpose: the counts come from the catalog, which is this app's
+			// own record rather than a connected source. If it cannot be read the page has
+			// no spine to hang gaps on, and failing is the honest outcome.
 			source.readDomainStatusCounts(scope),
-			source.readRates(scope),
-			source.listIncidents(scope, INCIDENT_LIMIT),
-			deployments.listDeployments(scope, DEPLOYMENT_LIMIT),
-			estate.listGroups(scope),
-			// Wrapped: a source that does not derive insights leaves a stated gap here
-			// rather than taking the whole overview down with it.
+			panel('apm.rates', async () => ({
+				data: buildMetrics(await source.readRates(scope), scope.timeRange)
+			})),
+			panel('apm.incidents', async () => ({
+				data: await source.listIncidents(scope, INCIDENT_LIMIT)
+			})),
+			panel('deployment.log', async () => ({
+				data: await deployments.listDeployments(scope, DEPLOYMENT_LIMIT)
+			})),
+			panel('cloud.nodes', async () => ({ data: await estate.listGroups(scope) })),
 			panel('apm.platformInsights', async () => ({
 				data: await source.listPlatformInsights(scope)
 			}))
-		]
-	);
+		]);
 
 	return {
 		generatedAt: now.toISOString(),
 		environment: scope.environment,
 		timeRange: scope.timeRange,
 		counts: buildCountTiles(counts),
-		metrics: buildMetrics(rates, scope.timeRange),
+		metrics,
 		distribution: buildDistribution(counts),
 		incidents,
 		deployments: recentDeployments,
