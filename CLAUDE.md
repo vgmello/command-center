@@ -330,6 +330,38 @@ The plugin emits OpenAPI **3.0.0**, not 3.1. Scalar renders both.
 The document is served without a token: it describes the shape of the API, not any
 data, and the reference UI fetches it before anyone has authenticated.
 
+### What the store buys, and what it cannot
+
+`request-budget.test.ts` counts a cold cache with no database — the worst case, and for a
+long time the only one anybody had counted. `warm-budget.test.ts` counts the normal one: a
+second page view, served by an instance with an empty memory tier over a warm Postgres.
+Fresh routers on purpose, because reusing them would measure the memory tier, which
+answers in zero requests and is lost on every restart.
+
+The measured answer is that the store works and mostly does not help yet:
+
+| Screen          | Cold | Warm |
+| --------------- | ---: | ---: |
+| overview        |   20 |   17 |
+| domains         |   14 |   14 |
+| domain detail   |    9 |    9 |
+| deployments     |   45 |   45 |
+| service detail  |   30 |   28 |
+| service metrics |   18 |   13 |
+
+The store is not at fault, and a test pins that down: a warm instance answers the three
+`reference`-tier deployment aggregates in **zero** requests, having never spoken to
+Octopus. The deployments page still costs 45 because it also needs the log, and the log is
+`live` — deliberately never persisted, since a deployment feed read back off disk is a
+feed that has stopped reporting. Asking for it makes the Octopus provider page one window
+of four hundred rows, and every aggregate on that page is then computed from the window in
+memory. The store's copies were saving work that was already free.
+
+**Making that page cheaper means fetching the log incrementally**, against a high-water
+mark, the way the series path already does — settled history never changes, so only
+entries newer than the last one need fetching. That is its own increment. The test records
+the reason so it is not rediscovered by measuring again.
+
 ### Charts are arithmetic, not a dependency
 
 `src/lib/platform/chart.ts` holds the layout maths — scales, ticks, point placement,
@@ -609,7 +641,7 @@ an `@` costs its full length in every session, whether or not the session touche
 ## State
 
 Overview, Domains, Deployments, the Service detail view and Infrastructure built and
-verified, plus the service Metrics tab and the Domain detail view. `bun test` (702 tests), `bun run check`, `bun run lint`,
+verified, plus the service Metrics tab and the Domain detail view. `bun test` (711 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:
