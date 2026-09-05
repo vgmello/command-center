@@ -7,6 +7,7 @@ import type { LinkView, SourceBinding } from '../provider';
 
 export const fixtureDeploymentProvider = defineProvider<DeploymentProvider>({
 	id: 'fixture-deployment',
+	synthetic: true,
 	kind: 'deployment',
 	name: 'Fixture Deployments',
 	icon: 'rocket',

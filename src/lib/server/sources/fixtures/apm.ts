@@ -12,6 +12,7 @@ function subject(ctx: SourceContext): string {
 
 export const fixtureApmProvider = defineProvider<ApmProvider>({
 	id: 'fixture-apm',
+	synthetic: true,
 	kind: 'apm',
 	name: 'Fixture APM',
 	icon: 'chart-column',

@@ -73,7 +73,7 @@ export function loadConnections(
 	const file = v.parse(connectionFileSchema, raw);
 	const seen = new Set<string>();
 
-	return file.connections.map((entry) => {
+	const loaded: SourceConnectionRef[] = file.connections.map((entry) => {
 		if (seen.has(entry.id)) {
 			throw new Error(`Two connections share the id "${entry.id}".`);
 		}
@@ -106,4 +106,38 @@ export function loadConnections(
 			settings: result.output
 		};
 	});
+
+	refuseMixedFixtures(loaded, providers);
+
+	return loaded;
+}
+
+/**
+ * A synthetic provider may be the only connection of its kind.
+ *
+ * Two connections of one kind is a supported arrangement — two Azure subscriptions, two
+ * Octopus spaces — and the aggregate rule concatenates their answers deliberately. That is
+ * exactly what makes mixing a fixture in dangerous: the estate would be real regions plus
+ * invented ones, merged, with nothing on the page admitting it and every total wrong.
+ *
+ * Refused at boot rather than rendered, for the same reason the resolver throws on an
+ * unknown source name. A misconfiguration that shows plausible numbers is worse than one
+ * that will not start.
+ */
+function refuseMixedFixtures(
+	loaded: SourceConnectionRef[],
+	providers: ReadonlyMap<string, ProviderDefinition<unknown>>
+): void {
+	const synthetic = (ref: SourceConnectionRef) => providers.get(ref.providerId)?.synthetic === true;
+
+	for (const ref of loaded.filter(synthetic)) {
+		const others = loaded.filter((one) => one.kind === ref.kind && one.id !== ref.id);
+		if (others.length === 0) continue;
+
+		throw new Error(
+			`Connection "${ref.id}" invents its data, so it must be the only ${ref.kind} source. ` +
+				`Also connected: ${others.map((one) => `"${one.id}"`).join(', ')}. ` +
+				`Remove one — a fixture beside a real source merges invented rows into real ones.`
+		);
+	}
 }

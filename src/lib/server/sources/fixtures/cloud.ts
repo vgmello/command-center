@@ -13,6 +13,7 @@ import type { LinkView, SourceBinding } from '../provider';
  */
 export const fixtureCloudProvider = defineProvider<CloudProvider>({
 	id: 'fixture-cloud',
+	synthetic: true,
 	kind: 'cloud',
 	name: 'Fixture Cloud',
 	icon: 'cloud',

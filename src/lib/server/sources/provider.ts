@@ -54,6 +54,16 @@ export interface ProviderDefinition<Client> {
 	/** Icon key. A provider never hands a component to anything. */
 	readonly icon: string;
 	readonly capabilities: ReadonlySet<Capability>;
+	/**
+	 * Whether this provider invents its data rather than reading it from somewhere.
+	 *
+	 * A fixture is worth keeping — it is what makes the tests fast and a checkout runnable
+	 * with no setup — but it must never sit *beside* a real source of the same kind. The
+	 * aggregate dispatch rule fans out across every capable connection and concatenates,
+	 * so a fixture cloud connected alongside Azure would merge invented regions into the
+	 * real estate with nothing on the page admitting it. `loadConnections` refuses that.
+	 */
+	readonly synthetic?: boolean;
 	/** What a connection must supply. Validated at boot, not on first read. */
 	readonly settings: v.GenericSchema;
 	/** Per-capability TTL in seconds, where the provider knows better than the default. */
