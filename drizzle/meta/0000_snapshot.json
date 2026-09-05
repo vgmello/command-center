@@ -1,0 +1,206 @@
+{
+	"id": "90a728e0-cb22-41c4-a200-4f0831ebe716",
+	"prevId": "00000000-0000-0000-0000-000000000000",
+	"version": "7",
+	"dialect": "postgresql",
+	"tables": {
+		"public.source_documents": {
+			"name": "source_documents",
+			"schema": "",
+			"columns": {
+				"key": {
+					"name": "key",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"connection_id": {
+					"name": "connection_id",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"capability": {
+					"name": "capability",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"args": {
+					"name": "args",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"payload": {
+					"name": "payload",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"fetched_at": {
+					"name": "fetched_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"expires_at": {
+					"name": "expires_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.source_leases": {
+			"name": "source_leases",
+			"schema": "",
+			"columns": {
+				"key": {
+					"name": "key",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"holder": {
+					"name": "holder",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"expires_at": {
+					"name": "expires_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.source_series": {
+			"name": "source_series",
+			"schema": "",
+			"columns": {
+				"connection_id": {
+					"name": "connection_id",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"capability": {
+					"name": "capability",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"environment": {
+					"name": "environment",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"entity": {
+					"name": "entity",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"metric": {
+					"name": "metric",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"bucket_at": {
+					"name": "bucket_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"value": {
+					"name": "value",
+					"type": "double precision",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"settled": {
+					"name": "settled",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": true,
+					"default": false
+				}
+			},
+			"indexes": {
+				"source_series_window": {
+					"name": "source_series_window",
+					"columns": [
+						{
+							"expression": "connection_id",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "capability",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "environment",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "bucket_at",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"source_series_connection_id_capability_environment_entity_metric_bucket_at_pk": {
+					"name": "source_series_connection_id_capability_environment_entity_metric_bucket_at_pk",
+					"columns": ["connection_id", "capability", "environment", "entity", "metric", "bucket_at"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		}
+	},
+	"enums": {},
+	"schemas": {},
+	"sequences": {},
+	"roles": {},
+	"policies": {},
+	"views": {},
+	"_meta": {
+		"columns": {},
+		"schemas": {},
+		"tables": {}
+	}
+}

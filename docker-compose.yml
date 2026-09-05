@@ -1,0 +1,25 @@
+# Local Postgres for the source store.
+#
+#   docker compose up -d
+#   DATABASE_URL=postgres://postgres:postgres@localhost:5432/command_center bun run db:migrate
+#
+# The store's own tests do NOT use this: they start a throwaway container per run, so a
+# checkout with Docker available needs no setup at all. This is for running the app.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: command_center
+    ports:
+      - '5432:5432'
+    volumes:
+      - command-center-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  command-center-pgdata:
