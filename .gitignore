@@ -28,3 +28,6 @@ vite.config.ts.timestamp-*
 # Subagent-driven development scratch: ledgers, briefs, review packages.
 # The git history is the record; this is working memory.
 .superpowers/
+
+# Local connections file. sources.example.json is the committed template.
+sources.json

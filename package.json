@@ -5,6 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
+		"dev:stack": "bun run scripts/mocks.ts",
 		"build": "bun run openapi:components && vite build",
 		"preview": "vite preview",
 		"test": "bun test",
