@@ -1,20 +1,15 @@
 import { json } from '@sveltejs/kit';
-import * as v from 'valibot';
 import { requireApiToken } from './auth';
+import { errorResponse } from './error-response';
 
 /**
- * Thrown by an endpoint whose addressed resource does not exist.
+ * The sentinel and the mapping that reads it, re-exported.
  *
- * A sentinel rather than each endpoint building its own response, for the same reason
- * validation errors are handled here: the moment two endpoints write their own 404,
- * they write two different ones.
+ * Every endpoint already imports `NotFoundError` from here, and from a caller's point of
+ * view the two belong together — the split exists only so the mapping can be tested
+ * without `$env`, which the token check drags in.
  */
-export class NotFoundError extends Error {
-	constructor(readonly resource: string) {
-		super(`No ${resource}.`);
-		this.name = 'NotFoundError';
-	}
-}
+export { NotFoundError, errorResponse } from './error-response';
 
 /**
  * The shape every v1 endpoint shares: authenticate, parse, respond.
@@ -33,26 +28,11 @@ export async function apiResponse<T>(request: Request, build: () => Promise<T>):
 			}
 		});
 	} catch (cause) {
-		if (cause instanceof NotFoundError) {
-			// "There is no such thing" and "here is the thing, and it is empty" are
-			// different answers, and only one of them is a 200.
-			return json({ error: 'not_found', message: cause.message }, { status: 404 });
-		}
+		const mapped = errorResponse(cause);
+		if (mapped) return mapped;
 
-		if (v.isValiError(cause)) {
-			// The caller controls these inputs, so naming the offending field is
-			// helpful rather than a leak — unlike the message from a failed query.
-			return json(
-				{
-					error: 'invalid_request',
-					issues: cause.issues.map((issue) => ({
-						path: issue.path?.map((segment) => String(segment.key)).join('.') ?? '',
-						message: issue.message
-					}))
-				},
-				{ status: 400 }
-			);
-		}
+		// Genuinely ours. A bug here must surface as a 500 rather than be dressed up as
+		// somebody else's fault.
 		throw cause;
 	}
 }

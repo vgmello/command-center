@@ -3,7 +3,8 @@ import type { CatalogSource } from '../../catalog/source';
 import { identityFor } from '$lib/platform/catalog';
 import { mergeService, mergeVitals, type ServiceReading } from '$lib/platform/catalog-merge';
 import type { ApmProvider } from '../contracts';
-import { fanOut, fanOutSingle, type RouterDeps } from './shared';
+import { fanOut, fanOutSeries, fanOutSingle, type RouterDeps } from './shared';
+import { metricSeriesShape } from './metric-series-shape';
 
 const apmBinding = (slug: string) => ({
 	kind: 'apm' as const,
@@ -134,12 +135,23 @@ export function createServiceRouter(deps: RouterDeps, catalog: CatalogSource): S
 				(client as ApmProvider).listEndpoints!({ ...ctx, binding: apmBinding(slug) }, limit)
 			),
 
+		/**
+		 * The six series the metrics tab draws, accumulated rather than re-fetched.
+		 *
+		 * This is the read that most wanted a store: a twenty-four-hour chart refreshing
+		 * every thirty seconds otherwise re-reads a day of settled history 2,880 times a
+		 * day. The shape below is what lets a whole answer be taken apart into samples and
+		 * put back together — six named series, three of which are per-entity families.
+		 */
 		readMetricSeries: (scope, slug) =>
-			fanOutSingle(deps, 'apm.metricSeries', scope, `service=${slug}`, (client, ctx) =>
-				(client as ApmProvider).readMetricSeries!({
-					...ctx,
-					binding: apmBinding(slug)
-				})
+			fanOutSeries(
+				deps,
+				'apm.metricSeries',
+				scope,
+				`service=${slug}`,
+				metricSeriesShape(slug, scope),
+				(client, ctx) =>
+					(client as ApmProvider).readMetricSeries!({ ...ctx, binding: apmBinding(slug) })
 			),
 
 		readSloBudget: (scope, slug) =>

@@ -4,11 +4,28 @@ import { DEFAULT_TTL_SECONDS, type SourceCache } from '../cache';
 import type { Dispatcher } from '../dispatch';
 import type { SourceContext } from '../provider';
 import type { SourceRegistry } from '../registry';
+import type { SourceStore, StoredSample } from '../../store/source-store';
+import {
+	BUCKET_SECONDS,
+	MAX_STORED_SECONDS,
+	RANGE_SECONDS,
+	gapFor,
+	groupSamples,
+	toSamples,
+	type SeriesKey
+} from '../series';
 
 export interface RouterDeps {
 	registry: SourceRegistry;
 	dispatcher: Dispatcher;
 	cache: SourceCache;
+	/**
+	 * Where series accumulate.
+	 *
+	 * Optional: with no store the series path degrades to an ordinary fan-out, which is
+	 * exactly the behaviour before there was one.
+	 */
+	store?: SourceStore | null;
 }
 
 /**
@@ -108,4 +125,84 @@ export async function fanOutSingle<T>(
 	);
 
 	return (data as T[])[0];
+}
+
+/**
+ * An aggregate read whose answer is a set of time series, accumulated rather than cached.
+ *
+ * The store already holds most of a chart's history, and a closed bucket never changes —
+ * so this reads what is there, asks the source only for the gap, and merges. A warm store
+ * turns a twenty-four-hour chart from a day of history into a few minutes of it, which is
+ * the largest single saving available against a rate limit.
+ *
+ * `flatten` says how the provider's answer decomposes into named series, and `rebuild`
+ * puts it back together. They are declared per capability rather than inferred, because
+ * the answers have genuinely different shapes — six named series here, a heatmap there —
+ * and a generic decomposition would be a guess about all of them.
+ *
+ * With no store this is an ordinary fan-out: the provider is asked for the whole window,
+ * exactly as before.
+ */
+export async function fanOutSeries<T>(
+	deps: RouterDeps,
+	capability: Capability,
+	scope: PlatformScope,
+	args: string,
+	shape: {
+		/**
+		 * Decompose an answer into named series.
+		 *
+		 * The window is passed because the answer covers *the gap*, not the whole range —
+		 * a `TimeSeries` carries axis labels rather than instants, so the only way its
+		 * points become samples is to spread them across the window they were asked for.
+		 */
+		flatten: (
+			answer: T,
+			window: { from: Date; to: Date }
+		) => Array<{ key: SeriesKey; points: Array<{ at: Date; value: number }> }>;
+		rebuild: (groups: Map<string, StoredSample[]>, window: { from: Date; to: Date }) => T;
+	},
+	call: (client: unknown, ctx: SourceContext) => Promise<T>
+): Promise<T> {
+	const store = deps.store;
+	const now = new Date();
+	const span = Math.min(RANGE_SECONDS[scope.timeRange], MAX_STORED_SECONDS);
+	const want = { from: new Date(now.getTime() - span * 1000), to: now };
+
+	// Beyond the stored horizon, or with no store at all, ask for the whole window. A
+	// rolled-up table is what extends that, and it is deliberately a later increment.
+	if (!store || RANGE_SECONDS[scope.timeRange] > MAX_STORED_SECONDS) {
+		return fanOutSingle(deps, capability, scope, args, call);
+	}
+
+	const connection = deps.registry.supporting(capability)[0];
+	if (!connection) return fanOutSingle(deps, capability, scope, args, call);
+
+	const query = {
+		connectionId: connection.ref.id,
+		capability,
+		environment: scope.environment,
+		from: want.from,
+		to: want.to
+	};
+
+	const stored: StoredSample[] = await store.readSeries(query).catch(() => []);
+	const gap = gapFor(stored, want, now);
+
+	if (gap) {
+		// Only the gap, at the canonical resolution — samples fetched at the query's own
+		// step would not line up with what is already stored.
+		const fetched = await fanOutSingle(deps, capability, scope, args, (client, ctx) =>
+			call(client, { ...ctx, window: { ...gap, stepSeconds: BUCKET_SECONDS } })
+		);
+
+		const samples = toSamples(shape.flatten(fetched, gap), query, now);
+		await store.appendSeries(samples).catch(() => {});
+
+		// Merge in memory rather than re-reading: the rows were just written, and a second
+		// round trip to learn what we already know is the thing being avoided.
+		stored.push(...samples);
+	}
+
+	return shape.rebuild(groupSamples(stored), want);
 }

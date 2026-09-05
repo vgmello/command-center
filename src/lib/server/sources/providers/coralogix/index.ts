@@ -198,7 +198,24 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 			return ctx.binding?.externalId || undefined;
 		}
 
-		function window(range: TimeRangeId, now = new Date()) {
+		/**
+		 * The window to query, and at what resolution.
+		 *
+		 * An explicit `ctx.window` wins: it means the caller wants a gap rather than a
+		 * whole range, and is asking at the store's canonical resolution so the samples
+		 * line up with what is already there. Without one, the scope's time range implies
+		 * both, exactly as before.
+		 */
+		function window(range: TimeRangeId, ctx?: SourceContext, now = new Date()) {
+			if (ctx?.window) {
+				const span = Math.max(
+					1,
+					Math.round((ctx.window.to.getTime() - ctx.window.from.getTime()) / 1000)
+				);
+
+				return { from: ctx.window.from, to: ctx.window.to, step: ctx.window.stepSeconds, span };
+			}
+
 			return {
 				from: new Date(now.getTime() - RANGE_SECONDS[range] * 1000),
 				to: now,
@@ -212,9 +229,10 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 			query: string,
 			id: string,
 			label: string,
-			range: TimeRangeId
+			range: TimeRangeId,
+			ctx?: SourceContext
 		): Promise<TimeSeries> {
-			const { from, to, step, span } = window(range);
+			const { from, to, step, span } = window(range, ctx);
 			return toTimeSeries(await client.range(query, from, to, step), id, label, span);
 		}
 
@@ -232,16 +250,16 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 			async readMetricSeries(ctx) {
 				const range = ctx.scope.timeRange;
 				const labels = labelsFor(ctx, slugOf(ctx));
-				const { from, to, step, span } = window(range);
+				const { from, to, step, span } = window(range, ctx);
 
 				// Issued together: six sequential round trips would make this the slowest
 				// panel on the screen for no reason — they share nothing.
 				const [rate, p95, errors, cpu, memory, byRoute, byInstance] = await Promise.all([
-					series(requestRate(metrics, labels, range), 'request-rate', 'Requests / sec', range),
-					series(p95Latency(metrics, labels, range), 'p95', 'P95 latency (ms)', range),
-					series(errorRate(metrics, labels, range), 'error-rate', 'Error rate (%)', range),
-					series(saturation(metrics, labels, 'cpu'), 'cpu', 'CPU (%)', range),
-					series(saturation(metrics, labels, 'memory'), 'memory', 'Memory (%)', range),
+					series(requestRate(metrics, labels, range), 'request-rate', 'Requests / sec', range, ctx),
+					series(p95Latency(metrics, labels, range), 'p95', 'P95 latency (ms)', range, ctx),
+					series(errorRate(metrics, labels, range), 'error-rate', 'Error rate (%)', range, ctx),
+					series(saturation(metrics, labels, 'cpu'), 'cpu', 'CPU (%)', range, ctx),
+					series(saturation(metrics, labels, 'memory'), 'memory', 'Memory (%)', range, ctx),
 					client.range(rateByRoute(metrics, labels, range), from, to, step),
 					client.range(p95ByInstance(metrics, labels, range), from, to, step)
 				]);
@@ -260,7 +278,7 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 				const range = ctx.scope.timeRange;
 				const labels = labelsFor(ctx, slugOf(ctx));
 				const now = new Date();
-				const { from, to, step } = window(range, now);
+				const { from, to, step } = window(range, undefined, now);
 
 				const [rateNow, p95Now, errorsNow, rateSeries, p95Series, errorSeries, up] =
 					await Promise.all([
@@ -359,7 +377,7 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 				const range = ctx.scope.timeRange;
 				const labels = labelsFor(ctx, slugOf(ctx));
 				const now = new Date();
-				const { from, to, step } = window(range, now);
+				const { from, to, step } = window(range, undefined, now);
 
 				const [up, p95Now, errorsNow, p95Series, errorSeries, rateSeries] = await Promise.all([
 					client.instant(instancesUp(metrics, labels), now),
@@ -573,7 +591,7 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 				const range = ctx.scope.timeRange;
 				const labels = labelsFor(ctx);
 				const now = new Date();
-				const { from, to, step } = window(range, now);
+				const { from, to, step } = window(range, undefined, now);
 
 				const [rateNow, p95Now, errorsNow, rateSeries, p95Series, errorSeries] = await Promise.all([
 					client.instant(requestRate(metrics, labels, range), now),

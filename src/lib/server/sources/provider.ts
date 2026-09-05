@@ -29,6 +29,19 @@ export interface SourceContext {
 	scope: PlatformScope;
 	connection: SourceConnectionRef;
 	binding?: SourceBinding;
+	/**
+	 * An explicit window, overriding the one `scope.timeRange` implies.
+	 *
+	 * Present when the caller wants a *gap* rather than a whole range — the store already
+	 * holds most of a chart's history, and re-fetching twenty-four hours of settled
+	 * buckets to draw the newest one is the single largest waste against a rate limit.
+	 *
+	 * `stepSeconds` travels with it because the resolution has to be canonical: samples
+	 * fetched at whatever step a query happened to ask for would not line up with samples
+	 * already stored, and a fifteen-minute view and a twenty-four-hour view would share
+	 * no rows at all.
+	 */
+	window?: { from: Date; to: Date; stepSeconds: number };
 }
 
 /** Which view of a resource a deep link should open. */

@@ -103,7 +103,11 @@ export function buildSources(options: {
 	const deps = {
 		registry,
 		dispatcher: createDispatcher(registry),
-		cache: new SourceCache({ store: options.store ?? null, limits: options.limits ?? null })
+		cache: new SourceCache({ store: options.store ?? null, limits: options.limits ?? null }),
+		// The series path reads and writes the store directly rather than through the
+		// cache: a window's whole answer would key on the window, and accumulating samples
+		// is what lets two windows share rows.
+		store: options.store ?? null
 	};
 
 	return createRouters(deps, options.catalog);
