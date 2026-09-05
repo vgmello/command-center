@@ -15,7 +15,10 @@
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
 		"openapi:components": "bun run scripts/generate-openapi-components.ts",
-		"catalog:example": "bun run scripts/generate-catalog-example.ts"
+		"catalog:example": "bun run scripts/generate-catalog-example.ts",
+		"db:generate": "drizzle-kit generate",
+		"db:migrate": "bun run scripts/migrate.ts",
+		"db:up": "docker compose up -d postgres"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
@@ -31,6 +34,7 @@
 		"@valibot/to-json-schema": "^1.7.1",
 		"bits-ui": "^2.16.3",
 		"clsx": "^2.1.1",
+		"drizzle-kit": "^0.31.10",
 		"eslint": "^10.4.1",
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-svelte": "^3.19.0",
@@ -53,6 +57,7 @@
 		"vite": "^8.0.16"
 	},
 	"dependencies": {
+		"drizzle-orm": "^0.45.2",
 		"valibot": "^1.4.2"
 	}
 }
