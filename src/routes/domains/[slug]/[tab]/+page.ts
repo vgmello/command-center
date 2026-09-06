@@ -9,7 +9,9 @@ import type { PageLoad } from './$types';
  * too, so a domain has exactly one canonical URL.
  */
 export const load: PageLoad = ({ params }) => {
-	if (params.tab === 'overview' || !isDomainTab(params.tab)) {
+	// `dependencies` has its own route now, so it is rejected here for the same reason
+	// `overview` is: a section with two URLs is a section a link can disagree about.
+	if (params.tab === 'overview' || params.tab === 'dependencies' || !isDomainTab(params.tab)) {
 		error(404, 'No such domain section');
 	}
 

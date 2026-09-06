@@ -59,7 +59,12 @@ function stubSource(overrides: Partial<PlatformSource> = {}) {
 		},
 		async readDomainDependencies() {
 			calls.push('domain-dependencies');
-			return { upstream: [], downstream: [], criticalPath: [] };
+			return {
+				upstream: [],
+				downstream: [],
+				criticalPath: [],
+				self: { requestRate: 0, latencyMs: 0, errorRatePct: 0 }
+			};
 		},
 		async listIncidents(_scope, limit) {
 			calls.push(`incidents:${limit}`);

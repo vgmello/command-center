@@ -1,4 +1,7 @@
 import type {
+	DependencyKind,
+	DomainDependencyNode,
+	HealthStatus,
 	ActivitySummary,
 	CurrentUser,
 	Deployment,
@@ -23,7 +26,7 @@ import type {
 	TrendGrain
 } from '$lib/platform/types';
 import { healthChangeDirection, statusFromScore } from '$lib/platform/health';
-import { buildSeries } from './series';
+import { buildSeries, hashSeed, seededRandom } from './series';
 
 /**
  * The stand-in platform inventory.
@@ -541,8 +544,100 @@ export function readDomainDependencies(slug: string): DomainDependencies {
 	};
 
 	const shape = shapes[slug] ?? { upstream: ['shared-domain'], downstream: ['audit-domain'] };
-	const upstream = shape.upstream.map(ref).filter((one) => one !== null);
-	const downstream = shape.downstream.map(ref).filter((one) => one !== null);
+
+	/**
+	 * Which family a hop belongs to, and what it does there.
+	 *
+	 * Declared per domain rather than derived from the name: a domain is a datastore to one
+	 * caller and a service to another, and guessing from a slug would be a rule that reads
+	 * as data until the day it is wrong.
+	 */
+	const KINDS: Record<string, [DependencyKind, string, string]> = {
+		'user-domain': [
+			'service',
+			'users',
+			'Resolves the payer, their saved instruments and account standing.'
+		],
+		'order-domain': [
+			'service',
+			'shopping-cart',
+			'Confirms the order still exists and is unpaid before funds are captured.'
+		],
+		'inventory-domain': [
+			'service',
+			'boxes',
+			'Reserves stock against the order so two payments cannot claim one item.'
+		],
+		'notification-domain': [
+			'queue',
+			'message-square',
+			'Fan-out for receipts and webhooks. Published asynchronously, so it never blocks a payment.'
+		],
+		'audit-domain': [
+			'queue',
+			'scroll-text',
+			'Append-only ledger stream consumed by reconciliation and compliance.'
+		],
+		'shipping-domain': [
+			'external',
+			'truck',
+			'The carrier’s booking API. The slowest hop in the path and the one nobody here can tune.'
+		],
+		'warehouse-domain': [
+			'external',
+			'warehouse',
+			'Fulfilment partner. Retried out of band when it fails.'
+		],
+		'shared-domain': [
+			'datastore',
+			'database',
+			'Shared reference data — currencies, locales, merchant configuration.'
+		],
+		'payment-domain': [
+			'service',
+			'landmark',
+			'Authorises and captures funds, then reports the outcome back.'
+		]
+	};
+
+	/**
+	 * The readings for one edge, seeded from the pair.
+	 *
+	 * Seeded on both ends so an edge reads the same from either domain's page — a
+	 * dependency that reported 200 req/s on one screen and 90 on the other would be two
+	 * claims about one wire.
+	 */
+	const edge = (from: string, to: string, status: HealthStatus) => {
+		const random = seededRandom(hashSeed(`dep:${from}->${to}`));
+		const degraded = status !== 'healthy';
+
+		return {
+			requestRate: Math.round(40 + random() * 460),
+			latencyMs: Math.round(4 + random() * (degraded ? 420 : 180)),
+			// A degraded hop is above the one-percent budget, which is what makes it
+			// degraded — the number and the badge must not disagree.
+			errorRatePct: Number(((degraded ? 1.02 : 0) + random() * (degraded ? 2.4 : 0.6)).toFixed(2))
+		};
+	};
+
+	const node = (id: string, direction: 'upstream' | 'downstream'): DomainDependencyNode | null => {
+		const base = ref(id);
+		if (!base) return null;
+
+		const [kind, icon, role] = KINDS[id] ?? [
+			'service',
+			'box',
+			'Part of this domain’s request path.'
+		];
+		const [from, to] = direction === 'upstream' ? [id, slug] : [slug, id];
+
+		return { ...base, kind, icon, role, ...edge(from, to, base.status) };
+	};
+
+	const upstream = shape.upstream.map((id) => node(id, 'upstream')).filter((one) => one !== null);
+	const downstream = shape.downstream
+		.map((id) => node(id, 'downstream'))
+		.filter((one) => one !== null);
 	const self = byId.get(slug);
 
 	const criticalPath =
@@ -550,7 +645,27 @@ export function readDomainDependencies(slug: string): DomainDependencies {
 			? [upstream[0].name, self.name, downstream[0].name]
 			: [];
 
-	return { upstream, downstream, criticalPath };
+	// The hub carries what the domain does across these edges, not its own service count:
+	// the graph is a picture of the request path.
+	const inbound = upstream.reduce((sum, one) => sum + one.requestRate, 0);
+	const slowest = Math.max(0, ...downstream.map((one) => one.latencyMs));
+
+	return {
+		upstream,
+		downstream,
+		criticalPath,
+		self: {
+			requestRate: inbound,
+			// End to end is at least as slow as the slowest thing it waits on.
+			latencyMs: slowest + 60,
+			errorRatePct: Number(
+				(
+					[...upstream, ...downstream].reduce((sum, one) => sum + one.errorRatePct, 0) /
+					Math.max(upstream.length + downstream.length, 1)
+				).toFixed(2)
+			)
+		}
+	};
 }
 
 /** Minutes ago → ISO timestamp, so fixtures read as relative ages. */

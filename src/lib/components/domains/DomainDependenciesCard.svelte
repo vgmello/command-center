@@ -15,13 +15,15 @@
 	const tone = $derived(statusTone(domain.status));
 
 	/*
-	 * Two columns of one hop with the domain between them, laid out with flexbox. Same
-	 * reasoning as the service graph: this is a list with arrows, not a network, and a
-	 * graph layout would bring a dependency to draw five boxes.
+	 * The summary, not the graph.
+	 *
+	 * Two columns of names in a 368px sidebar, because the drawn graph needs about nine
+	 * hundred pixels to place two columns either side of a hub and would be clipped here.
+	 * It lives on the Dependencies tab, which this card's heading links to.
 	 */
 </script>
 
-<SectionCard title="Domain Dependencies" href="/domains">
+<SectionCard title="Domain Dependencies" href="/domains/{domain.id}/dependencies">
 	<div class="px-4 pb-4">
 		<div class="flex items-stretch gap-2">
 			<div class="min-w-0 flex-1 rounded-lg border border-border bg-background p-3">

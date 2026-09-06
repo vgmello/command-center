@@ -644,10 +644,50 @@ export interface DomainRef {
  * `criticalPath` is a sequence of domain names rather than of ids: it is a sentence
  * about how a failure propagates, and the only thing a reader does with it is read it.
  */
+/**
+ * What a dependency is, which decides the family it is drawn in.
+ *
+ * A fact about the thing, not a decision about how it looks: a datastore is a datastore
+ * whatever colour the graph tints it. `tone.ts` is still the only place a family becomes
+ * a class.
+ */
+export type DependencyKind = 'datastore' | 'queue' | 'service' | 'external';
+
+/**
+ * One hop out of a domain, with the readings that describe the edge.
+ *
+ * The metrics are what make this drawable as a graph rather than listable as two columns:
+ * line weight follows throughput, and a reader looking for the slow hop needs the numbers
+ * beside the names. They are facts — no formatted strings, so the same node can be printed
+ * in a tooltip and plotted on an axis without either re-parsing the other.
+ */
+export interface DomainDependencyNode {
+	id: string;
+	name: string;
+	status: HealthStatus;
+	kind: DependencyKind;
+	/** Icon key, named by the server for the same reason every other icon is. */
+	icon: string;
+	/** Requests per second across this edge. */
+	requestRate: number;
+	latencyMs: number;
+	errorRatePct: number;
+	/** What this hop does in the path. One sentence, from whoever knows the system. */
+	role: string;
+}
+
 export interface DomainDependencies {
-	upstream: DomainRef[];
-	downstream: DomainRef[];
+	upstream: DomainDependencyNode[];
+	downstream: DomainDependencyNode[];
 	criticalPath: string[];
+	/**
+	 * The domain's own readings, for the middle of the graph.
+	 *
+	 * Carried here rather than read off `Domain`, because a dependency view is about the
+	 * request path: this is what the domain does *across these edges*, and a caller of
+	 * `/api/v1/domains/{slug}/dependencies` should not have to fetch the domain too.
+	 */
+	self: { requestRate: number; latencyMs: number; errorRatePct: number };
 }
 
 /** One row of the domain's service-health table. */
