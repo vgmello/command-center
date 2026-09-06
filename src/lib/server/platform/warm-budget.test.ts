@@ -237,6 +237,36 @@ describeWarm('what the store actually buys', () => {
 		}
 	});
 
+	test('the store costs three requests cold, and the reason is not the store', async () => {
+		// Cold went 45 to 48 when the two trend capabilities became documents, which looks
+		// like the store charging for itself. It is not. Counted by endpoint, the extra is
+		// one more page of the deployment window — fifteen instead of fourteen, at three
+		// requests each — and the catalogue is unchanged at three.
+		//
+		// The deployments page makes six reads that need the whole window and one bounded
+		// read for the eight recent rows. The provider keeps bounded reads bounded, which
+		// is right for the overview (it wants eight and nothing else) and redundant here
+		// (the window is loading regardless). Whether the bounded read reuses the window
+		// depends on which starts first, and the store's Postgres round trip changes that
+		// order.
+		//
+		// Left alone deliberately. Making the bounded read join the window would cost the
+		// overview four hundred rows to show eight, and awaiting an aggregate first would
+		// add a round trip to every load, warm included. Three cold requests once per
+		// deploy against thirty-nine saved on every view after it is the better side of
+		// that trade — but it should be understood rather than mysterious.
+		// A scope no earlier test in this file has touched. The store is shared across the
+		// whole file, so `production` is already warm by the time this runs and a "cold"
+		// read of it would not be cold at all.
+		const fresh: PlatformScope = { environment: 'staging', timeRange: '1h' };
+		const { cold, warm } = await coldThenWarm((routers, now) =>
+			buildDeploymentsSnapshot(routers.deployment, fresh, 'daily', now)
+		);
+
+		expect(cold - warm).toBeGreaterThan(30);
+		expect(cold).toBeLessThan(55);
+	});
+
 	test('the live log stays cheap, so it is not what the page is paying for', async () => {
 		// Worth pinning because it is the obvious suspect and it is the wrong one. The log
 		// is `live` tier and deliberately never persisted — a deployment feed read back off
