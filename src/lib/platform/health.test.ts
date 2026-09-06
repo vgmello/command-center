@@ -4,6 +4,7 @@ import {
 	HEALTH_THRESHOLDS,
 	buildDistribution,
 	describeHealthThresholds,
+	formatHealthCheck,
 	healthChangeDirection,
 	rollUpStatus,
 	statusFromScore,
@@ -98,5 +99,31 @@ describe('health-score changes', () => {
 
 	test('improving and degrading do not read the same', () => {
 		expect(HEALTH_CHANGE_LABELS.up).not.toBe(HEALTH_CHANGE_LABELS.down);
+	});
+});
+
+describe('how a health check reads', () => {
+	const base = { value: 0, unit: 'percent' as const };
+
+	test('a whole percentage keeps no decimals, the way a saturation gauge reads', () => {
+		expect(formatHealthCheck({ ...base, value: 42 })).toBe('42%');
+	});
+
+	test('a fractional percentage keeps two, the way an error rate reads', () => {
+		expect(formatHealthCheck({ ...base, value: 0.42 })).toBe('0.42%');
+	});
+
+	test('a duration picks its own unit', () => {
+		expect(formatHealthCheck({ value: 517, unit: 'milliseconds' })).toBe('517 ms');
+	});
+
+	test('a ratio prints both halves', () => {
+		expect(formatHealthCheck({ value: 2, total: 3, unit: 'count' })).toBe('2/3 up');
+	});
+
+	test('a throughput is compact on the page while the number stays whole underneath', () => {
+		// The compact form is the whole reason the API used to be wrong: it was the only
+		// thing carried, so `/api/v1` parsed "1.2k" back and published 1.2.
+		expect(formatHealthCheck({ value: 1200, unit: 'rate' })).toBe('1.2k');
 	});
 });

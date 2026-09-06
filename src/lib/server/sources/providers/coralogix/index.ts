@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { formatChange, formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
+import { formatChange, formatCompact, formatLatency } from '$lib/platform/format';
 import type {
 	HealthCheck,
 	Incident,
@@ -297,10 +297,10 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 				const instances = scalarsByLabel(up, 'instance');
 				const answering = [...instances.values()].filter((one) => one > 0).length;
 
-				const latency = formatLatency(p95);
 				const rateSamples = toSeries(rateSeries);
 				const p95Samples = toSeries(p95Series);
 				const errorSamples = toSeries(errorSeries);
+				const latency = formatLatency(p95);
 
 				/** First versus last across the window — the change a tile reports. */
 				const changeOf = (values: number[]) =>
@@ -391,7 +391,6 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 				const instances = scalarsByLabel(up, 'instance');
 				const p95 = scalarOf(p95Now);
 				const errors = scalarOf(errorsNow);
-				const latency = formatLatency(p95);
 
 				const checks: HealthCheck[] = [
 					{
@@ -399,7 +398,11 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 						label: 'Liveness',
 						icon: 'heart-pulse',
 						status: healthFromUp(instances),
-						formatted: `${[...instances.values()].filter((one) => one > 0).length}/${instances.size} up`,
+						// The numerator and the denominator both travel: "3 up" alone loses
+						// which three it was out of.
+						value: [...instances.values()].filter((one) => one > 0).length,
+						unit: 'count',
+						total: instances.size,
 						series: toSeries(rateSeries)
 					},
 					{
@@ -407,7 +410,8 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 						label: 'P95 latency',
 						icon: 'timer',
 						status: p95 >= 1000 ? 'degraded' : 'healthy',
-						formatted: `${latency.value} ${latency.unit}`,
+						value: p95,
+						unit: 'milliseconds',
 						series: toSeries(p95Series)
 					},
 					{
@@ -415,7 +419,8 @@ export const coralogixProvider = defineProvider<ApmProvider>({
 						label: 'Error rate',
 						icon: 'triangle-alert',
 						status: healthOf(errors, 0),
-						formatted: formatPercent(errors, 2),
+						value: errors,
+						unit: 'percent',
 						series: toSeries(errorSeries)
 					}
 				];

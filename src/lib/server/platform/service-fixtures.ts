@@ -476,8 +476,8 @@ export function listHealthChecks(slug: string): HealthCheck[] {
 		['http-latency', 'HTTP Latency (P95)', 'clock', seed.p95LatencyMs * 0.63, 'ms', 0.12],
 		['dep-errors', 'Dependency Error Rate', 'share-2', seed.errorRatePct * 0.38, 'percent', 0.3],
 		['dep-latency', 'Dependency Latency (P95)', 'clock', seed.p95LatencyMs * 0.26, 'ms', 0.15],
-		['cpu', 'Saturation (CPU)', 'gauge', 42, 'percent-int', 0.1],
-		['memory', 'Saturation (Memory)', 'gauge', 58, 'percent-int', 0.08]
+		['cpu', 'Saturation (CPU)', 'gauge', 42, 'percent', 0.1],
+		['memory', 'Saturation (Memory)', 'gauge', 58, 'percent', 0.08]
 	];
 
 	return rows.map(([id, label, icon, value, unit, volatility]) => ({
@@ -487,16 +487,12 @@ export function listHealthChecks(slug: string): HealthCheck[] {
 		// A check is healthy unless the service it measures is not: the rows describe
 		// one service, and a green table on a red service would be a lie.
 		status: seed.healthScore >= 75 ? 'healthy' : statusFromScore(seed.healthScore),
-		formatted: formatCheckValue(value, unit),
+		value,
+		// Stated, not rendered. The reading and the unit travel; how it prints is decided
+		// above the port by `formatHealthCheck`.
+		unit: unit === 'ms' ? 'milliseconds' : 'percent',
 		series: buildSeries(`${slug}:${id}`, value, { volatility, floor: 0 })
 	}));
-}
-
-function formatCheckValue(value: number, unit: string): string {
-	if (unit === 'percent') return formatPercent(value);
-	if (unit === 'percent-int') return `${Math.round(value)}%`;
-	const latency = formatLatency(value);
-	return `${latency.value} ${latency.unit}`;
 }
 
 /** One hop each way, with the protocol each edge speaks. */

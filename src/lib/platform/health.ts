@@ -1,3 +1,5 @@
+import { formatCompact, formatLatency, formatPercent } from './format';
+import type { HealthCheck, HealthCheckUnit, HealthCheckView } from './types';
 import type {
 	Criticality,
 	DistributionSlice,
@@ -107,4 +109,42 @@ export function buildDistribution(counts: DomainStatusCounts): HealthDistributio
 	}));
 
 	return { total, slices };
+}
+
+/**
+ * How a health check reads.
+ *
+ * Derived here rather than carried by a source, because a source that formats its own
+ * readings forces every consumer to parse them back — and `/api/v1` did exactly that,
+ * publishing 1,200 requests per second as 1.2 milliseconds because `formatCompact`
+ * rendered it "1.2k" and `parseFloat` stopped at the k.
+ */
+export function formatHealthCheck(check: {
+	value: number;
+	unit: HealthCheckUnit;
+	total?: number;
+}): string {
+	switch (check.unit) {
+		case 'percent':
+			// A saturation gauge reads "42%" and an error rate reads "0.42%". That used to
+			// be two units in the fixture ('percent' and 'percent-int'), which is precision
+			// masquerading as a unit — the magnitude already says which is which.
+			return formatPercent(check.value, Number.isInteger(check.value) ? 0 : 2);
+		case 'milliseconds': {
+			const latency = formatLatency(check.value);
+			return `${latency.value} ${latency.unit}`;
+		}
+		case 'count':
+			return check.total === undefined
+				? formatCompact(check.value)
+				: `${check.value}/${check.total} up`;
+		case 'rate':
+		default:
+			return formatCompact(check.value);
+	}
+}
+
+/** A check plus how it reads, so a table never formats and a source never does either. */
+export function toHealthCheckView(check: HealthCheck): HealthCheckView {
+	return { ...check, formatted: formatHealthCheck(check) };
 }

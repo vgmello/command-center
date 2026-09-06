@@ -152,7 +152,8 @@ describe('listHealthChecks', () => {
 		const checks = await client.listHealthChecks!(context('payment-api'));
 		const liveness = checks.find((one) => one.id === 'liveness');
 
-		expect(liveness?.formatted).toBe('3/3 up');
+		expect(liveness?.value).toBe(3);
+		expect(liveness?.total).toBe(3);
 		expect(liveness?.status).toBe('healthy');
 	});
 
@@ -160,7 +161,8 @@ describe('listHealthChecks', () => {
 		const checks = await client.listHealthChecks!(context('payment-gateway'));
 		const liveness = checks.find((one) => one.id === 'liveness');
 
-		expect(liveness?.formatted).toBe('2/3 up');
+		expect(liveness?.value).toBe(2);
+		expect(liveness?.total).toBe(3);
 		expect(liveness?.status).toBe('degraded');
 	});
 });

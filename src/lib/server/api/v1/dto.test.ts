@@ -456,23 +456,42 @@ describe('toHealthCheckDto units', () => {
 		series: { values: [], min: 0, max: 0 }
 	};
 
-	test('a ratio is a count, not a duration', () => {
-		// "3/3 up" published as three milliseconds is a wrong measurement under a
-		// confident unit — which is worse than no measurement.
-		expect(toHealthCheckDto({ ...base, formatted: '3/3 up' })).toMatchObject({
+	test('a ratio publishes both halves, so "3 up" does not lose what it was out of', () => {
+		expect(toHealthCheckDto({ ...base, value: 3, total: 3, unit: 'count' })).toMatchObject({
 			value: 3,
 			unit: 'count'
 		});
 	});
 
 	test('a percentage is a percentage', () => {
-		expect(toHealthCheckDto({ ...base, formatted: '1.66%' })).toMatchObject({ unit: 'percent' });
+		expect(toHealthCheckDto({ ...base, value: 1.66, unit: 'percent' })).toMatchObject({
+			value: 1.66,
+			unit: 'percent'
+		});
 	});
 
 	test('a duration is still milliseconds', () => {
-		expect(toHealthCheckDto({ ...base, formatted: '517 ms' })).toMatchObject({
+		expect(toHealthCheckDto({ ...base, value: 517, unit: 'milliseconds' })).toMatchObject({
 			value: 517,
 			unit: 'milliseconds'
+		});
+	});
+
+	test('a throughput publishes the whole number, not the compact rendering of it', () => {
+		// The case that was missing, and the reason the bug lived. This mapper used to
+		// recover the value with `parseFloat(check.formatted)`; the Coralogix provider
+		// renders 1,200 req/s as "1.2k", so the API published 1.2 — under `milliseconds`,
+		// because nothing in the string said otherwise. At 1.25M it was out by a million.
+		//
+		// The three tests above all passed throughout, because every string they used
+		// happened to start with the number it meant.
+		expect(toHealthCheckDto({ ...base, value: 1200, unit: 'rate' })).toMatchObject({
+			value: 1200,
+			unit: 'count'
+		});
+
+		expect(toHealthCheckDto({ ...base, value: 1_250_000, unit: 'rate' })).toMatchObject({
+			value: 1_250_000
 		});
 	});
 });

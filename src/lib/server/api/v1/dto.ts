@@ -639,31 +639,24 @@ export function toServiceDto(service: Service): ServiceDto {
 /**
  * A health check as a number and a unit.
  *
- * The internal shape carries a formatted string and a sparkline because that is what
- * our table draws. A client wants the reading — it will render or alert on it its own
- * way — so the value is parsed back out of the check's own unit rather than shipped as
- * "517 ms".
+ * Both are now stated by the source, so this maps rather than reverse-engineers. It used
+ * to recover the value with `Number.parseFloat(check.formatted)` and guess the unit from
+ * the string's suffix, which was wrong in every case the fixtures did not happen to cover:
+ * a Coralogix throughput of 1,200 req/s renders "1.2k", and `parseFloat` stopped at the k
+ * and published 1.2 — under `milliseconds`, because nothing in the string said otherwise.
+ * At 1.25M it was out by a factor of a million.
+ *
+ * `rate` is not in the published picklist, and a rate is a count per second, so it maps to
+ * `count`. The alternative is a new enum value, which a frozen v1 client would not know.
  */
 export function toHealthCheckDto(check: HealthCheck): HealthCheckDto {
-	const formatted = check.formatted.trim();
-	const value = Number.parseFloat(formatted);
-
-	// Not every check is a duration. A liveness check reads "3/3 up", and publishing
-	// that as three milliseconds is a plainly wrong measurement under a confident unit —
-	// the exact failure `unit` exists to prevent. `count` was added to the picklist when
-	// a real provider emitted one; the enum is additive, so a v1 client that only knows
-	// the first two still parses the document.
-	const unit = formatted.endsWith('%')
-		? 'percent'
-		: /^\d+\s*\/\s*\d+/.test(formatted)
-			? 'count'
-			: 'milliseconds';
+	const unit = check.unit === 'rate' ? 'count' : check.unit;
 
 	return {
 		id: check.id,
 		label: check.label,
 		status: check.status,
-		value: Number.isFinite(value) ? value : 0,
+		value: check.value,
 		unit
 	};
 }

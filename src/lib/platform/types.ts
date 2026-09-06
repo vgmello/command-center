@@ -499,14 +499,35 @@ export type ServiceStat =
 	  };
 
 /** One row of the service health table: an SLI, its state and its recent shape. */
+/**
+ * What a health check is measured in.
+ *
+ * Stated by the source rather than inferred from how a number reads. `formatted` used to
+ * be the only thing a check carried, so `/api/v1` recovered the value with
+ * `parseFloat` and guessed the unit from the string's suffix — which published a
+ * throughput of 1,200 req/s, rendered "1.2k", as 1.2 milliseconds.
+ */
+export type HealthCheckUnit = 'percent' | 'milliseconds' | 'count' | 'rate';
+
 export interface HealthCheck {
 	id: string;
 	label: string;
 	icon: string;
 	status: HealthStatus;
-	/** Already formatted — the unit differs per check, and only the source knows it. */
-	formatted: string;
+	value: number;
+	unit: HealthCheckUnit;
+	/**
+	 * The denominator, for a check that reads as a ratio.
+	 *
+	 * A liveness check is "3 of 3 up", and publishing the 3 alone loses which 3 it was.
+	 */
+	total?: number;
 	series: Series;
+}
+
+/** A check as the table draws it. */
+export interface HealthCheckView extends HealthCheck {
+	formatted: string;
 }
 
 /** A service this one calls, or that calls it. */

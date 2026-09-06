@@ -4,6 +4,7 @@
 	import Sparkline from '../Sparkline.svelte';
 	import { statusTone } from '../tone';
 	import { STATUS_LABELS } from '$lib/platform/health';
+	import { formatHealthCheck } from '$lib/platform/health';
 	import type { HealthCheck } from '$lib/platform/types';
 
 	interface Props {
@@ -53,7 +54,7 @@
 						/>
 					</td>
 					<td class="tabular px-4 py-[7px] text-right text-[12.5px] whitespace-nowrap">
-						{check.formatted}
+						{formatHealthCheck(check)}
 					</td>
 				</tr>
 			{/each}
