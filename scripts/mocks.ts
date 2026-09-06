@@ -18,11 +18,15 @@ import { startOctopusMock } from '../src/lib/server/sources/providers/octopus/mo
 import { buildEstate as octopusEstate } from '../src/lib/server/sources/providers/octopus/mock/data';
 import { startCoralogixMock } from '../src/lib/server/sources/providers/coralogix/mock/server';
 import { buildEstate as coralogixEstate } from '../src/lib/server/sources/providers/coralogix/mock/data';
+import { startCostMock } from '../src/lib/server/sources/providers/azure/mock/cost';
 
 const now = new Date();
 
 const octopusPort = Number(Bun.env.OCTOPUS_MOCK_PORT ?? 4591);
 const coralogixPort = Number(Bun.env.CORALOGIX_MOCK_PORT ?? 4592);
+// Azure Cost Management, which floci-az does not emulate. The rest of Azure comes from
+// floci-az on 4577, started by `bun run db:up`.
+const costPort = Number(Bun.env.AZURE_COST_MOCK_PORT ?? 4593);
 const apiKey = Bun.env.MOCK_API_KEY ?? 'local-dev-key';
 
 /**
@@ -46,8 +50,11 @@ const coralogix = startCoralogixMock({
 	port: coralogixPort
 });
 
+const cost = startCostMock({ apiKey, port: costPort, now });
+
 console.log(`Octopus mock    ${octopus.url}   (${deployments} deployments)`);
 console.log(`Coralogix mock  ${coralogix.url}   (${points} points at 60s)`);
+console.log(`Azure cost mock ${cost.url}   (month to date, ${now.getUTCDate()} days)`);
 console.log(`API key         ${apiKey}`);
 console.log('\nPoint SOURCES_CONFIG at a connections file naming these. Ctrl-C to stop.');
 
@@ -56,6 +63,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 	process.on(signal, () => {
 		octopus.stop();
 		coralogix.stop();
+		cost.stop();
 		process.exit(0);
 	});
 }

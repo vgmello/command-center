@@ -21,5 +21,22 @@ services:
       timeout: 3s
       retries: 10
 
+  # A local Azure: ARM, Monitor and Entra, so @azure/identity authenticates against it and
+  # the provider talks to it exactly as it would to the real thing. Only the endpoint
+  # differs, which is what makes an end-to-end run exercise the production code path.
+  #
+  # It mounts the host Docker socket because it provisions real containers for the
+  # stateful services it emulates. That is the project's documented way to run it, and it
+  # is worth knowing: a container with the host socket can start other containers.
+  #
+  # Cost Management is not emulated, so `cloud.cost` is served by our own mock — see
+  # src/lib/server/sources/providers/azure/mock/cost.ts, started by `bun run dev:stack`.
+  floci-az:
+    image: floci/floci-az:latest
+    ports:
+      - '4577:4577'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
 volumes:
   command-center-pgdata:
