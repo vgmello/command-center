@@ -62,8 +62,6 @@ export const CAPABILITY_TIER: Record<Capability, CapabilityTier> = {
 	// question — switching trend grain pays full price again — which is a real limitation
 	// and a much smaller one than paying it every time.
 	// See `docs/superpowers/specs/2026-09-06-deployment-trend-accumulation-design.md`.
-	'deployment.trends': 'reference',
-	'deployment.statusTrend': 'reference',
 	'apm.latencyHeatmap': 'reference',
 
 	// Series: accumulated buckets. Persisted as samples by the series path, not as
@@ -71,7 +69,9 @@ export const CAPABILITY_TIER: Record<Capability, CapabilityTier> = {
 	// a fifteen-minute view and a twenty-four-hour one.
 	//
 	// Nothing belongs here until a router reads it through `fanOutSeries`.
-	'apm.metricSeries': 'series'
+	'apm.metricSeries': 'series',
+	'deployment.trends': 'series',
+	'deployment.statusTrend': 'series'
 };
 
 /** Whether an answer to this capability is worth keeping past the process. */

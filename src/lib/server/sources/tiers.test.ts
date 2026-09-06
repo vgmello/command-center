@@ -41,7 +41,11 @@ describe('CAPABILITY_TIER', () => {
 		// `series` is a promise that something accumulates the capability. Until a router
 		// reads one through `fanOutSeries`, it does not belong in this tier — and adding
 		// it here without that wiring must fail rather than go quiet.
-		const accumulated = new Set<Capability>(['apm.metricSeries']);
+		const accumulated = new Set<Capability>([
+			'apm.metricSeries',
+			'deployment.trends',
+			'deployment.statusTrend'
+		]);
 		const declared = CAPABILITIES.filter((one) => CAPABILITY_TIER[one] === 'series');
 
 		expect(new Set(declared)).toEqual(accumulated);

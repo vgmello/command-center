@@ -12,7 +12,7 @@ import { ALL_SERVICES } from '$lib/platform/deployments';
 import { queryDeploymentsInMemory } from '../../../platform/in-memory-query';
 import { defineProvider } from '../../provider';
 import type { DeploymentProvider } from '../../contracts';
-import type { LinkView, SourceBinding } from '../../provider';
+import type { LinkView, SourceBinding, SourceContext } from '../../provider';
 import { OctopusClient } from './client';
 import { deploymentReference, durationSeconds, environmentOf, statusOf, triggerOf } from './map';
 import type { OctopusTaskState } from './map';
@@ -328,6 +328,50 @@ export const octopusProvider = defineProvider<DeploymentProvider>({
 		}
 
 		/** Rows inside a window, and the equal window before it, for the change figures. */
+		/**
+		 * The rows a trend covers, honouring an explicit gap window when one is given.
+		 *
+		 * Without `ctx.window` this is the whole trend period, read off the shared window
+		 * everything else on the page already needs. With one, the caller has most of the
+		 * history stored and wants only what is newer — so the fetch is bounded by
+		 * `notBefore`, which stops paging as soon as a page precedes the gap. Octopus
+		 * returns newest first and has no date filter, so that early stop is the only way
+		 * to make a bounded read cheap, and it is what turns a refresh into one page.
+		 */
+		async function trendWindow(ctx: SourceContext, days: number) {
+			const window = ctx.window;
+
+			if (window) {
+				const at = (one: Deployment) => new Date(one.deployedAt).getTime();
+				const gapDays = (window.to.getTime() - window.from.getTime()) / 86_400_000;
+
+				// A wide gap is the whole trend period in disguise — a cold store asks for
+				// all fourteen days — and paying for a private copy of it is how this read
+				// tripled the cold cost of the page when it first landed: two trends each
+				// fetching their own four-hundred-row window beside the shared one.
+				//
+				// A narrow gap is a refresh, and there the bounded fetch is the entire
+				// point: Octopus returns newest first, so `notBefore` stops after one page.
+				const rows =
+					gapDays > 2 || sharedIsWarm()
+						? await loadSharedWindow()
+						: await loadWindow(settings.windowSize, settings.windowSize, {}, window.from);
+
+				return {
+					from: window.from,
+					to: window.to,
+					rows: rows.filter(
+						(one) => at(one) >= window.from.getTime() && at(one) <= window.to.getTime()
+					)
+				};
+			}
+
+			const now = new Date();
+			const { current } = await loadComparable(days, now);
+
+			return { from: new Date(now.getTime() - days * 86_400_000), to: now, rows: current };
+		}
+
 		async function loadComparable(days: number, now: Date) {
 			const all = await loadSharedWindow();
 			const start = new Date(now.getTime() - days * 86_400_000);
@@ -402,19 +446,14 @@ export const octopusProvider = defineProvider<DeploymentProvider>({
 				return breakDownByDomain(current);
 			},
 
-			async readStatusTrend() {
-				const now = new Date();
-				const from = new Date(now.getTime() - TREND_DAYS.daily * 86_400_000);
-				const { current } = await loadComparable(TREND_DAYS.daily, now);
-				return statusTrendOf(current, 'daily', from, now);
+			async readStatusTrend(ctx) {
+				const { from, to, rows } = await trendWindow(ctx, TREND_DAYS.daily);
+				return statusTrendOf(rows, 'daily', from, to);
 			},
 
-			async readTrends(_ctx, grain) {
-				const now = new Date();
-				const days = TREND_DAYS[grain];
-				const from = new Date(now.getTime() - days * 86_400_000);
-				const { current } = await loadComparable(days, now);
-				return trendsOf(current, grain, from, now);
+			async readTrends(ctx, grain) {
+				const { from, to, rows } = await trendWindow(ctx, TREND_DAYS[grain]);
+				return trendsOf(rows, grain, from, to);
 			},
 
 			async listDeployingDomains() {

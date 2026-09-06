@@ -1,6 +1,7 @@
 import type { DeploymentSource } from '../../platform/source';
 import type { DeploymentProvider } from '../contracts';
-import { fanOut, fanOutSingle, type RouterDeps } from './shared';
+import { fanOut, fanOutSeries, fanOutSingle, type RouterDeps } from './shared';
+import { TREND_DAYS, statusTrendShape, trendsShape } from './deployment-series-shape';
 
 /** `DeploymentSource` has no catalog side: every method is a deployment source's answer. */
 export function createDeploymentRouter(deps: RouterDeps): DeploymentSource {
@@ -27,14 +28,31 @@ export function createDeploymentRouter(deps: RouterDeps): DeploymentSource {
 				(client as DeploymentProvider).readDomainBreakdown!(ctx)
 			),
 
+		// Accumulated rather than cached, so the three grains read the same stored rows. As
+		// documents they keyed on the grain, and switching from daily to weekly paid for a
+		// fresh four-hundred-row window to see the same runs counted differently.
 		readStatusTrend: (scope) =>
-			fanOut(deps, 'deployment.statusTrend', scope, '', (client, ctx) =>
-				(client as DeploymentProvider).readStatusTrend!(ctx)
+			fanOutSeries(
+				deps,
+				'deployment.statusTrend',
+				scope,
+				'',
+				statusTrendShape(),
+				(client, ctx) => (client as DeploymentProvider).readStatusTrend!(ctx),
+				TREND_DAYS.daily * 86_400
 			),
 
 		readTrends: (scope, grain) =>
-			fanOutSingle(deps, 'deployment.trends', scope, `grain=${grain}`, (client, ctx) =>
-				(client as DeploymentProvider).readTrends!(ctx, grain)
+			fanOutSeries(
+				deps,
+				'deployment.trends',
+				scope,
+				// No grain in the args: that is the point. One set of daily samples serves
+				// all three, and keying on the grain is what stopped them sharing.
+				'',
+				trendsShape(grain),
+				(client, ctx) => (client as DeploymentProvider).readTrends!(ctx, grain),
+				TREND_DAYS[grain] * 86_400
 			),
 
 		listInsights: (scope) =>

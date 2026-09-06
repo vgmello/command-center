@@ -189,8 +189,12 @@ const WARM_CEILING: Record<string, number> = {
 	overview: 22,
 	domains: 18,
 	'domain detail': 14,
-	// Was 50, and the reason this file exists. See the two deployment tests below.
-	deployments: 10,
+	// Was 45 warm, which is why any of this file exists — then 6 once the trends became
+	// documents, then 12 once they became accumulated series. Higher than 6 and better
+	// than it: a document served the whole answer back, while a day-bucketed series keeps
+	// the newest day provisional and asks for one page of it, in exchange for the three
+	// grains sharing rows at all.
+	deployments: 16,
 	'service detail': 33,
 	'service metrics': 16,
 	infrastructure: 5
@@ -289,17 +293,15 @@ describeWarm('what the store actually buys', () => {
 		}
 	});
 
-	test('the two deployment series are served from the store, now that they are documents', async () => {
-		// They used to cost 45 each warm. Both were declared `series` while `fanOutSeries`
-		// was called for neither, so they fell through the cache and the accumulator alike
-		// and re-fetched a four-hundred-row window on every read. Classified `reference`
-		// they take the path the sibling aggregates already take, and cost nothing.
+	test('the two deployment series accumulate, so a warm read asks for almost nothing', async () => {
+		// They used to cost 45 each. Both were declared `series` while `fanOutSeries` was
+		// called for neither, so they fell through the cache and the accumulator alike and
+		// re-fetched a four-hundred-row window every time.
 		const h = harness();
 
 		try {
 			await h.build().deployment.readTrends(scope, 'daily');
 			await h.build().deployment.readStatusTrend(scope);
-			// The write is fire-and-forget, so let it land before a fresh instance looks.
 			await Bun.sleep(400);
 
 			const warm = h.build();
@@ -308,21 +310,19 @@ describeWarm('what the store actually buys', () => {
 			await warm.deployment.readTrends(scope, 'daily');
 			await warm.deployment.readStatusTrend(scope);
 
-			expect(h.count()).toBe(0);
+			// Not zero: a day-bucketed series keeps the newest day provisional, so a warm
+			// read still asks for the gap. It asks for one page of it, not fourteen.
+			expect(h.count()).toBeLessThan(10);
 		} finally {
 			h.stop();
 		}
 	});
 
-	test('but a different grain pays full price, because a document keys on the question', async () => {
-		// The limitation this buys, stated rather than discovered. `grain=daily` is part of
-		// the cache key, so `weekly` is a different question and shares no rows with it —
-		// even though both are renderings of the same underlying runs.
-		//
-		// Accumulating them into `source_series` is what makes the grains share rows, and
-		// it is the next increment. This test is the reason it is worth doing, and it turns
-		// red as an unexpected pass on the day it lands.
-		// See docs/superpowers/specs/2026-09-06-deployment-trend-accumulation-design.md.
+	test('a different grain reads the same stored rows, which is the point of accumulating', async () => {
+		// The property this increment exists to create, and the one a whole-answer cache
+		// cannot fake. `grain=daily` used to be part of the cache key, so asking for weekly
+		// was a different question and paid the full 48 again — even though both are the
+		// same runs counted differently.
 		const h = harness();
 
 		try {
@@ -333,7 +333,9 @@ describeWarm('what the store actually buys', () => {
 			h.reset();
 			await warm.deployment.readTrends(scope, 'weekly');
 
-			expect(h.count()).toBeGreaterThan(30);
+			// Weekly looks back further than daily, so some of its window is genuinely new;
+			// what it must not do is re-read the fortnight daily already stored.
+			expect(h.count()).toBeLessThan(48);
 		} finally {
 			h.stop();
 		}

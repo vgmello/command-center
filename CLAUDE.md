@@ -338,14 +338,14 @@ second page view, served by an instance with an empty memory tier over a warm Po
 Fresh routers on purpose, because reusing them would measure the memory tier, which
 answers in zero requests and is lost on every restart.
 
-The measured answer, after the fix below:
+The measured answer:
 
 | Screen          | Cold | Warm |
 | --------------- | ---: | ---: |
 | overview        |   20 |   17 |
 | domains         |   14 |   14 |
 | domain detail   |    9 |    9 |
-| deployments     |   48 |    6 |
+| deployments     |   48 |   12 |
 | service detail  |   30 |   28 |
 | service metrics |   18 |   12 |
 | infrastructure  |    0 |    0 |
@@ -353,25 +353,30 @@ The measured answer, after the fix below:
 Deployments was 45 warm — the same as cold — and it was the whole reason to look. Measured
 per capability, the live log cost 6 of that and `readTrends` and `readStatusTrend` cost 45
 each. Both were declared `series` in `tiers.ts` while `fanOutSeries` was called in exactly
-one place, for `apm.metricSeries`, so they fell through **both** strategies: `isDocument`
-false, so the cache never persisted them, and no router accumulated them, so they never
-reached `source_series` either. Every read paged a four-hundred-row window — fourteen pages
-at three requests each, since every page carries a `/api/tasks` and a
-`/api/Spaces-1/releases` enrichment call — and nothing anywhere reported a problem.
+one place, so they fell through **both** strategies: `isDocument` false, so the cache never
+persisted them, and no router accumulated them, so they never reached `source_series`
+either. Every read paged a four-hundred-row window and nothing reported a problem.
 
-**`series` is a promise that a router accumulates the capability.** Declaring one there
-without that wiring buys nothing and says nothing, which is why `tiers.test.ts` now asserts
-the `series` tier holds exactly what `fanOutSeries` reads. `deployment.trends`,
-`deployment.statusTrend` and `apm.latencyHeatmap` are `reference` until they are actually
-accumulated.
+**`series` is a promise that a router accumulates the capability.** `tiers.test.ts` asserts
+the tier holds exactly what `fanOutSeries` reads, and `dispatch-tiers.test.ts` asserts the
+converse by reading the routers: every capability's dispatch helper matches its tier, and a
+capability no router reads at all fails too.
 
-That is a whole-answer cache, so it keys on the question: `grain=daily` and `grain=weekly`
-share no rows, and switching grain still pays 48. Making the three grains read the same
-stored rows is the next increment, specified in
-`docs/superpowers/specs/2026-09-06-deployment-trend-accumulation-design.md`. It cannot
-reuse `fanOutSeries` unchanged — these capabilities take their window from `TREND_DAYS`
-rather than the scope, every grain exceeds the 24-hour stored horizon, and a 60-second
-bucket is wrong for sparse events.
+**The geometry is per-capability, because one size is wrong.** Metrics are continuous, so a
+sixty-second bucket settling in five minutes is right. Deployments are discrete events —
+four hundred runs across a fortnight would write twenty thousand rows of mostly zeros on
+that grid — so they use a day bucket settling in a day, over a horizon of a year. The
+window comes from the capability too: the trends look back 14, 84 or 365 days by grain and
+ignore `scope.timeRange` entirely.
+
+Two things the deployment shape does that the metrics shape must not be copied for:
+
+- **Counts sum, they do not average.** A week that averaged its days would report a seventh
+  of the deployments that happened, so `downsample` takes an aggregation mode.
+- **A mean cannot be re-aggregated from means.** `meanDuration` is stored decomposed as
+  `run_count` and `duration_total` and the mean rebuilt by dividing the sums. Two runs at
+  10s and two hundred at 1,000s is a period mean of 990, not the 505 an average of the two
+  daily means gives.
 
 The live log stays `live` and stays cheap. A deployment feed read back off disk is a feed
 that has stopped reporting.
@@ -674,7 +679,7 @@ an `@` costs its full length in every session, whether or not the session touche
 ## State
 
 Overview, Domains, Deployments, the Service detail view and Infrastructure built and
-verified, plus the service Metrics tab and the Domain detail view. `bun test` (714 tests), `bun run check`, `bun run lint`,
+verified, plus the service Metrics tab and the Domain detail view. `bun test` (786 tests), `bun run check`, `bun run lint`,
 and `bun run build` all pass, and the production server boots and serves.
 
 What exists:

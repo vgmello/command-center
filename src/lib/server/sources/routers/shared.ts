@@ -6,8 +6,7 @@ import type { SourceContext } from '../provider';
 import type { SourceRegistry } from '../registry';
 import type { SourceStore, StoredSample } from '../../store/source-store';
 import {
-	BUCKET_SECONDS,
-	MAX_STORED_SECONDS,
+	geometryFor,
 	RANGE_SECONDS,
 	gapFor,
 	groupSamples,
@@ -162,16 +161,27 @@ export async function fanOutSeries<T>(
 		) => Array<{ key: SeriesKey; points: Array<{ at: Date; value: number }> }>;
 		rebuild: (groups: Map<string, StoredSample[]>, window: { from: Date; to: Date }) => T;
 	},
-	call: (client: unknown, ctx: SourceContext) => Promise<T>
+	call: (client: unknown, ctx: SourceContext) => Promise<T>,
+	/**
+	 * How far back this read looks, when the capability rather than the scope decides.
+	 *
+	 * `apm.metricSeries` draws whatever range the reader picked, so it takes the scope's.
+	 * The deployment trends do not: they look back fourteen, eighty-four or three hundred
+	 * and sixty-five days depending on the grain, and would otherwise be stored against a
+	 * fifteen-minute window and served fifteen minutes of a fortnight.
+	 */
+	spanSeconds?: number
 ): Promise<T> {
 	const store = deps.store;
 	const now = new Date();
-	const span = Math.min(RANGE_SECONDS[scope.timeRange], MAX_STORED_SECONDS);
+	const geometry = geometryFor(capability);
+	const wanted = spanSeconds ?? RANGE_SECONDS[scope.timeRange];
+	const span = Math.min(wanted, geometry.maxStoredSeconds);
 	const want = { from: new Date(now.getTime() - span * 1000), to: now };
 
 	// Beyond the stored horizon, or with no store at all, ask for the whole window. A
 	// rolled-up table is what extends that, and it is deliberately a later increment.
-	if (!store || RANGE_SECONDS[scope.timeRange] > MAX_STORED_SECONDS) {
+	if (!store || wanted > geometry.maxStoredSeconds) {
 		return fanOutSingle(deps, capability, scope, args, call);
 	}
 
@@ -187,13 +197,13 @@ export async function fanOutSeries<T>(
 	};
 
 	const stored: StoredSample[] = await store.readSeries(query).catch(() => []);
-	const gap = gapFor(stored, want, now);
+	const gap = gapFor(stored, want, now, geometry);
 
 	if (gap) {
 		// Only the gap, at the canonical resolution — samples fetched at the query's own
 		// step would not line up with what is already stored.
 		const fetched = await fanOutSingle(deps, capability, scope, args, (client, ctx) =>
-			call(client, { ...ctx, window: { ...gap, stepSeconds: BUCKET_SECONDS } })
+			call(client, { ...ctx, window: { ...gap, stepSeconds: geometry.bucketSeconds } })
 		);
 
 		const samples = toSamples(shape.flatten(fetched, gap), query, now);

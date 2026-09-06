@@ -22,6 +22,59 @@ import type { StoredSample } from '../store/source-store';
  */
 export const BUCKET_SECONDS = 60;
 
+const DAY_SECONDS = 24 * 60 * 60;
+
+/**
+ * The geometry of one accumulated capability.
+ *
+ * Per-capability rather than global, because the constants that are right for a metrics
+ * chart are wrong for a deployment log. Metrics are continuous — every minute has a
+ * reading — while deployments are discrete events: four hundred runs across a fortnight
+ * would write twenty thousand rows of mostly zeros on a sixty-second grid, to describe
+ * four hundred facts.
+ *
+ * `settling` is the other half of the same difference. A metrics backend backfills, so a
+ * bucket stays revisable for a few minutes. A day's deployments are done when the day is.
+ */
+export interface SeriesGeometry {
+	/** The canonical resolution samples are stored at. */
+	bucketSeconds: number;
+	/** How long a bucket stays revisable before it is trusted. */
+	settlingSeconds: number;
+	/** The longest window served from the store; beyond it, ask the source. */
+	maxStoredSeconds: number;
+}
+
+const DEFAULT_GEOMETRY: SeriesGeometry = {
+	bucketSeconds: 60,
+	settlingSeconds: 300,
+	maxStoredSeconds: DAY_SECONDS
+};
+
+/**
+ * Where a capability's geometry differs from the default.
+ *
+ * The deployment trends look back fourteen, eighty-four and three hundred and sixty-five
+ * days depending on the grain asked for, so their horizon is a year and their bucket is a
+ * day — which is also the finest resolution any of those three charts draws.
+ */
+const GEOMETRY: Partial<Record<Capability, SeriesGeometry>> = {
+	'deployment.trends': {
+		bucketSeconds: DAY_SECONDS,
+		settlingSeconds: DAY_SECONDS,
+		maxStoredSeconds: 366 * DAY_SECONDS
+	},
+	'deployment.statusTrend': {
+		bucketSeconds: DAY_SECONDS,
+		settlingSeconds: DAY_SECONDS,
+		maxStoredSeconds: 90 * DAY_SECONDS
+	}
+};
+
+export function geometryFor(capability: Capability): SeriesGeometry {
+	return GEOMETRY[capability] ?? DEFAULT_GEOMETRY;
+}
+
 /**
  * How long a bucket stays revisable.
  *
@@ -50,8 +103,8 @@ export const RANGE_SECONDS: Record<TimeRangeId, number> = {
 export const MAX_STORED_SECONDS = 24 * 60 * 60;
 
 /** Round down to the canonical grid, so every writer lands on the same buckets. */
-export function alignBucket(at: Date): Date {
-	const ms = BUCKET_SECONDS * 1000;
+export function alignBucket(at: Date, bucketSeconds = BUCKET_SECONDS): Date {
+	const ms = bucketSeconds * 1000;
 	return new Date(Math.floor(at.getTime() / ms) * ms);
 }
 
@@ -73,7 +126,8 @@ export function toSamples(
 	context: { connectionId: string; capability: Capability; environment: string },
 	now: Date
 ): StoredSample[] {
-	const settledBefore = now.getTime() - SETTLING_SECONDS * 1000;
+	const geometry = geometryFor(context.capability);
+	const settledBefore = now.getTime() - geometry.settlingSeconds * 1000;
 
 	return series.flatMap((one) =>
 		one.points.map((point) => ({
@@ -82,7 +136,7 @@ export function toSamples(
 			environment: context.environment,
 			entity: one.key.entity,
 			metric: one.key.metric,
-			bucketAt: alignBucket(point.at),
+			bucketAt: alignBucket(point.at, geometry.bucketSeconds),
 			value: point.value,
 			settled: point.at.getTime() < settledBefore
 		}))
@@ -137,9 +191,10 @@ export function groupSamples(samples: StoredSample[]): Map<string, StoredSample[
 export function gapFor(
 	stored: StoredSample[],
 	want: { from: Date; to: Date },
-	now: Date
+	now: Date,
+	geometry: SeriesGeometry = DEFAULT_GEOMETRY
 ): { from: Date; to: Date } | null {
-	const settledBefore = now.getTime() - SETTLING_SECONDS * 1000;
+	const settledBefore = now.getTime() - geometry.settlingSeconds * 1000;
 	let highWater = 0;
 
 	for (const sample of stored) {
@@ -148,9 +203,9 @@ export function gapFor(
 	}
 
 	// Nothing trusted at all: the store is cold for this series.
-	if (highWater === 0) return { from: alignBucket(want.from), to: want.to };
+	if (highWater === 0) return { from: alignBucket(want.from, geometry.bucketSeconds), to: want.to };
 
-	const from = new Date(highWater + BUCKET_SECONDS * 1000);
+	const from = new Date(highWater + geometry.bucketSeconds * 1000);
 
 	// The trusted history already reaches the present. Nothing to ask for.
 	if (from.getTime() > want.to.getTime()) return null;
@@ -158,7 +213,9 @@ export function gapFor(
 	// Never ask for less than the window wants: a store holding only ancient samples must
 	// not narrow the fetch to a range the caller did not ask about.
 	return {
-		from: new Date(Math.max(from.getTime(), alignBucket(want.from).getTime())),
+		from: new Date(
+			Math.max(from.getTime(), alignBucket(want.from, geometry.bucketSeconds).getTime())
+		),
 		to: want.to
 	};
 }
@@ -174,16 +231,41 @@ export function downsample(
 	samples: StoredSample[],
 	from: Date,
 	to: Date,
-	points: number
+	points: number,
+	options: {
+		/**
+		 * How several buckets combine into one.
+		 *
+		 * `mean` for a reading — averaging a minute of CPU into an hour of it is what an
+		 * hourly chart means. `sum` for a count: deployments are additive, and a week that
+		 * averaged its days would report a seventh of the runs that happened.
+		 */
+		aggregate?: 'mean' | 'sum';
+		/** The stored resolution, which a slot can never be narrower than. */
+		bucketSeconds?: number;
+	} = {}
 ): Array<{ at: Date; value: number }> {
 	if (samples.length === 0 || points <= 0) return [];
 
+	const { aggregate = 'mean', bucketSeconds = BUCKET_SECONDS } = options;
 	const span = Math.max(to.getTime() - from.getTime(), 1);
-	const width = Math.max(span / points, BUCKET_SECONDS * 1000);
+	const width = Math.max(span / points, bucketSeconds * 1000);
 	const buckets = new Map<number, { total: number; count: number }>();
 
+	// One slot per requested point, and every sample belongs in one of them.
+	//
+	// Both ends need clamping and both were wrong. A sample landing exactly on `to` fell
+	// into a slot past the end; and because samples are aligned *down* onto their bucket
+	// grid, one taken shortly after `from` aligns to just before it and fell into slot -1.
+	// Either way a window asked for one bucket came back with two, and a mean rebuilt
+	// across them was one day's mean rather than the period's.
+	const slots = Math.max(Math.ceil(span / width), 1);
+
 	for (const sample of samples) {
-		const slot = Math.floor((sample.bucketAt.getTime() - from.getTime()) / width);
+		const slot = Math.min(
+			Math.max(Math.floor((sample.bucketAt.getTime() - from.getTime()) / width), 0),
+			slots - 1
+		);
 		const bucket = buckets.get(slot) ?? { total: 0, count: 0 };
 
 		bucket.total += sample.value;
@@ -195,7 +277,7 @@ export function downsample(
 		.sort((a, b) => a[0] - b[0])
 		.map(([slot, bucket]) => ({
 			at: new Date(from.getTime() + slot * width),
-			value: bucket.total / bucket.count
+			value: aggregate === 'sum' ? bucket.total : bucket.total / bucket.count
 		}));
 }
 
