@@ -559,12 +559,31 @@ Remote functions are experimental and the API moves. Never answer a remote-funct
 
 ### Running Vite under Bun
 
-`bun run dev` is **not** enough. Bun respects a binary's shebang, and Vite's is `#!/usr/bin/env node` — so a plain `bun run dev` silently hands the dev server to Node. Two ways to force the Bun runtime:
+Bun respects a binary's shebang, and Vite's is `#!/usr/bin/env node`, so anything that
+resolves the `vite` bin and runs it hands the dev server to Node. The banner is identical
+either way, which is why this went unnoticed for the whole of the project's life so far.
 
-- **Per-invocation:** `bun --bun run dev` (equivalently `bunx --bun vite dev`). The `--bun` flag overrides the shebang.
-- **Repo-wide (preferred):** set `run.bun = true` in `bunfig.toml`, which makes every `bun run` use Bun without the flag. Committed to the repo so it applies to everyone and to CI.
+**Only one form actually works, and it is the one the `dev` script now uses:**
 
-Verify rather than assume — `process.versions.bun` is defined only under Bun. If it's `undefined` in the dev server, Vite is running on Node and the `--bun`/`bunfig.toml` setup is not taking effect.
+```
+bun --bun node_modules/.bin/vite dev
+```
+
+The bin path is passed to Bun directly. Neither documented alternative survives contact —
+both were measured and both lose it:
+
+| Command                                | Listener |
+| -------------------------------------- | -------- |
+| `bun --bun run dev`                    | `node`   |
+| `bunx --bun vite dev`                  | `node`   |
+| `bun --bun node_modules/.bin/vite dev` | `bun`    |
+
+`run.bun = true` in `bunfig.toml` does not rescue it either. The `--bun` flag applies to
+the command Bun runs, not to a `vite` process that command goes on to spawn.
+
+**Verify rather than assume, and do not trust the banner.** `ps -o comm= -p $(lsof -nP
+-iTCP:5173 -sTCP:LISTEN -t)` names the runtime of the process actually holding the port.
+`process.versions.bun` is the in-process check and is `undefined` under Node.
 
 ### Adapter
 
