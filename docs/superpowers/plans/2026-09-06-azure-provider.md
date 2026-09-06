@@ -251,9 +251,14 @@ git commit -m "refactor: narrow CloudProvider to facts, so an adapter need not i
 # A local Azure: ARM, Monitor and Entra, so @azure/identity authenticates against it
 # and the provider talks to it exactly as it would to Azure. Only the endpoint differs.
 floci-az:
-  image: ghcr.io/floci-io/floci-az:latest
+  image: floci/floci-az:latest
   ports:
     - '4577:4577'
+  # The emulator provisions real containers for the stateful services it emulates, so it
+  # needs the host daemon. Verified before writing this: the published image is on Docker
+  # Hub as `floci/floci-az`, not ghcr, and it publishes an arm64 manifest.
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
   healthcheck:
     test: ['CMD-SHELL', 'wget -qO- http://localhost:4577/health || exit 1']
     interval: 5s
