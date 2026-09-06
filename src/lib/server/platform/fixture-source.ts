@@ -26,7 +26,7 @@ import type {
 	MetricInsight,
 	NodeCounts,
 	RateObservation,
-	ResourceUsage,
+	ResourceReading,
 	StorageClass,
 	Service,
 	ServiceDependencies,
@@ -223,7 +223,7 @@ export class FixtureInfrastructureSource implements InfrastructureSource {
 		return estate.listClusters(limit);
 	}
 
-	async readUtilization(_scope: PlatformScope): Promise<ResourceUsage[]> {
+	async readUtilization(_scope: PlatformScope): Promise<ResourceReading[]> {
 		return estate.readUtilization(new Date());
 	}
 

@@ -2,6 +2,7 @@
 	import SectionCard from '../SectionCard.svelte';
 	import { statusTone } from '../tone';
 	import { STATUS_LABELS } from '$lib/platform/health';
+	import { formatBytes } from '$lib/platform/infrastructure';
 	import type { DatabaseInstance } from '$lib/platform/types';
 
 	interface Props {
@@ -47,7 +48,7 @@
 							{database.connections} / {database.connectionLimit}
 						</td>
 						<td class="tabular py-[7px] text-right text-[12.5px] whitespace-nowrap">
-							{database.storageFormatted}
+							{formatBytes(database.storageBytes)}
 						</td>
 					</tr>
 				{/each}

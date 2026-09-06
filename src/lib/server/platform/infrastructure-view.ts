@@ -6,7 +6,7 @@ import type {
 } from '$lib/platform/types';
 import type { PlatformScope } from '$lib/platform/query';
 import type { InfrastructureSource } from './source';
-import { formatBytes } from '$lib/platform/infrastructure';
+import { toCostView, toStorageView, toUsageView } from '$lib/platform/infrastructure';
 import { toSeries } from './snapshot';
 
 /**
@@ -161,6 +161,10 @@ export async function buildInfrastructureSnapshot(
 			source.readCost(scope)
 		]);
 
+	// The readings arrive as facts; how they read is decided here, once, so a cloud
+	// adapter never formats a number or picks a tint.
+	const usage = resources.map(toUsageView);
+
 	const clusterCount = groups.find((group) => group.id === 'clusters')?.count ?? clusters.length;
 	// Capacity is nodes provisioned, which is the total plus whatever is not reporting.
 	const nodeCapacity = Math.max(
@@ -172,16 +176,16 @@ export async function buildInfrastructureSnapshot(
 		generatedAt: now.toISOString(),
 		environment: scope.environment,
 		timeRange: scope.timeRange,
-		stats: buildInfraStats(nodes, nodeCapacity, clusterCount, resources),
+		stats: buildInfraStats(nodes, nodeCapacity, clusterCount, usage),
 		regions,
 		nodes,
 		clusters,
-		resources,
-		storage: { totalFormatted: formatBytes(storage.totalBytes), classes: storage.classes },
+		resources: usage,
+		storage: toStorageView(storage),
 		databases,
 		queues,
 		alerts,
-		cost
+		cost: toCostView(cost)
 	};
 }
 

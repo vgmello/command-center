@@ -2,11 +2,11 @@
 	import SectionCard from '../SectionCard.svelte';
 	import { donutSegments } from '$lib/platform/geometry';
 	import { accentDot, accentStroke } from '../tone';
-	import type { StorageClass } from '$lib/platform/types';
+	import type { StorageClassView } from '$lib/platform/types';
 
 	interface Props {
 		totalFormatted: string;
-		classes: StorageClass[];
+		classes: StorageClassView[];
 	}
 
 	let { totalFormatted, classes }: Props = $props();

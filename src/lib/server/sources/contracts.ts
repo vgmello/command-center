@@ -20,7 +20,7 @@ import type {
 	MetricInsight,
 	NodeCounts,
 	RateObservation,
-	ResourceUsage,
+	ResourceReading,
 	ServiceDependencies,
 	ServiceEndpoint,
 	ServiceStat,
@@ -45,7 +45,7 @@ export interface CloudProvider {
 	listRegions?(ctx: SourceContext): Promise<InfraRegion[]>;
 	readNodeCounts?(ctx: SourceContext): Promise<NodeCounts>;
 	listClusters?(ctx: SourceContext, limit: number): Promise<ClusterLoad[]>;
-	readUtilization?(ctx: SourceContext): Promise<ResourceUsage[]>;
+	readUtilization?(ctx: SourceContext): Promise<ResourceReading[]>;
 	readStorage?(ctx: SourceContext): Promise<{ totalBytes: number; classes: StorageClass[] }>;
 	listDatabases?(ctx: SourceContext, limit: number): Promise<DatabaseInstance[]>;
 	listQueues?(ctx: SourceContext, limit: number): Promise<MessageQueue[]>;

@@ -759,27 +759,55 @@ export interface ClusterLoad {
  * `formatted` and `unit` are split so the number can be set large and its unit small,
  * which is how every reading on this platform is drawn.
  */
-export interface ResourceUsage {
+/**
+ * A fact: one resource's current reading and its recent shape.
+ *
+ * `unit` is the unit `value` and the series are actually in — `'%'` or `'bps'` — not the
+ * one a headline prints. The network tile reads "1.2 Gbps" over a series carrying bits per
+ * second, and pairing the two would label 1,200,000,000 as gigabits.
+ */
+export interface ResourceReading {
 	id: string;
 	label: string;
-	formatted: string;
+	value: number;
 	unit: string;
 	series: TimeSeries;
-	/** Ceiling for the panel's y-axis in the series' own unit — a percent, or bits/s. */
+	/** Ceiling for the panel's y-axis, in `unit`. */
 	axisMax: number;
-	changeFormatted: string;
-	comparedToLabel: string;
+	/** Percentage change against the preceding window. */
+	change: number;
 	direction: TrendDirection;
 	polarity: TrendPolarity;
 }
 
+/** One resource as the screen draws it. */
+export interface ResourceUsage extends ResourceReading {
+	formatted: string;
+	/** The unit the headline is printed in — 'Gbps' where `unit` is 'bps'. */
+	displayUnit: string;
+	changeFormatted: string;
+	comparedToLabel: string;
+}
+
 /** One slice of the storage donut. */
+/**
+ * A fact: how many bytes sit in one storage class.
+ *
+ * No tint and no formatted string. A cloud adapter knows its byte counts; it has no view
+ * about which of them is violet, and requiring one is what made `CloudProvider`
+ * impossible to implement honestly. `toStorageView` adds the presentation one layer up.
+ */
 export interface StorageClass {
 	id: string;
 	label: string;
+	bytes: number;
+}
+
+/** One storage class as the screen draws it. */
+export interface StorageClassView extends StorageClass {
 	formatted: string;
 	accent: DomainAccent;
-	/** Share of the total, 0–100. The bytes stay exact in `formatted`. */
+	/** Share of the total, 0–100. The bytes above stay exact. */
 	percentage: number;
 }
 
@@ -791,7 +819,8 @@ export interface DatabaseInstance {
 	cpuPct: number;
 	connections: number;
 	connectionLimit: number;
-	storageFormatted: string;
+	/** Bytes. The screen formats it; a source states it. */
+	storageBytes: number;
 }
 
 export interface MessageQueue {
@@ -819,30 +848,38 @@ export interface CostCategory {
 	id: string;
 	label: string;
 	amount: number;
-	formatted: string;
-	accent: DomainAccent;
-	percentage: number;
 	/** Daily spend across the month, in the same order as `CostBreakdown.labels`. */
 	daily: number[];
 }
 
+/** One spend category as the screen draws it. */
+export interface CostCategoryView extends CostCategory {
+	formatted: string;
+	accent: DomainAccent;
+	percentage: number;
+}
+
+/** A fact: what was spent, per category, per day. */
 export interface CostBreakdown {
 	/** One label per day, shared by every category so the columns stay aligned. */
 	labels: string[];
 	categories: CostCategory[];
-	/**
-	 * The raw figures alongside their formatted forms.
-	 *
-	 * The strings are derived from these, not the other way round, so carrying both is
-	 * not two sources of truth — and it stops every consumer that wants a number from
-	 * re-deriving one the assembler already computed.
-	 */
 	total: number;
-	totalFormatted: string;
 	changePct: number;
 	forecast: number;
-	forecastFormatted: string;
 	forecastChangePct: number;
+}
+
+/**
+ * Spend as the screen draws it.
+ *
+ * The strings are derived from the numbers above, not carried beside them by a source, so
+ * a cloud adapter never decides how money reads.
+ */
+export interface CostBreakdownView extends Omit<CostBreakdown, 'categories'> {
+	categories: CostCategoryView[];
+	totalFormatted: string;
+	forecastFormatted: string;
 }
 
 /** Everything the infrastructure overview tab renders. */
@@ -855,11 +892,11 @@ export interface InfrastructureSnapshot {
 	nodes: NodeCounts;
 	clusters: ClusterLoad[];
 	resources: ResourceUsage[];
-	storage: { totalFormatted: string; classes: StorageClass[] };
+	storage: { totalBytes: number; totalFormatted: string; classes: StorageClassView[] };
 	databases: DatabaseInstance[];
 	queues: MessageQueue[];
 	alerts: InfraAlert[];
-	cost: CostBreakdown;
+	cost: CostBreakdownView;
 }
 
 /** One column of the infrastructure summary: clusters, nodes, databases, queues. */

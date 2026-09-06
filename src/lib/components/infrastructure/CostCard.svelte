@@ -10,10 +10,10 @@
 	import type { Plot } from '$lib/platform/chart';
 	import { accentDot, accentStroke, sentimentText } from '../tone';
 	import { formatChange, formatMoneyAxis, trendSentiment } from '$lib/platform/format';
-	import type { CostBreakdown } from '$lib/platform/types';
+	import type { CostBreakdownView } from '$lib/platform/types';
 
 	interface Props {
-		cost: CostBreakdown;
+		cost: CostBreakdownView;
 	}
 
 	let { cost }: Props = $props();

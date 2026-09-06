@@ -1,19 +1,16 @@
 import type {
 	ClusterLoad,
 	CostBreakdown,
-	CostCategory,
 	DatabaseInstance,
 	InfraAlert,
 	InfraRegion,
 	InfrastructureGroup,
 	MessageQueue,
 	NodeCounts,
-	ResourceUsage,
+	ResourceReading,
 	StorageClass,
 	TimeSeries
 } from '$lib/platform/types';
-import { formatBitrate, formatBytes, formatMoney } from '$lib/platform/infrastructure';
-import { formatChange } from '$lib/platform/format';
 import { statusFromScore } from '$lib/platform/health';
 import { buildSeries } from './series';
 
@@ -152,7 +149,7 @@ function toSeries(id: string, label: string, points: ReturnType<typeof clockPoin
  * a fixed 0–100 and the network panel against its own ceiling. A chart that scaled CPU
  * to its own peak would make 42% and 95% look identical.
  */
-export function readUtilization(now: Date, buckets = 18): ResourceUsage[] {
+export function readUtilization(now: Date, buckets = 18): ResourceReading[] {
 	const seeds: Array<[string, string, number, number, number, number]> = [
 		['cpu', 'CPU', 42, 0.1, -6, 100],
 		['memory', 'Memory', 58, 0.05, -3, 100],
@@ -166,17 +163,16 @@ export function readUtilization(now: Date, buckets = 18): ResourceUsage[] {
 			volatility,
 			floor: 0
 		}).values;
-		const bitrate = id === 'network' ? formatBitrate(centre) : null;
-
 		return {
 			id,
 			label,
-			formatted: bitrate ? bitrate.value : String(Math.round(centre)),
-			unit: bitrate ? bitrate.unit : '%',
+			value: centre,
+			// The unit the reading is in, not the one a headline prints: network is bits
+			// per second, and the "1.2 Gbps" is derived above the port.
+			unit: id === 'network' ? 'bps' : '%',
 			series: toSeries(id, label, clockPoints(now, values)),
 			axisMax,
-			changeFormatted: formatChange(change, '%', 0),
-			comparedToLabel: 'vs 15m ago',
+			change,
 			direction: change > 0 ? 'up' : change < 0 ? 'down' : 'flat',
 			// Less of every one of these is better; none of them is a throughput goal.
 			polarity: 'lower-is-better'
@@ -187,23 +183,19 @@ export function readUtilization(now: Date, buckets = 18): ResourceUsage[] {
 const TIB = 1024 ** 4;
 
 export function readStorage(): { totalBytes: number; classes: StorageClass[] } {
-	const seeds: Array<[string, string, number, StorageClass['accent']]> = [
-		['block', 'Block Storage', 5.1 * TIB, 'blue'],
-		['object', 'Object Storage', 4.8 * TIB, 'green'],
-		['file', 'File Storage', 2.5 * TIB, 'violet']
+	const seeds: Array<[string, string, number]> = [
+		['block', 'Block Storage', 5.1 * TIB],
+		['object', 'Object Storage', 4.8 * TIB],
+		['file', 'File Storage', 2.5 * TIB]
 	];
 
 	const totalBytes = seeds.reduce((sum, [, , bytes]) => sum + bytes, 0);
 
+	// Bytes, not a formatted string and a rounded share. The share is recomputed above the
+	// port, and the API publishes these exactly rather than multiplying a percentage out.
 	return {
 		totalBytes,
-		classes: seeds.map(([id, label, bytes, accent]) => ({
-			id,
-			label,
-			formatted: formatBytes(bytes),
-			accent,
-			percentage: Math.round((bytes / totalBytes) * 100)
-		}))
+		classes: seeds.map(([id, label, bytes]) => ({ id, label, bytes }))
 	};
 }
 
@@ -228,7 +220,7 @@ export function listDatabases(limit: number): DatabaseInstance[] {
 			cpuPct,
 			connections,
 			connectionLimit,
-			storageFormatted: formatBytes(bytes)
+			storageBytes: bytes
 		}));
 }
 
@@ -308,12 +300,12 @@ export function listAlerts(now: Date, limit: number): InfraAlert[] {
  */
 export function readCost(now: Date): CostBreakdown {
 	// Daily rates chosen to reach a realistic monthly spend over a thirty-day month.
-	const seeds: Array<[string, string, number, CostCategory['accent']]> = [
-		['compute', 'Compute', 12_430 / 30, 'blue'],
-		['storage', 'Storage', 6_850 / 30, 'green'],
-		['databases', 'Databases', 4_120 / 30, 'violet'],
-		['network', 'Network', 2_980 / 30, 'amber'],
-		['other', 'Other', 2_160 / 30, 'slate']
+	const seeds: Array<[string, string, number]> = [
+		['compute', 'Compute', 12_430 / 30],
+		['storage', 'Storage', 6_850 / 30],
+		['databases', 'Databases', 4_120 / 30],
+		['network', 'Network', 2_980 / 30],
+		['other', 'Other', 2_160 / 30]
 	];
 
 	const days = now.getDate();
@@ -322,7 +314,7 @@ export function readCost(now: Date): CostBreakdown {
 		return at.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
 	});
 
-	const categories = seeds.map(([id, label, dailyRate, accent]) => {
+	const categories = seeds.map(([id, label, dailyRate]) => {
 		const daily = buildSeries(`cost:${id}`, dailyRate, {
 			points: days,
 			volatility: 0.12,
@@ -332,7 +324,7 @@ export function readCost(now: Date): CostBreakdown {
 		// headline and the columns cannot describe different months.
 		const amount = daily.reduce((sum, value) => sum + value, 0);
 
-		return { id, label, amount, formatted: formatMoney(amount), accent, daily, dailyRate };
+		return { id, label, amount, daily, dailyRate };
 	});
 
 	const total = categories.reduce((sum, category) => sum + category.amount, 0);
@@ -343,15 +335,12 @@ export function readCost(now: Date): CostBreakdown {
 
 	return {
 		labels,
-		categories: categories.map(({ dailyRate: _rate, ...category }) => ({
-			...category,
-			percentage: Math.round((category.amount / total) * 1000) / 10
-		})),
+		// Amounts, not shares and strings. `toCostView` derives both, so the API publishes
+		// the figures exactly rather than recovering them from a rounded percentage.
+		categories: categories.map(({ dailyRate: _rate, ...category }) => category),
 		total,
-		totalFormatted: formatMoney(total),
 		changePct: 6.2,
 		forecast,
-		forecastFormatted: formatMoney(forecast),
 		forecastChangePct: -5.8
 	};
 }

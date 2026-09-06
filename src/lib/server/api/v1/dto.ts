@@ -11,7 +11,7 @@ import type {
 	MessageQueue,
 	MetricInsight,
 	NodeCounts,
-	ResourceUsage,
+	ResourceReading,
 	ServiceVitals,
 	SloBudget,
 	StorageClass,
@@ -855,11 +855,12 @@ export function toClusterDto(cluster: ClusterLoad): ClusterDto {
  *
  * `formatted`, `axisMax` and the signed change are all how a tile draws this.
  */
-export function toResourceUsageDto(usage: ResourceUsage): ResourceUsageDto {
+export function toResourceUsageDto(usage: ResourceReading): ResourceUsageDto {
 	return {
 		id: usage.id,
 		label: usage.label,
-		value: usage.series.points.at(-1)?.value ?? 0,
+		value: usage.value,
+		// A stated fact now, rather than sniffed from a display string.
 		unit: usage.unit === '%' ? 'percent' : 'bits_per_second',
 		series: toSeriesDto(usage.series)
 	};
@@ -869,13 +870,10 @@ export function toResourceUsageDto(usage: ResourceUsage): ResourceUsageDto {
 export function toStorageDto(storage: { totalBytes: number; classes: StorageClass[] }): StorageDto {
 	return {
 		totalBytes: storage.totalBytes,
-		classes: storage.classes.map((one) => ({
-			id: one.id,
-			label: one.label,
-			// The internal shape formats and rounds to a share; the bytes are recovered
-			// from the total so the parts still sum to it.
-			bytes: Math.round((one.percentage / 100) * storage.totalBytes)
-		}))
+		// The bytes are carried now, so nothing is recovered from a rounded share. The
+		// internal shape used to keep only a percentage and a formatted string, which made
+		// every published figure an approximation of one we had been given exactly.
+		classes: storage.classes.map((one) => ({ id: one.id, label: one.label, bytes: one.bytes }))
 	};
 }
 

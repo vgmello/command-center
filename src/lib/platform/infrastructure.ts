@@ -1,4 +1,14 @@
+import { formatChange } from './format';
 import type { SelectOption } from './query';
+import type {
+	CostBreakdown,
+	CostBreakdownView,
+	DomainAccent,
+	ResourceReading,
+	ResourceUsage,
+	StorageClass,
+	StorageClassView
+} from './types';
 
 /**
  * The infrastructure view's vocabulary.
@@ -82,4 +92,99 @@ export function formatBitrate(
 /** "$28,540" — whole dollars, because nobody reads cents off a monthly total. */
 export function formatMoney(amount: number): string {
 	return `$${Math.round(amount).toLocaleString('en-US')}`;
+}
+
+/**
+ * The tints the estate's categories are drawn in.
+ *
+ * Presentation, so it lives above the port. `CloudProvider` used to require a source to
+ * supply a `DomainAccent`, which meant a real adapter had to hold an opinion about which
+ * of Azure's storage tiers is violet — not a fact about Azure, and the single thing that
+ * made the contract impossible to implement honestly.
+ */
+const ACCENTS: DomainAccent[] = ['blue', 'green', 'violet', 'amber', 'red', 'slate'];
+
+/**
+ * A stable tint for an identifier.
+ *
+ * Hashed rather than positional: assigning by index would recolour every category when a
+ * new one appeared, which a reader sees as the estate having changed.
+ */
+export function accentFor(id: string): DomainAccent {
+	// A local hash rather than the server's `hashSeed`: this module is browser-safe and
+	// must not reach into `$lib/server`.
+	let hash = 0;
+	for (let index = 0; index < id.length; index++) {
+		hash = (hash * 31 + id.charCodeAt(index)) >>> 0;
+	}
+
+	return ACCENTS[hash % ACCENTS.length];
+}
+
+/**
+ * A share of a total, rounded for display.
+ *
+ * Rounded here rather than left raw, because these numbers are printed as well as used for
+ * bar widths — an unrounded share reaches the page as "41.12903225806452%". The bytes and
+ * amounts they are derived from stay exact, which is the whole point of carrying both.
+ *
+ * `decimals` because the two callers disagree: storage reads as whole percents and spend
+ * to one place, and that was true before the shares moved up here.
+ */
+function shareOf(part: number, total: number, decimals = 0): number {
+	if (total === 0) return 0;
+
+	const factor = 10 ** decimals;
+	return Math.round((part / total) * 100 * factor) / factor;
+}
+
+/** Storage facts, plus how the screen draws them. */
+export function toStorageView(storage: { totalBytes: number; classes: StorageClass[] }): {
+	totalBytes: number;
+	totalFormatted: string;
+	classes: StorageClassView[];
+} {
+	return {
+		totalBytes: storage.totalBytes,
+		totalFormatted: formatBytes(storage.totalBytes),
+		classes: storage.classes.map((one) => ({
+			...one,
+			formatted: formatBytes(one.bytes),
+			accent: accentFor(one.id),
+			percentage: shareOf(one.bytes, storage.totalBytes)
+		}))
+	};
+}
+
+/**
+ * One resource reading, plus how the screen draws it.
+ *
+ * `unit` survives untouched and `displayUnit` is added beside it, because they differ: the
+ * series carries bits per second while the headline reads gigabits.
+ */
+export function toUsageView(reading: ResourceReading): ResourceUsage {
+	const bitrate = reading.unit === 'bps' ? formatBitrate(reading.value) : null;
+
+	return {
+		...reading,
+		formatted: bitrate ? bitrate.value : String(Math.round(reading.value)),
+		displayUnit: bitrate ? bitrate.unit : reading.unit,
+		changeFormatted: formatChange(reading.change, '%', 0),
+		comparedToLabel: 'vs 15m ago'
+	};
+}
+
+/** Spend facts, plus how the screen draws them. */
+export function toCostView(cost: CostBreakdown): CostBreakdownView {
+	return {
+		...cost,
+		totalFormatted: formatMoney(cost.total),
+		forecastFormatted: formatMoney(cost.forecast),
+		categories: cost.categories.map((one) => ({
+			...one,
+			formatted: formatMoney(one.amount),
+			accent: accentFor(one.id),
+			percentage: shareOf(one.amount, cost.total, 1)
+		}))
+	};
 }

@@ -26,7 +26,7 @@ import type {
 	MessageQueue,
 	NodeCounts,
 	RateObservation,
-	ResourceUsage,
+	ResourceReading,
 	Service,
 	ServiceDependencies,
 	ServiceStat,
@@ -303,7 +303,7 @@ export interface InfrastructureSource {
 	listClusters(scope: PlatformScope, limit: number): Promise<ClusterLoad[]>;
 
 	/** CPU, memory, disk and network across the scope's window. */
-	readUtilization(scope: PlatformScope): Promise<ResourceUsage[]>;
+	readUtilization(scope: PlatformScope): Promise<ResourceReading[]>;
 
 	/** Stored bytes by class, with the total the donut prints in its middle. */
 	readStorage(scope: PlatformScope): Promise<{ totalBytes: number; classes: StorageClass[] }>;

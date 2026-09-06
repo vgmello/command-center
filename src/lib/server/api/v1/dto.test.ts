@@ -411,11 +411,30 @@ describe('v1 metric and estate shapes', () => {
 		}
 	});
 
-	test('storage publishes bytes, and the parts still sum to the total', async () => {
+	test('storage publishes bytes, and the parts sum to the total exactly', async () => {
+		// The tolerance this used to carry was the tell. The internal shape kept a rounded
+		// percentage and a formatted string instead of the byte count, so the DTO recovered
+		// bytes by multiplying the share back out and the parts missed the total by a byte
+		// or two. The classes carry their bytes now, so there is nothing to be off by.
 		const dto = toStorageDto(await estate.readStorage(scope));
 		const summed = dto.classes.reduce((sum, one) => sum + one.bytes, 0);
 
-		expect(Math.abs(summed - dto.totalBytes)).toBeLessThan(2);
+		expect(summed).toBe(dto.totalBytes);
+	});
+
+	test('a class whose share does not round cleanly still publishes its own bytes', async () => {
+		// A third of three is 33%, and 33% of three is not one. The old shape could not
+		// represent this at all; the fixtures never happened to contain such a split, which
+		// is why the reconstruction survived as long as it did.
+		const dto = toStorageDto({
+			totalBytes: 3,
+			classes: [
+				{ id: 'a', label: 'A', bytes: 1 },
+				{ id: 'b', label: 'B', bytes: 2 }
+			]
+		});
+
+		expect(dto.classes.map((one) => one.bytes)).toEqual([1, 2]);
 	});
 
 	test('cost publishes figures rather than formatted money', async () => {
