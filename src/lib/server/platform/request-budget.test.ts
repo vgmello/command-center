@@ -144,7 +144,11 @@ describe('what a screen costs upstream', () => {
 					h.now
 				)
 			)
-		).toBeLessThan(25);
+			// Was 25, when this page returned null the moment the APM source had no vitals
+			// for the domain — a 404 is cheap. Now it renders, and 45 of the cost is the
+			// Octopus window: that API has no server-side domain filter, so narrowing to
+			// one domain still walks the log. Coralogix accounts for 11.
+		).toBeLessThan(70);
 	});
 
 	test('deployments', async () => {

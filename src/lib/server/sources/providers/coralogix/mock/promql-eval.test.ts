@@ -133,7 +133,7 @@ describe('error rate', () => {
 	test('a service with no 5xx reports zero rather than an empty series', () => {
 		// `or vector(0)` exists for this: an absent line and a flat zero read differently.
 		const rate = value(
-			errorRate(DEFAULT_METRICS, { service: 'catalogue-api', environment: 'development' }, '1h')
+			errorRate(DEFAULT_METRICS, { service: 'user-profile', environment: 'development' }, '1h')
 		);
 
 		expect(Number.isFinite(rate)).toBe(true);

@@ -273,12 +273,15 @@ describe('readLatencyHeatmap', () => {
 
 describe('readDomainVitals', () => {
 	test('reports the domain’s series and service counts', async () => {
-		const vitals = await client.readDomainVitals!(context('payments'));
+		// The catalog's own domain id, because that is what the router asks with. This
+		// used to be 'payments' — the mock's private name for the same domain — which is
+		// why the mismatch it was hiding only surfaced against a running server.
+		const vitals = await client.readDomainVitals!(context('payment-domain'));
 
 		expect(vitals).not.toBeNull();
 		expect(vitals!.requestRate.points.length).toBeGreaterThan(1);
 		const counts = vitals!.serviceCounts;
-		expect(counts.healthy + counts.degraded + counts.down).toBe(3);
+		expect(counts.healthy + counts.degraded + counts.down).toBe(2);
 		// The gateway's dead instance makes exactly one service degraded.
 		expect(counts.degraded).toBe(1);
 	});

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import SectionCard from '../SectionCard.svelte';
 	import { statusTone } from '../tone';
-	import { formatLatency } from '$lib/platform/format';
+	import { formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
 	import type { ServiceEndpoint } from '$lib/platform/types';
 
 	interface Props {
@@ -35,10 +35,10 @@
 						<span class="text-muted-foreground">{endpoint.path}</span>
 					</span>
 					<span class="tabular w-[44px] shrink-0 text-right text-[11.5px]">
-						{endpoint.requestsPerSecond}
+						{formatCompact(endpoint.requestsPerSecond)}
 					</span>
 					<span class="tabular w-[52px] shrink-0 text-right text-[11.5px] text-muted-foreground">
-						{endpoint.requestSharePct}%
+						{formatPercent(endpoint.requestSharePct, 0)}
 					</span>
 					<!--
 						The bar is graded by latency, not by traffic: the table is already ordered

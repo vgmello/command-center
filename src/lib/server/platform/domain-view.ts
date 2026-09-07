@@ -3,6 +3,7 @@ import type { PlatformScope } from '$lib/platform/query';
 import type { DeploymentSource, PlatformSource, ServiceSource } from './source';
 import { ALL_ENVIRONMENTS, ALL_SERVICES } from '$lib/platform/deployments';
 import { formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
+import { STATUS_LABELS } from '$lib/platform/health';
 import { toSeries } from './snapshot';
 
 /**
@@ -24,7 +25,12 @@ export const DOMAIN_ISSUE_LIMIT = 3;
  * domain and the same window, so the header cannot contradict the table beneath it or
  * the row this domain occupies in the domains list.
  */
-export function buildDomainStats(domain: Domain, vitals: DomainVitals): ServiceStat[] {
+export function buildDomainStats(domain: Domain, vitals: DomainVitals | null): ServiceStat[] {
+	// A domain the catalog knows but no APM source reports on keeps the tiles that come
+	// from the catalog and states the absence of the rest. Printing zeroes would say the
+	// domain served no requests, which is a measurement nobody made.
+	if (!vitals) return unreportedStats(domain);
+
 	const latest = (series: DomainVitals['requestRate']) => series.points.at(-1)?.value ?? 0;
 	const shape = (series: DomainVitals['requestRate']) =>
 		toSeries(series.points.map((point) => point.value));
@@ -121,6 +127,57 @@ export function buildDomainStats(domain: Domain, vitals: DomainVitals): ServiceS
 }
 
 /**
+ * What the page can still say when nothing measures this domain.
+ *
+ * The health score, the service count and the incident count come from the catalog and
+ * this app's own records, so they survive. The readings do not, and they are stated as
+ * absent rather than drawn as zero — the same distinction the count tiles make between
+ * "no incidents" and "nothing is watching for incidents".
+ */
+function unreportedStats(domain: Domain): ServiceStat[] {
+	return [
+		{
+			kind: 'ring',
+			id: 'health',
+			label: 'Domain Health',
+			score: domain.healthScore,
+			status: domain.status,
+			// Not "At risk". An unknown status is not a bad one, and a domain nothing
+			// measures scores zero only because nothing scored it — reading that as
+			// jeopardy is the same mistake one size up.
+			caption: domain.status === 'unknown' ? 'Not reported' : STATUS_LABELS[domain.status]
+		},
+		{
+			kind: 'ratio',
+			id: 'services',
+			label: 'Services',
+			value: domain.serviceCount,
+			total: domain.serviceCount,
+			caption: 'Total',
+			tone: null,
+			icon: 'boxes'
+		},
+		{
+			kind: 'note',
+			id: 'unreported',
+			label: 'Telemetry',
+			formatted: 'Not reported',
+			caption: 'No connected APM source measures this domain.',
+			tone: null,
+			icon: 'circle-help'
+		},
+		{
+			kind: 'link',
+			id: 'incidents',
+			label: 'Active Incidents',
+			formatted: String(domain.activeIncidents),
+			action: domain.activeIncidents > 0 ? { label: 'View incidents', href: '/alerts' } : null,
+			tone: domain.activeIncidents > 0 ? 'down' : 'healthy'
+		}
+	];
+}
+
+/**
  * Returns `null` when there is no such domain, so the route answers 404 rather than
  * rendering a page about a domain that does not exist.
  */
@@ -135,13 +192,25 @@ export async function buildDomainSnapshot(
 	const domain = await source.findDomain(scope, slug);
 	if (!domain) return null;
 
+	/**
+	 * Absent vitals are not a missing domain.
+	 *
+	 * This used to `return null` here, so the page said "No domain called X. It may have
+	 * been renamed or split into others" — about a domain the list beside it links to and
+	 * prints a health score for. With a real APM source connected that is every domain it
+	 * does not happen to measure, which was all 25 of them the first time this ran against
+	 * one: the catalog is this app's record of what exists, and a telemetry source does not
+	 * get a vote on it.
+	 */
 	const vitals = await source.readDomainVitals(scope, slug);
-	if (!vitals) return null;
 
 	const [serviceRows, dependencies, deploymentPage, incidents] = await Promise.all([
 		// Sequenced after the vitals, not concurrent with them: the rows must add up to
-		// the split the domain reports, so they have to be asked for in those terms.
-		services.listServiceVitals(scope, domain.id, vitals, domain.serviceCount),
+		// the split the domain reports, so they have to be asked for in those terms. With
+		// no split to add up to there is nothing to ask for.
+		vitals
+			? services.listServiceVitals(scope, domain.id, vitals, domain.serviceCount)
+			: Promise.resolve([]),
 		source.readDomainDependencies(scope, slug),
 		deployments.queryDeployments(scope, {
 			search: '',

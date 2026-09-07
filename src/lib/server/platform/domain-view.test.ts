@@ -20,6 +20,60 @@ describe('buildDomainSnapshot', () => {
 		expect(await build('no-such-domain')).toBeNull();
 	});
 
+	test('a domain nothing measures still renders, rather than claiming not to exist', async () => {
+		/*
+		 * The bug this replaces said, on a page the domains list links to and prints a
+		 * health score for: "No domain called X. It may have been renamed or split into
+		 * others." It fired whenever the APM source had no vitals for the domain, which
+		 * against a real source was every domain it did not happen to measure — all
+		 * twenty-five, the first time this ran against one.
+		 *
+		 * The catalog is this app's record of what exists. A telemetry source gets no vote.
+		 */
+		const unreported = new (class extends FixturePlatformSource {
+			async readDomainVitals() {
+				return null;
+			}
+		})();
+
+		const snapshot = await buildDomainSnapshot(
+			unreported,
+			services,
+			deployments,
+			scope,
+			'payment-domain'
+		);
+
+		expect(snapshot).not.toBeNull();
+		expect(snapshot!.domain.id).toBe('payment-domain');
+	});
+
+	test('and says so, rather than drawing the readings as zero', async () => {
+		const unreported = new (class extends FixturePlatformSource {
+			async readDomainVitals() {
+				return null;
+			}
+		})();
+
+		const snapshot = (await buildDomainSnapshot(
+			unreported,
+			services,
+			deployments,
+			scope,
+			'payment-domain'
+		))!;
+
+		// A rate tile reading 0 req/s would say the domain served nothing, which is a
+		// measurement nobody made.
+		expect(snapshot.stats.find((stat) => stat.id === 'request-rate')).toBeUndefined();
+		expect(snapshot.stats.find((stat) => stat.id === 'unreported')).toBeDefined();
+
+		// The catalog's own facts survive: the health ring and the incident count.
+		expect(snapshot.stats.find((stat) => stat.id === 'health')).toBeDefined();
+		// And no rows are invented for a split nothing reported.
+		expect(snapshot.services).toEqual([]);
+	});
+
 	test('carries the scope it was assembled for', async () => {
 		const snapshot = await buildDomainSnapshot(
 			platform,

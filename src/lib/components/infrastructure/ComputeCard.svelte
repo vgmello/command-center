@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatPercent } from '$lib/platform/format';
 	import SectionCard from '../SectionCard.svelte';
 	import { donutSegments } from '$lib/platform/geometry';
 	import { statusTone } from '../tone';
@@ -107,7 +108,7 @@
 							></span>
 						</span>
 						<span class="tabular w-[34px] shrink-0 text-right text-[11.5px]">
-							{cluster.cpuPct}%
+							{formatPercent(cluster.cpuPct, 0)}
 						</span>
 					</li>
 				{/each}

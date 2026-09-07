@@ -37,15 +37,25 @@ export interface MockEvent {
 	state: 'firing' | 'acknowledged' | 'resolved';
 }
 
+/**
+ * The estate, named the way the catalog names it.
+ *
+ * These labels used to be this mock's own invention — `payments`, `identity`, `fulfilment`
+ * — while the catalog called the same domains `payment-domain`, `user-domain` and so on.
+ * Two fixtures describing different worlds, so nothing matched: every domain detail page
+ * asked this source for vitals, got nothing back, and 404'd.
+ *
+ * A real Coralogix would not use our slugs either — reconciling that is what bindings are
+ * for, and they are a later increment. Until then the local stack has to tell one story,
+ * or it tests the mismatch rather than the app.
+ */
 const SERVICES: ReadonlyArray<readonly [string, string, string]> = [
-	['payment-api', 'payments', 'Payments'],
-	['payment-gateway', 'payments', 'Payments'],
-	['ledger-worker', 'payments', 'Payments'],
-	['auth-service', 'identity', 'Identity'],
-	['token-broker', 'identity', 'Identity'],
-	['order-service', 'fulfilment', 'Fulfilment'],
-	['dispatch-worker', 'fulfilment', 'Fulfilment'],
-	['catalogue-api', 'catalogue', 'Catalogue']
+	['payment-api', 'payment-domain', 'Payment Domain'],
+	['payment-gateway', 'payment-domain', 'Payment Domain'],
+	['order-service', 'order-domain', 'Order Domain'],
+	['user-profile', 'user-domain', 'User Domain'],
+	['inventory-service', 'inventory-domain', 'Inventory Domain'],
+	['notification-worker', 'notification-domain', 'Notification Domain']
 ];
 
 /**

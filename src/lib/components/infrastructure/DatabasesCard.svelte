@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatPercent } from '$lib/platform/format';
 	import SectionCard from '../SectionCard.svelte';
 	import { statusTone } from '../tone';
 	import { STATUS_LABELS } from '$lib/platform/health';
@@ -43,7 +44,9 @@
 								{STATUS_LABELS[database.status]}
 							</span>
 						</td>
-						<td class="tabular py-[7px] text-right text-[12.5px]">{database.cpuPct}%</td>
+						<td class="tabular py-[7px] text-right text-[12.5px]">
+							{formatPercent(database.cpuPct, 0)}
+						</td>
 						<td class="tabular py-[7px] text-right text-[12.5px] whitespace-nowrap">
 							{database.connections} / {database.connectionLimit}
 						</td>

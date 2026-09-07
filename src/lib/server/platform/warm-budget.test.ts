@@ -188,7 +188,8 @@ const SCREENS: Array<{ name: string; run: (r: Routers, now: Date) => Promise<unk
 const WARM_CEILING: Record<string, number> = {
 	overview: 22,
 	domains: 18,
-	'domain detail': 14,
+	// Was 14 while the page 404'd on absent vitals; it renders now. See request-budget.
+	'domain detail': 60,
 	// Was 45 warm, which is why any of this file exists — then 6 once the trends became
 	// documents, then 12 once they became accumulated series. Higher than 6 and better
 	// than it: a document served the whole answer back, while a day-bucketed series keeps

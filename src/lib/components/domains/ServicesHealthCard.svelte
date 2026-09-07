@@ -4,7 +4,7 @@
 	import Sparkline from '../Sparkline.svelte';
 	import { accentTile, statusTone } from '../tone';
 	import { STATUS_LABELS } from '$lib/platform/health';
-	import { formatLatency, formatPercent } from '$lib/platform/format';
+	import { formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
 	import { SERVICE_ROWS_COLLAPSED, describeHiddenServices } from '$lib/platform/domains';
 	import type { ServiceVitals } from '$lib/platform/types';
 
@@ -77,7 +77,12 @@
 							/>
 						</td>
 						<td class="tabular py-2 text-right text-[12.5px] whitespace-nowrap">
-							{service.requestsPerSecond} req/s
+							<!--
+								Formatted, not printed raw. The fixtures happened to hold whole
+								numbers, so this read "450 req/s" for as long as nobody connected
+								a real source — and then "2.1387043477711356 req/s".
+							-->
+							{formatCompact(service.requestsPerSecond)} req/s
 						</td>
 						<!-- Coloured only when it is the reason the row is not healthy. -->
 						<td class="tabular py-2 text-right text-[12.5px] {healthy ? '' : tone.text}">
