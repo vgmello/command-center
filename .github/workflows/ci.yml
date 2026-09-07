@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main, bootstrap]
+  pull_request:
+
+jobs:
+  # The gate that has always been run by hand. Fast, needs nothing booted.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run lint
+      - run: bun test src
+
+  # What the gate above cannot see.
+  #
+  # Every rendering bug this repo has had passed `check`, `lint` and the unit suite: a
+  # request rate printed as 2.1387043477711356, a share as 41.12903225806452%, and all
+  # twenty-five domain pages claiming the domain did not exist. None of them is visible
+  # without running the built app and reading what it says.
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: command_center
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/command_center
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+
+      - name: Apply migrations
+        run: bun run db:migrate
+
+      # `Bun.WebView` drives the system webview on macOS and Chrome over CDP elsewhere, so
+      # a Linux runner needs a Chrome present. No browser download and no Playwright.
+      # Bun.WebView drives Chrome over CDP on Linux. The suite passes --no-sandbox and
+      # --disable-dev-shm-usage there (see e2e/harness.ts) because a CI container runs as
+      # root, where Chromium refuses to launch and reports "Chrome process closed the
+      # pipe" — which reads like a Bun problem and is a sandbox one.
+      - uses: browser-actions/setup-chrome@v1
+
+      # The real Octopus, Coralogix and Azure-cost adapters need something to talk to.
+      # Backgrounded because the suite boots the app itself and expects these listening.
+      - name: Start the mock stack
+        run: |
+          bun run scripts/mocks.ts &
+          # Bun rather than curl, to match scripts/ci-local.sh: the bun image ships no
+          # curl, and a probe that differs between the two is a difference that only
+          # shows up when one of them is wrong.
+          for _ in $(seq 1 30); do
+            bun -e 'await fetch("http://localhost:4591/")' >/dev/null 2>&1 && break
+            sleep 1
+          done
+
+      - run: bun run test:e2e

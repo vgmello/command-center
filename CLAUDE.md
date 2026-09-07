@@ -658,6 +658,72 @@ Test a remote function by extracting its handler body into a plain exported func
 
 Note that `bun test` cannot compile `.svelte` files, so component rendering is out of scope. If a component ever genuinely needs a rendering test, raise it then rather than adding a second runner pre-emptively.
 
+### Tests that run the app, not just its logic
+
+`bun test src` is the logic suite: 803 tests, a few seconds, nothing booted. `bun run
+test:e2e` builds the app, starts `build/index.js`, and asks it questions over HTTP. The two
+answer different things, and the split is not academic — every rendering bug this repo has
+had passed `check`, `lint` and the full unit suite:
+
+| What shipped                               | What would have caught it |
+| ------------------------------------------ | ------------------------- |
+| `2.1387043477711356 req/s` in a table      | the render sweep          |
+| `41.12903225806452%` in the storage panel  | the render sweep          |
+| All 25 domain pages claiming 404           | the route smoke test      |
+| "Internal domains" twice with no direction | a person looking          |
+
+**`Bun.WebView`, not a browser-automation dependency.** It is in the runtime, so this is
+tier 2 of the API selection order rather than tier 4, and CI needs a Chrome rather than a
+downloaded browser matrix. `navigate`, `evaluate`, `click(selector)` and `screenshot` are
+the whole surface required.
+
+**Wait for the text to stop growing, never for one phrase.** `navigate()` resolves on the
+load event, and this app paints after hydration and a remote call. The first version of
+this suite waited for the app's chrome, which the nav renders immediately — so the sweep
+read an almost-empty body, found nothing wrong, and passed. A broken test that looks
+exactly like a working one. `settle()` polls until the body length is unchanged three times
+running.
+
+**Both configurations, always.** Fixtures answer every question and hold whole numbers, so
+the paths that handle "the source cannot say" never run and nothing is ever printed
+unformatted. Three bugs in one session existed only under real adapters. `e2e` therefore
+runs against fixtures and against `sources.example.json`, and skips the second when the
+mocks are not listening rather than pretending to have covered it.
+
+**Run CI locally before pushing.** `bun run ci:local` runs the same job in the same
+container image — install, check, lint, the unit suite, a build, the mock stack, e2e. It
+exists because `Bun.WebView` uses a different backend on each platform: the system webview
+on macOS, Chrome over CDP on Linux. A suite that only ever ran on a laptop would first meet
+its Linux backend on someone's pull request.
+
+It archives HEAD rather than copying the working tree, so it runs what CI will run and not
+what happens to be uncommitted.
+
+Four things it found on its first run, none of which any test on macOS could have:
+
+- **Chromium will not launch as root** and reports "Chrome process closed the pipe", which
+  reads like a Bun problem and is a sandbox one. `openView()` passes `--no-sandbox` and
+  `--disable-dev-shm-usage` on Linux and leaves `WKWebView` untouched on macOS. Every
+  WebView test failed without it.
+- **The `oven/bun` image ships no `curl`.** A readiness probe using it reported "mocks never
+  started" for a stack that had started fine. Both the script and the workflow use Bun's
+  own `fetch` now, so the two cannot drift.
+- **Colima does not share `/tmp`.** A checkout there mounts as an empty directory and fails
+  with "could not find a package.json file to install from" — a mount problem wearing a
+  repo problem's error message. The checkout goes under `$HOME`.
+- **A 4GB VM cannot hold a Vite build and a Chromium.** `svelte-check` was OOM-killed
+  outright, and the build was killed on one run and survived the next, which is a harness
+  that fails at random. So the bundle is built on the host and carried in — it is
+  platform-independent JavaScript, so nothing is lost — and `check`, `lint` and the unit
+  suite stay on the host, where they prove exactly as much. `--full` runs them inside for
+  anyone with a larger VM; CI has the memory and runs everything.
+
+**Assert on named tokens, not on screenshots.** The sweep looks for four-decimal floats,
+`undefined`, `NaN`, `[object Object]` and `Infinity`. Every one of those has reached a page
+here. Visual diffing was considered and skipped: the fixtures are deterministic enough to
+make it work, but the maintenance cost of noisy diffs outweighs it while text assertions
+still catch what actually breaks.
+
 ## Conventions
 
 - Components: `PascalCase.svelte`. Remote modules: `<domain>.remote.ts`. Rune modules: `<name>.svelte.ts`.
