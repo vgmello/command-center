@@ -24,6 +24,7 @@ import type {
 	ServiceDependencies,
 	ServiceEndpoint,
 	ServiceStat,
+	ServiceTrend,
 	SloBudget,
 	StorageClass,
 	TimeSeries,
@@ -106,6 +107,15 @@ export interface DeploymentProvider {
 		ctx: SourceContext,
 		grain: TrendGrain
 	): Promise<{ frequency: TimeSeries; meanDuration: TimeSeries }>;
+	/**
+	 * The same runs as `readTrends`, split per service.
+	 *
+	 * Optional and separate rather than a wider `readTrends`, so a provider that can only
+	 * answer estate-wide is unchanged. A connection declares one or the other and never
+	 * both: two accumulations of the same runs put two answers to one question in the
+	 * store, and then nothing can say which is right.
+	 */
+	readServiceTrends?(ctx: SourceContext, grain: TrendGrain): Promise<ServiceTrend[]>;
 	listInsights?(ctx: SourceContext): Promise<DeploymentInsight[]>;
 	listDeployingDomains?(ctx: SourceContext): Promise<FacetOption[]>;
 	resourceLink(binding: SourceBinding | undefined, view: LinkView): ExternalLink | null;

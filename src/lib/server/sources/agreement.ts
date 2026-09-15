@@ -35,6 +35,7 @@ export const CAPABILITY_METHODS: Record<Capability, string> = {
 	'deployment.log': 'queryDeployments',
 	'deployment.summary': 'readSummary',
 	'deployment.trends': 'readTrends',
+	'deployment.serviceTrends': 'readServiceTrends',
 	'deployment.statusTrend': 'readStatusTrend',
 	'deployment.breakdown': 'readDomainBreakdown',
 	'deployment.insights': 'listInsights',

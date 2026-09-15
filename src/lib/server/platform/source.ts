@@ -30,6 +30,7 @@ import type {
 	Service,
 	ServiceDependencies,
 	ServiceStat,
+	ServiceTrend,
 	ServiceVitals,
 	SloBudget,
 	StorageClass,
@@ -171,6 +172,15 @@ export interface DeploymentSource {
 		scope: PlatformScope,
 		grain: TrendGrain
 	): Promise<{ frequency: TimeSeries; meanDuration: TimeSeries }>;
+
+	/**
+	 * Per-service run counts, failures and duration totals at the requested grain.
+	 *
+	 * The domain tabs sum these; the estate figures are the same sum over every service.
+	 * Returns an empty array when no connection accumulates them, which the assembler
+	 * turns into a stated gap rather than a zero.
+	 */
+	readServiceTrends(scope: PlatformScope, grain: TrendGrain): Promise<ServiceTrend[]>;
 
 	/** Patterns worth flagging: failure rate, slow services, repeat offenders. */
 	listInsights(scope: PlatformScope): Promise<DeploymentInsight[]>;

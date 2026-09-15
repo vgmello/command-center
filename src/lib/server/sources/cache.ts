@@ -41,6 +41,7 @@ export const DEFAULT_TTL_SECONDS: Record<Capability, number> = {
 	'deployment.log': 30,
 	'deployment.summary': 60,
 	'deployment.trends': 300,
+	'deployment.serviceTrends': 300,
 	'deployment.statusTrend': 60,
 	'deployment.breakdown': 60,
 	'deployment.insights': 300,

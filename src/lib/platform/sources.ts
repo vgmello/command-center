@@ -42,6 +42,7 @@ export const CAPABILITIES = [
 	'deployment.log',
 	'deployment.summary',
 	'deployment.trends',
+	'deployment.serviceTrends',
 	'deployment.statusTrend',
 	'deployment.breakdown',
 	'deployment.insights',

@@ -64,6 +64,11 @@ const GEOMETRY: Partial<Record<Capability, SeriesGeometry>> = {
 		settlingSeconds: DAY_SECONDS,
 		maxStoredSeconds: 366 * DAY_SECONDS
 	},
+	'deployment.serviceTrends': {
+		bucketSeconds: DAY_SECONDS,
+		settlingSeconds: DAY_SECONDS,
+		maxStoredSeconds: 366 * DAY_SECONDS
+	},
 	'deployment.statusTrend': {
 		bucketSeconds: DAY_SECONDS,
 		settlingSeconds: DAY_SECONDS,

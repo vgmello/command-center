@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { CAPABILITIES, type Capability } from '$lib/platform/sources';
 import { CAPABILITY_TIER, isDocument, isPersisted } from './tiers';
+import { geometryFor } from './series';
 
 describe('CAPABILITY_TIER', () => {
 	test('every capability is classified, so none inherits a fallback', () => {
@@ -54,5 +55,19 @@ describe('CAPABILITY_TIER', () => {
 	test('every tier is actually used', () => {
 		const used = new Set(Object.values(CAPABILITY_TIER));
 		expect(used).toEqual(new Set(['live', 'reference', 'series']));
+	});
+
+	test('the per-service trends are accumulated, not re-fetched', () => {
+		// `series` is a promise that a router accumulates the capability. Declaring the tier
+		// without a `fanOutSeries` call is how the deployment trends fell through both
+		// strategies for the whole of this project's life.
+		expect(CAPABILITY_TIER['deployment.serviceTrends']).toBe('series');
+	});
+
+	test('they are bucketed by day, like the estate trends they replace', () => {
+		const geometry = geometryFor('deployment.serviceTrends');
+
+		expect(geometry.bucketSeconds).toBe(86_400);
+		expect(geometry.settlingSeconds).toBe(86_400);
 	});
 });

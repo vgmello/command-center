@@ -71,6 +71,7 @@ export const CAPABILITY_TIER: Record<Capability, CapabilityTier> = {
 	// Nothing belongs here until a router reads it through `fanOutSeries`.
 	'apm.metricSeries': 'series',
 	'deployment.trends': 'series',
+	'deployment.serviceTrends': 'series',
 	'deployment.statusTrend': 'series'
 };
 
