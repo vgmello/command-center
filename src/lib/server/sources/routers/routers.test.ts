@@ -162,9 +162,13 @@ describe('the deployment router', () => {
 		const rows = await deployment.readServiceTrends(scope, 'daily');
 
 		expect(rows.length).toBeGreaterThan(0);
+		// The actual claim in this test's name: more than one distinct service comes
+		// back, so a single merged row could not slip through.
+		expect(new Set(rows.map((one) => one.service)).size).toBeGreaterThan(1);
+
 		for (const row of rows) {
 			expect(row.service.length).toBeGreaterThan(0);
-			// One axis, so a domain can be summed bucket by bucket later.
+			// One axis per row, so a domain can be summed bucket by bucket later.
 			expect(row.runs.points.length).toBe(row.failures.points.length);
 			expect(row.runs.points.length).toBe(row.durationTotal.points.length);
 		}
