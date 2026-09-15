@@ -61,6 +61,7 @@
 		"vite": "^8.0.16"
 	},
 	"dependencies": {
+		"@azure/identity": "^4.13.3",
 		"drizzle-orm": "^0.45.2",
 		"valibot": "^1.4.2"
 	}
