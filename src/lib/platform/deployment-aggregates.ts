@@ -5,8 +5,10 @@ import type {
 	DomainAccent,
 	FacetOption,
 	TimeSeries,
-	TrendGrain
+	TrendGrain,
+	ServiceTrend
 } from './types';
+import { UNATTRIBUTED } from './types';
 
 /**
  * Aggregates derived from a window of deployments.
@@ -272,4 +274,60 @@ export function statusTrendOf(
 			buckets.map((one) => ({ label: one.label, value: counts.get(status)?.get(one.key) ?? 0 }))
 		)
 	);
+}
+
+/**
+ * The same runs as `trendsOf`, grouped by service instead of collapsed.
+ *
+ * Every service gets the same buckets so the rows line up on one axis and a domain can be
+ * summed bucket by bucket. Nothing is averaged here — see `ServiceTrend` for why.
+ */
+export function serviceTrendsOf(
+	deployments: Deployment[],
+	grain: TrendGrain,
+	from: Date,
+	to: Date
+): ServiceTrend[] {
+	const buckets = bucketsBetween(from, to, grain);
+	const empty = () => new Map(buckets.map((one) => [one.key, 0]));
+	const byService = new Map<
+		string,
+		{ runs: Map<string, number>; failures: Map<string, number>; totals: Map<string, number> }
+	>();
+
+	for (const deployment of deployments) {
+		const at = new Date(deployment.deployedAt);
+		if (Number.isNaN(at.getTime())) continue;
+
+		const { key } = bucketOf(at, grain);
+		if (!buckets.some((one) => one.key === key)) continue;
+
+		const service = deployment.service || UNATTRIBUTED;
+		const found = byService.get(service) ?? { runs: empty(), failures: empty(), totals: empty() };
+		byService.set(service, found);
+
+		found.runs.set(key, (found.runs.get(key) ?? 0) + 1);
+
+		if (deployment.status === 'failed' || deployment.status === 'rolled-back') {
+			found.failures.set(key, (found.failures.get(key) ?? 0) + 1);
+		}
+
+		// `null` is a run still going, which has no duration. Zero would sort and average
+		// as though it were instantaneous.
+		if (deployment.durationSeconds !== null) {
+			found.totals.set(key, (found.totals.get(key) ?? 0) + deployment.durationSeconds);
+		}
+	}
+
+	const pointsOf = (counts: Map<string, number>) =>
+		buckets.map((one) => ({ label: one.label, value: counts.get(one.key) ?? 0 }));
+
+	return [...byService.entries()]
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([service, found]) => ({
+			service,
+			runs: seriesOf('runs', 'Deployments', pointsOf(found.runs)),
+			failures: seriesOf('failures', 'Failures', pointsOf(found.failures)),
+			durationTotal: seriesOf('duration-total', 'Duration total', pointsOf(found.totals))
+		}));
 }

@@ -271,6 +271,27 @@ export interface TimeSeries {
 /** How finely the deployment trend charts bucket time. */
 export type TrendGrain = 'daily' | 'weekly' | 'monthly';
 
+/** The string a run with no catalog service is filed under. */
+export const UNATTRIBUTED = '(unattributed)';
+
+/**
+ * One service's runs over a window, decomposed so every figure re-aggregates.
+ *
+ * Totals and counts rather than rates and means, for the reason the estate trends already
+ * store it that way: a mean cannot be rebuilt from means, and a rate cannot be rebuilt
+ * from rates. A domain is the sum of its services, so only additive quantities travel.
+ */
+export interface ServiceTrend {
+	/** The service as the catalog names it, or `UNATTRIBUTED`. */
+	service: string;
+	/** Runs started in each bucket. */
+	runs: TimeSeries;
+	/** Runs that failed or were rolled back, same buckets. */
+	failures: TimeSeries;
+	/** Total wall-clock seconds of the runs that finished, same buckets. */
+	durationTotal: TimeSeries;
+}
+
 /** One slice of the "Deployments by Domain" donut. */
 export interface DomainShare {
 	domainId: string;

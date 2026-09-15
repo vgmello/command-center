@@ -5,7 +5,8 @@ import {
 	deployingDomains,
 	statusTrendOf,
 	summariseDeployments,
-	trendsOf
+	trendsOf,
+	serviceTrendsOf
 } from './deployment-aggregates';
 import type { Deployment, DeploymentStatus } from './types';
 
@@ -250,5 +251,93 @@ describe('statusTrendOf', () => {
 
 		const failed = series.find((one) => one.id === 'failed');
 		expect(failed?.points[0].value).toBe(1);
+	});
+});
+
+describe('serviceTrendsOf', () => {
+	const from = new Date('2026-09-14T00:00:00.000Z');
+	const to = new Date('2026-09-15T23:59:59.000Z');
+
+	function run(over: Partial<Deployment> = {}): Deployment {
+		return {
+			id: 'd1',
+			reference: '#1',
+			service: 'payment-api',
+			version: 'v1',
+			domainId: 'payment-domain',
+			domainName: 'Payment Domain',
+			icon: 'rocket',
+			environment: 'production',
+			status: 'success',
+			trigger: 'ci-cd',
+			deployedBy: 'ci',
+			deployedAt: '2026-09-15T10:00:00.000Z',
+			durationSeconds: 100,
+			...over
+		};
+	}
+
+	test('splits the runs by service rather than collapsing them', () => {
+		const rows = serviceTrendsOf(
+			[run(), run({ id: 'd2', service: 'payment-gateway' })],
+			'daily',
+			from,
+			to
+		);
+
+		expect(rows.map((one) => one.service).sort()).toEqual(['payment-api', 'payment-gateway']);
+	});
+
+	test('counts a rollback as a failure, the way the summary does', () => {
+		const [row] = serviceTrendsOf(
+			[run(), run({ id: 'd2', status: 'rolled-back' }), run({ id: 'd3', status: 'failed' })],
+			'daily',
+			from,
+			to
+		);
+
+		expect(row.runs.points.reduce((sum, one) => sum + one.value, 0)).toBe(3);
+		expect(row.failures.points.reduce((sum, one) => sum + one.value, 0)).toBe(2);
+	});
+
+	test('stores the duration total, not a mean, so a domain mean can be rebuilt', () => {
+		// Two runs at 10s and two hundred at 1000s is a mean of 990, and averaging two
+		// per-service means gives 505. Only the totals survive being summed.
+		const [row] = serviceTrendsOf(
+			[run({ durationSeconds: 10 }), run({ id: 'd2', durationSeconds: 1_000 })],
+			'daily',
+			from,
+			to
+		);
+
+		expect(row.durationTotal.points.reduce((sum, one) => sum + one.value, 0)).toBe(1_010);
+	});
+
+	test('a run still going has no duration and does not count as instantaneous', () => {
+		const [row] = serviceTrendsOf([run({ durationSeconds: null })], 'daily', from, to);
+
+		expect(row.durationTotal.points.reduce((sum, one) => sum + one.value, 0)).toBe(0);
+		expect(row.runs.points.reduce((sum, one) => sum + one.value, 0)).toBe(1);
+	});
+
+	test('every service shares the same buckets, so the rows line up on one axis', () => {
+		const rows = serviceTrendsOf(
+			[run(), run({ id: 'd2', service: 'payment-gateway' })],
+			'daily',
+			from,
+			to
+		);
+
+		expect(rows[0].runs.points.length).toBe(rows[1].runs.points.length);
+		expect(rows[0].runs.points.map((one) => one.label)).toEqual(
+			rows[1].runs.points.map((one) => one.label)
+		);
+	});
+
+	test('a deployment with no catalog service is kept, not dropped', () => {
+		// Discarding runs silently makes a frequency chart understate reality.
+		const rows = serviceTrendsOf([run({ service: '' })], 'daily', from, to);
+
+		expect(rows.map((one) => one.service)).toEqual(['(unattributed)']);
 	});
 });
