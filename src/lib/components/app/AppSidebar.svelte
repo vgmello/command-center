@@ -15,10 +15,20 @@
 
 	let { nav, favorites, user, system }: Props = $props();
 
+	/**
+	 * Built and not-yet-built, kept apart.
+	 *
+	 * The unbuilt sections are still shown, because a nav that omits half the product
+	 * tells a reader it does not exist — but they are not links, so nothing offers a page
+	 * with nothing on it.
+	 */
+	const built = $derived(nav.filter((item) => item.available !== false));
+	const planned = $derived(nav.filter((item) => item.available === false));
+
 	// Longest matching href wins, so `/domains/payment` highlights Domains rather
 	// than Overview, whose href is `/`.
 	const activeId = $derived(
-		[...nav]
+		[...built]
 			.filter((item) =>
 				item.href === '/' ? page.url.pathname === '/' : page.url.pathname.startsWith(item.href)
 			)
@@ -45,7 +55,7 @@
 
 	<nav class="flex-1 overflow-y-auto px-3 pb-4" aria-label="Primary">
 		<ul class="space-y-0.5">
-			{#each nav as item (item.id)}
+			{#each built as item (item.id)}
 				{@const active = item.id === activeId}
 				<li>
 					<a
@@ -69,6 +79,31 @@
 				</li>
 			{/each}
 		</ul>
+
+		{#if planned.length > 0}
+			<h2
+				class="px-3 pt-6 pb-2 text-[10px] font-semibold tracking-[0.09em] text-muted-foreground uppercase"
+			>
+				Coming soon
+			</h2>
+			<ul class="space-y-0.5">
+				{#each planned as item (item.id)}
+					<li>
+						<!--
+							A span, not a disabled link. An anchor that goes nowhere is still in the
+							tab order and still reads as a link to a screen reader, which promises a
+							destination that is not there.
+						-->
+						<span
+							class="flex h-9 cursor-default items-center gap-3 rounded-lg px-3 text-[13px] font-medium text-muted-foreground/60"
+						>
+							<Icon name={item.icon} size={16} strokeWidth={1.9} />
+							<span>{item.label}</span>
+						</span>
+					</li>
+				{/each}
+			</ul>
+		{/if}
 
 		{#if favorites.length > 0}
 			<h2

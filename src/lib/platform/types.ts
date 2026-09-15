@@ -1119,6 +1119,19 @@ export interface NavItem {
 	icon: string;
 	/** Rendered as a pill on the right of the item, e.g. the alert count. */
 	badge?: number;
+	/**
+	 * Whether the destination is built.
+	 *
+	 * A fact about the section, not a decision about how it looks — the sidebar is what
+	 * turns `false` into a separate, non-navigating group. Absent means built, so an
+	 * existing entry does not have to say so.
+	 *
+	 * These stay in the list rather than being deleted because a nav that silently omits
+	 * half the product tells a reader it does not exist, when the honest answer is "not
+	 * yet". The routes still resolve for anyone with the URL; they simply are not sold
+	 * as finished.
+	 */
+	available?: boolean;
 }
 
 /** A favourited domain, pinned under the main nav. */

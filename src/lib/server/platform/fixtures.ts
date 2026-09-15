@@ -1249,10 +1249,18 @@ export const NAV_ITEMS: NavItem[] = [
 	{ id: 'deployments', label: 'Deployments', href: '/deployments', icon: 'rocket' },
 	{ id: 'infrastructure', label: 'Infrastructure', href: '/infrastructure', icon: 'server' },
 	{ id: 'alerts', label: 'Alerts', href: '/alerts', icon: 'triangle-alert', badge: 3 },
-	{ id: 'logs', label: 'Logs', href: '/logs', icon: 'scroll-text' },
-	{ id: 'traces', label: 'Traces', href: '/traces', icon: 'git-branch' },
-	{ id: 'reports', label: 'Reports', href: '/reports', icon: 'file-chart-column' },
-	{ id: 'settings', label: 'Settings', href: '/settings', icon: 'settings' }
+	{ id: 'settings', label: 'Settings', href: '/settings', icon: 'settings' },
+	// Not built. Listed so the product's shape is honest, grouped separately by the
+	// sidebar so nothing offers a page that has nothing on it.
+	{ id: 'logs', label: 'Logs', href: '/logs', icon: 'scroll-text', available: false },
+	{ id: 'traces', label: 'Traces', href: '/traces', icon: 'git-branch', available: false },
+	{
+		id: 'reports',
+		label: 'Reports',
+		href: '/reports',
+		icon: 'file-chart-column',
+		available: false
+	}
 ];
 
 /** Favourites are pinned by the user; the dot reflects the pin, not the health. */
