@@ -9,6 +9,17 @@ import type { ProviderDefinition } from './provider';
 import { REAL_PROVIDERS } from './providers';
 import { SourceRegistry } from './registry';
 import { createRouters } from './routers';
+import type { Capability, SourceKind } from '$lib/platform/sources';
+
+/** One connected source, with nothing on it that could leak a credential. */
+export interface ConnectedSourceSummary {
+	id: string;
+	provider: string;
+	kind: SourceKind;
+	label: string;
+	icon: string;
+	capabilities: Capability[];
+}
 
 /**
  * Read the connections file, or nothing.
@@ -110,5 +121,26 @@ export function buildSources(options: {
 		store: options.store ?? null
 	};
 
-	return createRouters(deps, options.catalog);
+	return {
+		...createRouters(deps, options.catalog),
+		/**
+		 * What is connected, for `/api/v1/sources`.
+		 *
+		 * A deliberate shape rather than the registry's own: a `ConnectedSource` carries
+		 * the connection's `settings`, and those hold API keys and client secrets. This
+		 * names the connection, what it is, and what it can answer — which is what a caller
+		 * asking "why is this panel empty" needs — and nothing that would leak if the
+		 * endpoint were ever mis-scoped.
+		 */
+		describeSources(): ConnectedSourceSummary[] {
+			return registry.connections().map((one) => ({
+				id: one.ref.id,
+				provider: one.ref.providerId,
+				kind: one.ref.kind,
+				label: one.ref.label,
+				icon: one.ref.icon,
+				capabilities: [...one.capabilities].sort()
+			}));
+		}
+	};
 }

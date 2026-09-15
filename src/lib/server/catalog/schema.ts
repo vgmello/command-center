@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { SOURCE_KINDS } from '$lib/platform/sources';
 import type { CatalogDomain, CatalogService } from '$lib/platform/catalog';
 
 /**
@@ -30,6 +31,31 @@ const slug = v.pipe(
  */
 const url = v.pipe(v.string(), v.url('must be a URL'));
 
+/**
+ * At most one binding per kind, refused rather than merely discouraged.
+ *
+ * Two bindings of one kind are two answers to "which resource is this", and a router
+ * would have to pick between them — the reconciliation the one-resource-one-source rule
+ * exists to avoid. A refinement fails the file at boot with the record that is wrong,
+ * where a convention fails quietly on whichever page reads it first.
+ */
+const bindings = v.optional(
+	v.pipe(
+		v.array(
+			v.object({
+				kind: v.picklist(SOURCE_KINDS),
+				connectionId: v.optional(v.pipe(v.string(), v.maxLength(120)), ''),
+				externalId: v.pipe(v.string(), v.minLength(1), v.maxLength(512))
+			})
+		),
+		v.check(
+			(rows) => new Set(rows.map((one) => one.kind)).size === rows.length,
+			'declares two bindings of one kind; a resource belongs to one source per kind'
+		)
+	),
+	[]
+);
+
 const domainEntry = v.object({
 	slug,
 	name: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),
@@ -37,7 +63,8 @@ const domainEntry = v.object({
 	owner: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),
 	criticality: v.picklist(CRITICALITIES),
 	icon: v.optional(v.pipe(v.string(), v.maxLength(80)), 'layers'),
-	accent: v.optional(v.picklist(ACCENTS), 'slate')
+	accent: v.optional(v.picklist(ACCENTS), 'slate'),
+	bindings
 });
 
 const serviceEntry = v.object({
@@ -67,7 +94,8 @@ const serviceEntry = v.object({
 			cloud: v.optional(v.pipe(v.string(), v.maxLength(200)))
 		}),
 		{}
-	)
+	),
+	bindings
 });
 
 export const catalogFileSchema = v.object({
@@ -107,7 +135,8 @@ export function buildCatalog(file: CatalogFile): {
 		icon: entry.icon,
 		accent: entry.accent,
 		criticality: entry.criticality,
-		owner: entry.owner
+		owner: entry.owner,
+		bindings: entry.bindings
 	}));
 
 	const seenDomain = new Set<string>();
@@ -155,7 +184,8 @@ export function buildCatalog(file: CatalogFile): {
 			chatChannel: link(entry.links.chat, 'Chat'),
 			runbook: link(entry.links.runbook, 'Runbook'),
 			dashboard: link(entry.links.dashboard, 'Dashboard'),
-			identity: entry.identity
+			identity: entry.identity,
+			bindings: entry.bindings
 		};
 	});
 

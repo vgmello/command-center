@@ -242,6 +242,31 @@ components:
         - cpuPct
         - status
       type: object
+    ConnectedSource:
+      properties:
+        capabilities:
+          items:
+            type: string
+          type: array
+        id:
+          type: string
+        kind:
+          enum:
+            - cloud
+            - apm
+            - deployment
+          type: string
+        label:
+          type: string
+        provider:
+          type: string
+      required:
+        - id
+        - provider
+        - kind
+        - label
+        - capabilities
+      type: object
     Cost:
       properties:
         categories:

@@ -247,6 +247,22 @@ export const dependenciesSchema = v.object({
 	downstream: v.array(dependencySchema)
 });
 
+/**
+ * One connected data source.
+ *
+ * Deliberately no settings: a connection carries API keys and client secrets, and the
+ * shape published here names what a caller staring at an empty panel needs — which source
+ * is connected and what it can answer — and nothing that would leak.
+ */
+export const connectedSourceSchema = v.object({
+	id: v.string(),
+	provider: v.string(),
+	kind: v.picklist(['cloud', 'apm', 'deployment']),
+	label: v.string(),
+	/** Every capability this connection declares, sorted. */
+	capabilities: v.array(v.string())
+});
+
 export const endpointSchema = v.object({
 	method: v.string(),
 	path: v.string(),
@@ -590,6 +606,29 @@ export type ServiceDto = v.InferOutput<typeof serviceSchema>;
 export type HealthCheckDto = v.InferOutput<typeof healthCheckSchema>;
 export type DependenciesDto = v.InferOutput<typeof dependenciesSchema>;
 export type EndpointDto = v.InferOutput<typeof endpointSchema>;
+export type ConnectedSourceDto = v.InferOutput<typeof connectedSourceSchema>;
+
+/**
+ * A connection, as the API publishes it.
+ *
+ * `icon` is dropped for the same reason every other DTO drops it: it is how our sidebar
+ * draws a thing and means nothing to another client.
+ */
+export function toConnectedSourceDto(source: {
+	id: string;
+	provider: string;
+	kind: 'cloud' | 'apm' | 'deployment';
+	label: string;
+	capabilities: readonly string[];
+}): ConnectedSourceDto {
+	return {
+		id: source.id,
+		provider: source.provider,
+		kind: source.kind,
+		label: source.label,
+		capabilities: [...source.capabilities]
+	};
+}
 
 export function toDeploymentPageDto(result: DeploymentPage): DeploymentPageDto {
 	return {

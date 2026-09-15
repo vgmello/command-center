@@ -32,7 +32,13 @@ import type {
 	TrendGrain
 } from '$lib/platform/types';
 import type { DeploymentQuery } from '$lib/platform/deployments';
-import { deploymentSource, infrastructureSource, platformSource, serviceSource } from './index';
+import {
+	deploymentSource,
+	describeSources,
+	infrastructureSource,
+	platformSource,
+	serviceSource
+} from './index';
 import { DEPLOYMENT_LIMIT, INCIDENT_LIMIT, buildOverview, buildSystemStatus } from './snapshot';
 import { RECENT_CHANGE_LIMIT, buildDomainsSnapshot } from './domains-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
@@ -364,4 +370,15 @@ export function readDeploymentsView(
 	grain: TrendGrain = 'daily'
 ): Promise<DeploymentsSnapshot> {
 	return buildDeploymentsSnapshot(deploymentSource(), scope, grain);
+}
+
+/**
+ * The connected sources, for `/api/v1/sources`.
+ *
+ * A thin pass-through rather than logic: the shaping that matters — leaving `settings`
+ * behind — happens where the registry is, so nothing between here and the endpoint can
+ * reintroduce a credential.
+ */
+export function listSources() {
+	return describeSources();
 }

@@ -13,7 +13,12 @@ export const API_TAGS = [
 	{ name: 'Services', description: 'The service catalog, and what each service is doing.' },
 	{ name: 'Metrics', description: 'Headline rates across the platform.' },
 	{ name: 'Activity', description: 'Incidents, deployments and their aggregates.' },
-	{ name: 'Infrastructure', description: 'Clusters, nodes, databases and queues.' }
+	{ name: 'Infrastructure', description: 'Clusters, nodes, databases and queues.' },
+	{
+		name: 'Sources',
+		description:
+			'The connected data sources, and what each one can answer. A panel that is empty because nothing is connected looks exactly like one that is empty because something broke.'
+	}
 ] as const;
 
 export const API_TAG_NAMES: ReadonlySet<string> = new Set(API_TAGS.map((tag) => tag.name));

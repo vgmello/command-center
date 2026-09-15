@@ -20,6 +20,7 @@ function service(overrides: Partial<CatalogService> = {}): CatalogService {
 		runbook: null,
 		dashboard: null,
 		identity: {},
+		bindings: [],
 		...overrides
 	};
 }
@@ -32,7 +33,8 @@ const domain: CatalogDomain = {
 	icon: 'landmark',
 	accent: 'blue',
 	criticality: 'mission-critical',
-	owner: '@payments-team'
+	owner: '@payments-team',
+	bindings: []
 };
 
 function reading(overrides: Partial<ServiceReading> = {}): ServiceReading {

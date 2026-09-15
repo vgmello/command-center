@@ -76,6 +76,17 @@ export function infrastructureSource(): InfrastructureSource {
 	return routers.infrastructure;
 }
 
+/**
+ * What is connected, and what each can answer.
+ *
+ * Exposed because a caller looking at an empty panel has no other way to tell "nothing is
+ * wrong, nothing is connected" from "something broke" — and neither does an operator
+ * reading a support ticket about it.
+ */
+export function describeSources() {
+	return routers.describeSources();
+}
+
 const workspaceSources: Record<string, () => WorkspaceSource> = {
 	fixture: () => new FixtureWorkspaceSource()
 };

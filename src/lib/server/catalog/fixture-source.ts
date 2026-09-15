@@ -28,7 +28,11 @@ export class FixtureCatalogSource implements CatalogSource {
 			icon: domain.icon,
 			accent: domain.accent,
 			criticality: domain.criticality,
-			owner: domain.owner
+			owner: domain.owner,
+			// The fixture declares none: with a single connection per kind the router can
+			// find the source without being told, and a binding invented here would be a
+			// claim about an estate this file does not know.
+			bindings: []
 		}));
 	}
 
@@ -51,7 +55,8 @@ export class FixtureCatalogSource implements CatalogSource {
 			dashboard: service.dashboard,
 			// The seeds name each service the same way everywhere, so nothing is declared
 			// and every lookup falls back to the slug.
-			identity: {}
+			identity: {},
+			bindings: []
 		}));
 	}
 

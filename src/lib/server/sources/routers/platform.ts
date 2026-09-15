@@ -2,7 +2,7 @@ import type { PlatformSource } from '../../platform/source';
 import type { ApmProvider } from '../contracts';
 import { fanOut, fanOutSingle, type RouterDeps } from './shared';
 import type { CatalogSource } from '../../catalog/source';
-import { identityFor } from '$lib/platform/catalog';
+import { bindingFor as catalogBindingFor, identityFor } from '$lib/platform/catalog';
 import { rollUpDomain, type ServiceReading } from '$lib/platform/catalog-merge';
 import { queryDomainsInMemory } from '../../platform/in-memory-query';
 import type { PlatformScope } from '$lib/platform/query';
@@ -142,5 +142,7 @@ export function createPlatformRouter(
  * provider expects.
  */
 function bindingFor(slug: string) {
-	return { kind: 'apm' as const, connectionId: '', externalId: slug };
+	// The catalog's own binding once a record is in hand; a domain read starts from a slug,
+	// so this is the shape `catalogBindingFor` produces for a record that declares none.
+	return catalogBindingFor({ slug }, 'apm');
 }
