@@ -1,10 +1,17 @@
-import type { DomainSnapshot, DomainVitals, Domain, ServiceStat } from '$lib/platform/types';
+import type {
+	DomainSnapshot,
+	DomainVitals,
+	Domain,
+	ServiceStat,
+	ServiceVitals
+} from '$lib/platform/types';
 import type { PlatformScope } from '$lib/platform/query';
 import type { DeploymentSource, PlatformSource, ServiceSource } from './source';
 import { ALL_ENVIRONMENTS, ALL_SERVICES } from '$lib/platform/deployments';
 import { formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
 import { STATUS_LABELS } from '$lib/platform/health';
 import { toSeries } from './snapshot';
+import { CapabilityUnavailableError, SourceFailedError } from '../sources/errors';
 
 /**
  * Assembles one domain's overview tab.
@@ -240,4 +247,51 @@ export async function buildDomainSnapshot(
 			.filter((incident) => incident.domainId === domain.id)
 			.slice(0, DOMAIN_ISSUE_LIMIT)
 	};
+}
+
+/**
+ * A domain's services, with the readings behind each one's health — the Services tab's
+ * whole payload.
+ *
+ * Composes three reads: the domain itself (for its id and declared `serviceCount`), its
+ * vitals (the status split those rows must add up to), and the catalog's per-service rows
+ * dealt out against that split by `listServiceVitals`.
+ *
+ * The vitals read is caught here rather than left to propagate. `readDomainVitals` is
+ * source-backed and can throw `CapabilityUnavailableError`/`SourceFailedError` when the
+ * APM connection behind it is gone — and unlike a domain that does not exist, that is not
+ * a reason to fail the whole tab: the catalog still knows the domain and would still answer
+ * `listServiceVitals` if there were a split to hand it. Losing the connection costs this
+ * panel its rows, not the page.
+ */
+export async function listDomainServiceVitals(
+	platform: PlatformSource,
+	services: ServiceSource,
+	scope: PlatformScope,
+	slug: string
+): Promise<ServiceVitals[] | null> {
+	const domain = await platform.findDomain(scope, slug);
+	if (!domain) return null;
+
+	const vitals = await readVitalsIfAvailable(platform, scope, slug);
+	if (!vitals) return null;
+
+	return services.listServiceVitals(scope, domain.id, vitals, domain.serviceCount);
+}
+
+async function readVitalsIfAvailable(
+	platform: PlatformSource,
+	scope: PlatformScope,
+	slug: string
+): Promise<DomainVitals | null> {
+	try {
+		return await platform.readDomainVitals(scope, slug);
+	} catch (cause) {
+		if (cause instanceof CapabilityUnavailableError || cause instanceof SourceFailedError) {
+			return null;
+		}
+
+		// Anything else is a bug, not a gap, and must not be swallowed as "no data".
+		throw cause;
+	}
 }

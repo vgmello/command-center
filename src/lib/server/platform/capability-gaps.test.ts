@@ -10,7 +10,7 @@ import { CapabilityUnavailableError } from '../sources/errors';
 import { CAPABILITY_TIER } from '../sources/tiers';
 import { buildOverview } from './snapshot';
 import { buildDomainsSnapshot } from './domains-view';
-import { buildDomainSnapshot } from './domain-view';
+import { buildDomainSnapshot, listDomainServiceVitals } from './domain-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
@@ -59,6 +59,10 @@ const SCREENS: Array<{
 		name: 'domain detail',
 		run: (r) =>
 			buildDomainSnapshot(r.platform, r.service, r.deployment, scope, 'payments', new Date())
+	},
+	{
+		name: 'domain services',
+		run: (r) => listDomainServiceVitals(r.platform, r.service, scope, 'payment-domain')
 	},
 	{
 		name: 'service detail',

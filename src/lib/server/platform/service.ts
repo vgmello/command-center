@@ -44,7 +44,7 @@ import { RECENT_CHANGE_LIMIT, buildDomainsSnapshot } from './domains-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
-import { buildDomainSnapshot } from './domain-view';
+import { buildDomainSnapshot, listDomainServiceVitals } from './domain-view';
 import { buildInfrastructureSnapshot } from './infrastructure-view';
 import { ALL_DOMAINS, ALL_ENVIRONMENTS, ALL_SERVICES } from '$lib/platform/deployments';
 
@@ -276,18 +276,11 @@ export async function readDomainDependencies(
 	return source.readDomainDependencies(scope, slug);
 }
 
-export async function readDomainServices(
+export function readDomainServices(
 	scope: PlatformScope,
 	slug: string
 ): Promise<ServiceVitals[] | null> {
-	const platform = platformSource();
-	const domain = await platform.findDomain(scope, slug);
-	if (!domain) return null;
-
-	const vitals = await platform.readDomainVitals(scope, slug);
-	if (!vitals) return null;
-
-	return serviceSource().listServiceVitals(scope, domain.id, vitals, domain.serviceCount);
+	return listDomainServiceVitals(platformSource(), serviceSource(), scope, slug);
 }
 
 export function readDomain(scope: PlatformScope, slug: string): Promise<Domain | null> {

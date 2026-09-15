@@ -4,6 +4,7 @@ import {
 	readDomain,
 	readDomainDependencies,
 	readDomainPage,
+	readDomainServices,
 	readDomainView,
 	readDomainsView
 } from '$lib/server/platform/service';
@@ -79,4 +80,14 @@ export const getDomainHeader = query(scopedServiceSchema, async ({ slug, ...scop
  */
 export const getDomainDependencies = query(scopedServiceSchema, async ({ slug, ...scope }) =>
 	readDomainDependencies(scope, slug)
+);
+
+/**
+ * A domain's services, with the readings behind each one's health.
+ *
+ * Its own query rather than a slice of the overview composite: this tab redraws on the
+ * refresh tick and the overview's incident list and deployment log do not need to.
+ */
+export const getDomainServices = query(scopedServiceSchema, async ({ slug, ...scope }) =>
+	readDomainServices(scope, slug)
 );

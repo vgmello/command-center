@@ -13,6 +13,7 @@ export const ROUTES = [
 	'/domains',
 	'/domains/payment-domain',
 	'/domains/payment-domain/dependencies',
+	'/domains/payment-domain/services',
 	'/domains/payment-domain/slos',
 	'/services',
 	'/services/payment-api',
