@@ -33,11 +33,16 @@ export const ROUTES = [
 /**
  * Which configuration the app is running under.
  *
- * Both are tested because three of this session's bugs existed only under real adapters:
- * fixtures answer every question, so the paths that handle "the source cannot say" never
- * ran. `fixtures` is also the only mode that works with nothing else booted.
+ * All three are tested because three of this session's bugs existed only under real
+ * adapters: fixtures answer every question, so the paths that handle "the source cannot
+ * say" never ran. `fixtures` is also the only mode that works with nothing else booted.
+ *
+ * `sources` and `azure` differ in the half of the estate that is real. `sources` runs the
+ * Octopus and Coralogix adapters against their mocks over a fixture cloud; `azure` runs
+ * the Azure adapter against floci-az and the Monitor and Cost mocks, which is the only
+ * mode where the infrastructure page is drawn from a cloud API rather than from seeds.
  */
-export type StackMode = 'fixtures' | 'sources';
+export type StackMode = 'fixtures' | 'sources' | 'azure';
 
 export interface RunningApp {
 	baseUrl: string;
@@ -47,6 +52,33 @@ export interface RunningApp {
 /** Whether the production bundle exists. Without it there is nothing to test. */
 export async function buildExists(): Promise<boolean> {
 	return Bun.file('build/index.js').exists();
+}
+
+/**
+ * Whether floci-az and the two Azure mocks are listening, which the `azure` mode needs.
+ *
+ * Checked separately from the other mocks because it needs Docker as well: `bun run db:up`
+ * and `bun run seed:azure` on top of `bun run dev:stack`.
+ */
+export async function azureStackRunning(): Promise<boolean> {
+	try {
+		const emulator = await fetch('http://localhost:4577/health', {
+			signal: AbortSignal.timeout(1200)
+		});
+		if (!emulator.ok) return false;
+	} catch {
+		return false;
+	}
+
+	for (const port of [4593, 4594]) {
+		try {
+			await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(700) });
+		} catch {
+			return false;
+		}
+	}
+
+	return true;
 }
 
 /** Whether the mock stack is listening, which the `sources` mode needs. */
@@ -72,6 +104,10 @@ function envFor(mode: StackMode, port: number): Record<string, string> {
 	} as Record<string, string>;
 
 	if (mode === 'fixtures') return base;
+
+	// No SOURCES_ALLOW_FIXTURES for `azure`: nothing in that file is a fixture, and
+	// setting it would hide a connections file that had quietly become one.
+	if (mode === 'azure') return { ...base, SOURCES_CONFIG: 'sources.local.json' };
 
 	return {
 		...base,

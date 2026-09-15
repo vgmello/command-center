@@ -95,6 +95,23 @@ describe('utilization presentation', () => {
 		expect(view.formatted).toBe('67');
 		expect(view.displayUnit).toBe('%');
 	});
+
+	test('a byte reading is scaled, not printed raw', () => {
+		// Azure publishes free memory in bytes, because a used percentage needs the VM
+		// size's total RAM. Printed raw that is "5482128896 B", which is what the render
+		// sweep looks for.
+		const view = toUsageView({ ...reading, id: 'memory', unit: 'B', value: 5_482_128_896 });
+
+		expect(view.formatted).toBe('5.1');
+		expect(view.displayUnit).toBe('GB');
+	});
+
+	test('a byte rate keeps its per-second suffix', () => {
+		const view = toUsageView({ ...reading, id: 'disk', unit: 'B/s', value: 41_000_000 });
+
+		expect(view.formatted).toBe('39.1');
+		expect(view.displayUnit).toBe('MB/s');
+	});
 });
 
 describe('cost presentation', () => {

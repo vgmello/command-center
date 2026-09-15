@@ -17,6 +17,7 @@ function client(baseUrl: string, overrides: Partial<{ scope: string }> = {}) {
 	return new AzureClient({
 		baseUrl,
 		costBaseUrl: baseUrl,
+		monitorBaseUrl: baseUrl,
 		subscriptionId: 'sub-1',
 		credential,
 		...overrides
@@ -114,6 +115,7 @@ describe('authentication', () => {
 			const one = new AzureClient({
 				baseUrl: `http://localhost:${server.port}`,
 				costBaseUrl: `http://localhost:${server.port}`,
+				monitorBaseUrl: `http://localhost:${server.port}`,
 				subscriptionId: 'sub-1',
 				credential: counting
 			});
@@ -145,6 +147,7 @@ describe('authentication', () => {
 			const one = new AzureClient({
 				baseUrl: `http://localhost:${server.port}`,
 				costBaseUrl: `http://localhost:${server.port}`,
+				monitorBaseUrl: `http://localhost:${server.port}`,
 				subscriptionId: 'sub-1',
 				credential: expiring
 			});

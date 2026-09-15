@@ -13,12 +13,14 @@
 		"  DATABASE_URL=postgres://postgres:postgres@localhost:5432/command_center \\",
 		"  bun run dev",
 		"",
-		"SOURCES_ALLOW_FIXTURES is needed because the Azure provider declares three of the nine",
-		"cloud capabilities: regions, nodes and spend are in ARM, and the other six \u2014",
-		"utilisation, storage, databases, queues, alerts \u2014 are Azure Monitor readings that",
-		"floci-az does not emulate. The fixture cloud is not connected alongside it (loadConnections",
-		"refuses a fixture beside a real source of the same kind), so those six render as stated",
-		"gaps. Set it to false once a Monitor mock exists."
+		"The Azure provider declares seven of the nine cloud capabilities. Regions, nodes,",
+		"clusters and spend come from ARM and Cost Management; utilisation, storage and",
+		"databases are Azure Monitor readings, which floci-az answers with \"Unsupported",
+		"Microsoft.Compute path\" \u2014 so `bun run dev:stack` serves them from a Monitor mock",
+		"on 4594. Queues and alerts stay undeclared and render as stated gaps: Service Bus",
+		"will not provision through floci-az at all, and alerts are Monitor\u0027s alerts API",
+		"rather than its metrics one. No SOURCES_ALLOW_FIXTURES here \u2014 nothing in this",
+		"file is a fixture."
 	],
 	"connections": [
 		{
@@ -28,6 +30,7 @@
 			"settings": {
 				"baseUrl": "http://localhost:4577",
 				"costBaseUrl": "http://localhost:4593",
+				"monitorBaseUrl": "http://localhost:4594",
 				"subscriptionId": "00000000-0000-0000-0000-000000000001",
 				"tenantId": "00000000-0000-0000-0000-000000000002",
 				"clientId": "local",

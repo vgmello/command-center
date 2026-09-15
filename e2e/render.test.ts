@@ -3,6 +3,7 @@ import {
 	HYDRATED,
 	openView,
 	ROUTES,
+	azureStackRunning,
 	buildExists,
 	mocksRunning,
 	settle,
@@ -138,5 +139,58 @@ describe.if(sourcesReady)('the same pages, against real adapters', () => {
 
 		expect(text.includes('No domain called')).toBe(false);
 		expect(text.includes('Not reported')).toBe(true);
+	}, 40_000);
+});
+
+const azureReady = available && (await azureStackRunning());
+
+if (available && !azureReady) {
+	console.warn(
+		'[e2e] floci-az or the Azure mocks not listening — run `bun run db:up`, `bun run seed:azure` and `bun run dev:stack`. Azure tests skipped.'
+	);
+}
+
+describe.if(azureReady)('the infrastructure page, against a real cloud API', () => {
+	/**
+	 * The only mode where the estate is read from a cloud rather than from seeds.
+	 *
+	 * It is worth its own boot because every reading on this screen takes a different path
+	 * here: regions and nodes come from ARM resource metadata, clusters, utilisation,
+	 * storage and databases from Monitor metrics, spend from Cost Management — and queues
+	 * and alerts from nothing at all, which is the case fixtures can never produce.
+	 */
+	let app: RunningApp;
+	let view: InstanceType<typeof Bun.WebView>;
+
+	beforeAll(async () => {
+		app = await startApp('azure', 4804);
+		view = openView();
+	}, 40_000);
+
+	afterAll(() => {
+		view?.close();
+		app?.stop();
+	});
+
+	for (const route of ['/infrastructure', '/infrastructure/compute'] as const) {
+		test(`${route} renders cleanly against Azure`, async () => {
+			await view.navigate(`${app.baseUrl}${route}`);
+			const text = await settle(view, HYDRATED);
+
+			expect(`${route}: ${findGarbage(text).join(', ') || 'clean'}`).toBe(`${route}: clean`);
+		}, 40_000);
+	}
+
+	test('the readings are scaled, and the two gaps say so', async () => {
+		// Available memory is bytes and disk is bytes per second, so both would print
+		// ten-digit integers if the headline units were not there. Queues and alerts are
+		// the capabilities Azure does not declare, and a stated gap is the whole point of
+		// declaring seven rather than nine.
+		await view.navigate(`${app.baseUrl}/infrastructure`);
+		const text = await settle(view, HYDRATED);
+
+		expect(/\d+(\.\d+)? (K|M|G|T)B\b/.test(text)).toBe(true);
+		expect(text).toContain('Memory available');
+		expect(text.toLowerCase()).toContain('no connected');
 	}, 40_000);
 });

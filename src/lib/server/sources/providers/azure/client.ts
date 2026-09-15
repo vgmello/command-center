@@ -25,6 +25,8 @@ export interface AzureClientOptions {
 	baseUrl: string;
 	/** Cost Management's root, which is ARM in production and our own mock locally. */
 	costBaseUrl: string;
+	/** Monitor's root, which is ARM in production and our own mock locally. */
+	monitorBaseUrl: string;
 	subscriptionId: string;
 	credential: TokenCredential;
 	/** The scope a token is requested for. Differs when ARM is not the real ARM. */
@@ -153,7 +155,7 @@ export class AzureClient {
 					data: Array<{ timeStamp: string; average?: number; total?: number; maximum?: number }>;
 				}>;
 			}>;
-		}>(`${resourceId}/providers/Microsoft.Insights/metrics`, {
+		}>(`${this.#options.monitorBaseUrl}${resourceId}/providers/Microsoft.Insights/metrics`, {
 			'api-version': '2018-01-01',
 			metricnames: names.join(','),
 			aggregation,

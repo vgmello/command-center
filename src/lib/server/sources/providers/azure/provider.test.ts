@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { azureProvider } from './index';
-import { costFrom, countNodes, powerStateOf, regionsOf, type CostRow } from './map';
+import {
+	clusterIsReady,
+	costFrom,
+	countNodes,
+	powerStateOf,
+	regionsOf,
+	utilizationFrom,
+	type CostRow
+} from './map';
+import { startCostMock } from './mock/cost';
 import type { SourceContext } from '../../provider';
 
 /**
@@ -102,16 +111,134 @@ describe('mapping', () => {
 	});
 });
 
+describe('utilisation', () => {
+	const window = {
+		from: new Date('2026-09-15T10:00:00Z'),
+		to: new Date('2026-09-15T10:02:00Z'),
+		stepSeconds: 60
+	};
+
+	const machine = (cpu: number[], bytes: number[]) => [
+		{
+			name: 'Percentage CPU',
+			points: cpu.map((value, i) => ({ at: new Date(window.from.getTime() + i * 60_000), value }))
+		},
+		{ name: 'Available Memory Bytes', points: [] },
+		{
+			name: 'Disk Read Bytes',
+			points: bytes.map((value, i) => ({ at: new Date(window.from.getTime() + i * 60_000), value }))
+		},
+		{
+			name: 'Network In Total',
+			points: bytes.map((value, i) => ({ at: new Date(window.from.getTime() + i * 60_000), value }))
+		}
+	];
+
+	test('averages across the machines sampled rather than summing them', () => {
+		// A sum would make the CPU line rise every time somebody provisioned a VM, which
+		// is a chart that reports a purchase as a load spike.
+		const [cpu] = utilizationFrom([machine([20, 40], []), machine([40, 80], [])], window);
+
+		expect(cpu.series.points.map((one) => one.value)).toEqual([30, 60]);
+		expect(cpu.value).toBe(60);
+	});
+
+	test('a counter becomes a rate, and the network one becomes bits', () => {
+		// Monitor reports Total *over the interval*. Left alone, a sixty-second bucket
+		// would read sixty times the throughput it measured.
+		const [, , disk, network] = utilizationFrom([machine([], [600, 600])], window);
+
+		expect(disk.value).toBe(10);
+		expect(disk.unit).toBe('B/s');
+		expect(network.value).toBe(80);
+		expect(network.unit).toBe('bps');
+	});
+
+	test('memory is reported as available bytes, the other way up', () => {
+		// Azure publishes free bytes, not a used percentage — that needs the VM size's
+		// total RAM, which is not a metric. So the reading says what was measured.
+		const [, memory] = utilizationFrom([machine([], [])], window);
+
+		expect(memory.unit).toBe('B');
+		expect(memory.polarity).toBe('higher-is-better');
+	});
+
+	test('change is measured against the start of the window the caption claims', () => {
+		const [cpu] = utilizationFrom([machine([50, 60], [])], window);
+
+		expect(cpu.change).toBe(20);
+		expect(cpu.direction).toBe('up');
+	});
+
+	test('a machine that reported nothing does not drag the average to zero', () => {
+		const quiet = [{ name: 'Percentage CPU', points: [] }];
+		const [cpu] = utilizationFrom([machine([40, 40], []), quiet], window);
+
+		expect(cpu.series.points.map((one) => one.value)).toEqual([40, 40]);
+	});
+
+	test('a percentage is read against 100, not against its own peak', () => {
+		// Scaling CPU to its peak makes 42% and 95% look identical.
+		const [cpu, , disk] = utilizationFrom([machine([42, 44], [600, 600])], window);
+
+		expect(cpu.axisMax).toBe(100);
+		expect(disk.axisMax).toBeGreaterThan(disk.value);
+	});
+});
+
+describe('clusters', () => {
+	test('a cluster is judged on its pools, not on its control plane', () => {
+		// floci-az leaves the cluster at "Creating" while it provisions containers, and a
+		// real cluster mid-upgrade says the same. The pools are what run workloads.
+		expect(
+			clusterIsReady({
+				id: 'x',
+				name: 'x',
+				location: 'eastus',
+				properties: {
+					provisioningState: 'Creating',
+					agentPoolProfiles: [{ count: 3, provisioningState: 'Succeeded' }]
+				}
+			})
+		).toBe(true);
+	});
+});
+
 describe('what it declares', () => {
-	test('three capabilities, because the rest are Monitor readings', () => {
-		// floci-az answers "Unsupported Microsoft.Compute path" for a metrics request, and a
-		// provider that invented a CPU percentage would be worse than one that says it
-		// cannot. The gap sweep already proves the panels degrade rather than the page.
+	test('seven capabilities, and the two it leaves out are not Monitor metrics', () => {
+		// Queues are Service Bus, which floci-az will not provision through ARM at all;
+		// alerts are Monitor's alerts API rather than its metrics one. Both render as
+		// stated gaps, and the gap sweep proves the panels degrade rather than the page.
 		expect([...azureProvider.capabilities].sort()).toEqual([
+			'cloud.clusters',
 			'cloud.cost',
+			'cloud.databases',
 			'cloud.nodes',
-			'cloud.regions'
+			'cloud.regions',
+			'cloud.storage',
+			'cloud.utilization'
 		]);
+	});
+
+	test('the local credential issues the key the local mocks check for', async () => {
+		// They check rather than ignore it, so a stub issuing something else 401s every
+		// cost and metrics read — which is exactly what it did, silently, until measured.
+		const cost = startCostMock();
+
+		try {
+			const client = azureProvider.connect({
+				costBaseUrl: cost.url,
+				subscriptionId: 'sub-1',
+				tenantId: 't',
+				clientId: 'c',
+				clientSecret: 'local-dev-only'
+			});
+
+			const breakdown = await client.readCost!(context());
+			expect(breakdown.categories.length).toBeGreaterThan(0);
+		} finally {
+			cost.stop();
+		}
 	});
 
 	test('a deep link addresses a resource by its whole ARM id', () => {
@@ -157,6 +284,7 @@ describe.if(emulator)('against floci-az', () => {
 	const client = azureProvider.connect({
 		baseUrl: 'http://localhost:4577',
 		costBaseUrl: 'http://localhost:4593',
+		monitorBaseUrl: 'http://localhost:4594',
 		subscriptionId: '00000000-0000-0000-0000-000000000001',
 		tenantId: '00000000-0000-0000-0000-000000000002',
 		clientId: 'local',
@@ -176,6 +304,42 @@ describe.if(emulator)('against floci-az', () => {
 		for (const region of regions) {
 			expect(Number.isFinite(region.latitude)).toBe(true);
 			expect(region.nodeCount).toBeGreaterThan(0);
+		}
+	});
+
+	test('every Monitor-backed capability answers with the estate it reads', async () => {
+		// The four that the Monitor mock unblocks, against the seeded estate rather than
+		// against a hand-written response: a cluster's CPU, the machines' utilisation, the
+		// storage accounts' bytes and the flexible servers' connections.
+		const [clusters, resources, storage, databases] = await Promise.all([
+			client.listClusters!(context(), 20),
+			client.readUtilization!(context()),
+			client.readStorage!(context()),
+			client.listDatabases!(context(), 20)
+		]);
+
+		expect(clusters.length).toBeGreaterThan(0);
+		for (const cluster of clusters) {
+			// "Creating" control planes across the board would report every seeded cluster
+			// degraded, which is the bug `clusterIsReady` exists to avoid.
+			expect(cluster.status).toBe('healthy');
+			expect(cluster.cpuPct).toBeGreaterThan(0);
+		}
+
+		expect(resources.map((one) => one.id)).toEqual(['cpu', 'memory', 'disk', 'network']);
+		for (const resource of resources) {
+			expect(Number.isFinite(resource.value)).toBe(true);
+			expect(resource.series.points.length).toBeGreaterThan(0);
+		}
+
+		expect(storage.classes.length).toBeGreaterThan(0);
+		expect(storage.totalBytes).toBe(storage.classes.reduce((sum, one) => sum + one.bytes, 0));
+
+		expect(databases.length).toBeGreaterThan(0);
+		for (const database of databases) {
+			expect(database.engine).toContain('PostgreSQL');
+			// A ratio whose numerator can exceed its denominator is a ratio nobody can read.
+			expect(database.connections).toBeLessThanOrEqual(database.connectionLimit);
 		}
 	});
 

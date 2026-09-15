@@ -181,6 +181,39 @@ down on one missing capability. An ARM-only Azure adapter serves regions, nodes 
 and leaves utilisation to Monitor; the page died on `cloud.utilization`. Every read on both
 screens is wrapped now, and the sweep asserts the stronger rule with no exemptions.
 
+**A mock of the API, not a mock of the answer.** floci-az emulates ARM but not Monitor —
+a metrics request against it returns "Unsupported Microsoft.Compute path" — and almost
+everything the infrastructure screen wants is a Monitor reading. So Monitor got a stand-in
+of its own (`providers/azure/mock/monitor.ts`, port 4594), answering the real contract:
+the resource id is the path, `metricnames` is comma-separated, `timespan` is `from/to`,
+and a series comes back as `value[].timeseries[0].data[]` under the aggregation's own
+field name. A mock that invented a convenient shape would test the mock. With it the Azure
+provider answers seven of nine capabilities instead of three; queues and alerts stay
+undeclared, because Service Bus will not provision through floci-az at all and alerts are
+a different Monitor API rather than another metric name.
+
+**What that costs: 31 requests for one infrastructure page, 26 of them Monitor.** Monitor
+answers per resource, so every cluster, storage account and database is its own call and
+the estate's utilisation is a call per machine — which is why `metricSampleSize` caps that
+at twelve and says so in the panel rather than fanning out across two thousand VMs. A real
+deployment that outgrows this wants Monitor's batch endpoint, which is a different path
+(`…/providers/Microsoft.Insights/metrics:getBatch`) and not a parameter on this one.
+
+**Four units reach the utilisation strip, and only one is a percentage.** Azure publishes
+free memory in bytes, because a used percentage needs the VM size's total RAM and that is
+not a metric; disk and network arrive as `Total` counters over the sampling interval, so
+both are divided by it and the network one goes on to bits. Each reading states the unit
+it is actually in — `'%'`, `'B'`, `'B/s'`, `'bps'` — and `toUsageView` scales the headline.
+Printed raw, available memory is `5482128896 B`, which is exactly what the render sweep
+looks for.
+
+**A mock that checks its token catches an adapter that stopped sending one — and did.**
+The local Azure credential is a stub, because asking an emulator for a real
+client-credentials grant fails in a way that reads like misconfiguration. It issued the
+token `local` while both Azure mocks check for `local-dev-key`, so every cost read in the
+local stack had been 401ing silently. Found by running it, and now asserted: the stub
+issues `MOCK_API_KEY`, and a test fails if it drifts again.
+
 **A fan-out's cache key names the connections that answered it.** Aggregate reads were
 keyed under the literal string `fan-out`, which cannot tell one set of connections from
 another — so swapping a fixture cloud for a real Azure left every stored answer matching,
@@ -701,11 +734,16 @@ read an almost-empty body, found nothing wrong, and passed. A broken test that l
 exactly like a working one. `settle()` polls until the body length is unchanged three times
 running.
 
-**Both configurations, always.** Fixtures answer every question and hold whole numbers, so
+**Every configuration, always.** Fixtures answer every question and hold whole numbers, so
 the paths that handle "the source cannot say" never run and nothing is ever printed
 unformatted. Three bugs in one session existed only under real adapters. `e2e` therefore
-runs against fixtures and against `sources.example.json`, and skips the second when the
-mocks are not listening rather than pretending to have covered it.
+runs three stacks and skips the ones whose backends are not listening rather than
+pretending to have covered them: fixtures, `sources.example.json` (the Octopus and
+Coralogix adapters over a fixture cloud), and `sources.local.json` (the Azure adapter over
+floci-az and the Monitor and Cost mocks — the only mode where the infrastructure page is
+drawn from a cloud API, and the only one where a panel legitimately has nothing to draw).
+The Azure mode needs Docker as well as the mocks, so CI skips it today; `bun run db:up`,
+`bun run seed:azure` and `bun run dev:stack` are what turn it on locally.
 
 **Run CI locally before pushing.** `bun run ci:local` runs the same job in the same
 container image — install, check, lint, the unit suite, a build, the mock stack, e2e. It

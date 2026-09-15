@@ -62,14 +62,22 @@ export function infraTabOptions(): SelectOption<InfraTab>[] {
  * Powers of 1024 and the IEC-derived labels everyone actually reads: a 5.1 TB volume
  * is what the console says, not 5.6 TB.
  */
-export function formatBytes(bytes: number, decimals = 1): string {
+export function splitBytes(bytes: number, decimals = 1): { value: string; unit: string } {
 	const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-	if (bytes < 1) return '0 B';
+	if (bytes < 1) return { value: '0', unit: 'B' };
 
 	const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
 	const value = bytes / 1024 ** exponent;
 
-	return `${value.toFixed(exponent === 0 ? 0 : decimals).replace(/\.0$/, '')} ${units[exponent]}`;
+	return {
+		value: value.toFixed(exponent === 0 ? 0 : decimals).replace(/\.0$/, ''),
+		unit: units[exponent]
+	};
+}
+
+export function formatBytes(bytes: number, decimals = 1): string {
+	const { value, unit } = splitBytes(bytes, decimals);
+	return `${value} ${unit}`;
 }
 
 /** Bits per second, which network gear is specified in and storage never is. */
@@ -163,15 +171,36 @@ export function toStorageView(storage: { totalBytes: number; classes: StorageCla
  * series carries bits per second while the headline reads gigabits.
  */
 export function toUsageView(reading: ResourceReading): ResourceUsage {
-	const bitrate = reading.unit === 'bps' ? formatBitrate(reading.value) : null;
+	const headline = headlineOf(reading);
 
 	return {
 		...reading,
-		formatted: bitrate ? bitrate.value : String(Math.round(reading.value)),
-		displayUnit: bitrate ? bitrate.unit : reading.unit,
+		formatted: headline.value,
+		displayUnit: headline.unit,
 		changeFormatted: formatChange(reading.change, '%', 0),
 		comparedToLabel: 'vs 15m ago'
 	};
+}
+
+/**
+ * The number and the unit a tile prints, which are not the ones it stores.
+ *
+ * Four units reach this strip, because four different things are being measured and only
+ * one of them is a percentage: a CPU share, free memory in bytes, disk throughput in bytes
+ * per second, and network throughput in bits per second. Each keeps its own scale rather
+ * than being rounded into a percentage of a ceiling nobody published — `5482128896 B`
+ * rendered raw is exactly what the render sweep looks for.
+ */
+function headlineOf(reading: ResourceReading): { value: string; unit: string } {
+	if (reading.unit === 'bps') return formatBitrate(reading.value);
+	if (reading.unit === 'B') return splitBytes(reading.value);
+
+	if (reading.unit === 'B/s') {
+		const { value, unit } = splitBytes(reading.value);
+		return { value, unit: `${unit}/s` };
+	}
+
+	return { value: String(Math.round(reading.value)), unit: reading.unit };
 }
 
 /** Spend facts, plus how the screen draws them. */
