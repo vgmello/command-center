@@ -32,6 +32,7 @@ import type {
 	ServiceDependencies,
 	ServiceEndpoint,
 	ServiceStat,
+	ServiceTrend,
 	ServiceVitals,
 	SloBudget,
 	TimeSeries,
@@ -39,6 +40,7 @@ import type {
 } from '$lib/platform/types';
 import type { DomainQuery, PlatformScope } from '$lib/platform/query';
 import type { DeploymentQuery } from '$lib/platform/deployments';
+import { serviceTrendsOf } from '$lib/platform/deployment-aggregates';
 import type {
 	DeploymentSource,
 	InfrastructureSource,
@@ -92,6 +94,16 @@ import {
  */
 
 const INCIDENT_SEVERITY_ORDER = { critical: 0, warning: 1, info: 2 } as const;
+
+/**
+ * How far back the aggregate windows look, per trend grain.
+ *
+ * Mirrors the Octopus provider's own constant of the same name — see
+ * `src/lib/server/sources/providers/octopus/index.ts`. Duplicated deliberately: this
+ * class sits beside the fixture provider, not beneath a router, so it keeps its own copy
+ * rather than reaching into `deployment-series-shape.ts`'s.
+ */
+const TREND_DAYS: Record<TrendGrain, number> = { daily: 14, weekly: 84, monthly: 365 };
 
 export class FixturePlatformSource implements PlatformSource {
 	readonly id = 'fixture';
@@ -187,6 +199,12 @@ export class FixtureDeploymentSource implements DeploymentSource {
 		grain: TrendGrain
 	): Promise<{ frequency: TimeSeries; meanDuration: TimeSeries }> {
 		return buildDeploymentTrends(new Date(), grain);
+	}
+
+	async readServiceTrends(_scope: PlatformScope, grain: TrendGrain): Promise<ServiceTrend[]> {
+		const now = new Date();
+		const from = new Date(now.getTime() - TREND_DAYS[grain] * 86_400_000);
+		return serviceTrendsOf(listDeployments(now), grain, from, now);
 	}
 
 	async listInsights(_scope: PlatformScope): Promise<DeploymentInsight[]> {

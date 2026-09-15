@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import {
 	breakDownByDomain,
 	deployingDomains,
+	serviceTrendsOf,
 	statusTrendOf,
 	summariseDeployments,
 	trendsOf
@@ -117,6 +118,7 @@ export const octopusProvider = defineProvider<DeploymentProvider>({
 		'deployment.log',
 		'deployment.summary',
 		'deployment.trends',
+		'deployment.serviceTrends',
 		'deployment.statusTrend',
 		'deployment.breakdown',
 		'deployment.domains'
@@ -454,6 +456,18 @@ export const octopusProvider = defineProvider<DeploymentProvider>({
 			async readTrends(ctx, grain) {
 				const { from, to, rows } = await trendWindow(ctx, TREND_DAYS[grain]);
 				return trendsOf(rows, grain, from, to);
+			},
+
+			/**
+			 * The same window as `readTrends`, grouped by service rather than collapsed.
+			 *
+			 * `trendWindow` returns rows already fetched into the shared window, so this
+			 * costs no additional Octopus request — the estate answer and the per-service
+			 * one are two readings of one fetch.
+			 */
+			async readServiceTrends(ctx, grain) {
+				const { from, to, rows } = await trendWindow(ctx, TREND_DAYS[grain]);
+				return serviceTrendsOf(rows, grain, from, to);
 			},
 
 			async listDeployingDomains() {

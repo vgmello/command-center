@@ -1,9 +1,21 @@
 import * as v from 'valibot';
+import { serviceTrendsOf } from '$lib/platform/deployment-aggregates';
+import type { TrendGrain } from '$lib/platform/types';
 import * as log from '../../platform/fixtures';
 import { queryDeploymentsInMemory } from '../../platform/in-memory-query';
 import { defineProvider } from '../provider';
 import type { DeploymentProvider } from '../contracts';
 import type { LinkView, SourceBinding } from '../provider';
+
+/**
+ * How far back the aggregate windows look, per trend grain.
+ *
+ * Mirrors the Octopus provider's own constant of the same name — see
+ * `src/lib/server/sources/providers/octopus/index.ts`. Duplicated deliberately: a
+ * provider sits beneath the routers, so it must not reach up into
+ * `deployment-series-shape.ts`'s copy of this value.
+ */
+const TREND_DAYS: Record<TrendGrain, number> = { daily: 14, weekly: 84, monthly: 365 };
 
 export const fixtureDeploymentProvider = defineProvider<DeploymentProvider>({
 	id: 'fixture-deployment',
@@ -15,6 +27,7 @@ export const fixtureDeploymentProvider = defineProvider<DeploymentProvider>({
 		'deployment.log',
 		'deployment.summary',
 		'deployment.trends',
+		'deployment.serviceTrends',
 		'deployment.statusTrend',
 		'deployment.breakdown',
 		'deployment.insights',
@@ -39,6 +52,11 @@ export const fixtureDeploymentProvider = defineProvider<DeploymentProvider>({
 		},
 		async readTrends(_ctx, grain) {
 			return log.buildDeploymentTrends(new Date(), grain);
+		},
+		async readServiceTrends(_ctx, grain) {
+			const now = new Date();
+			const from = new Date(now.getTime() - TREND_DAYS[grain] * 86_400_000);
+			return serviceTrendsOf(log.listDeployments(now), grain, from, now);
 		},
 		async listInsights() {
 			return log.listDeploymentInsights(new Date());

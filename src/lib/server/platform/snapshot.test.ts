@@ -123,6 +123,10 @@ function stubSource(overrides: Partial<PlatformSource> = {}) {
 			const empty = { id: 'x', label: 'x', points: [], min: 0, max: 0 };
 			return { frequency: empty, meanDuration: empty };
 		},
+		async readServiceTrends() {
+			calls.push('deployment-service-trends');
+			return [];
+		},
 		async listInsights() {
 			calls.push('deployment-insights');
 			return [];

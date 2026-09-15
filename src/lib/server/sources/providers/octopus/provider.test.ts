@@ -169,6 +169,23 @@ describe('the aggregates', () => {
 		expect(daily.frequency.points.length).toEqual(daily.meanDuration.points.length);
 	});
 
+	test('per-service trends split the same runs the estate trends count', async () => {
+		const [estate, perService] = await Promise.all([
+			client.readTrends!(ctx, 'daily'),
+			client.readServiceTrends!(ctx, 'daily')
+		]);
+
+		const estateRuns = estate.frequency.points.reduce((sum, one) => sum + one.value, 0);
+		const splitRuns = perService.reduce(
+			(sum, row) => sum + row.runs.points.reduce((inner, one) => inner + one.value, 0),
+			0
+		);
+
+		// The same runs counted two ways. If these diverge, one of the two is dropping rows.
+		expect(splitRuns).toBe(estateRuns);
+		expect(perService.length).toBeGreaterThan(1);
+	});
+
 	test('the deploying domains are the ones the breakdown names', async () => {
 		const [domains, breakdown] = await Promise.all([
 			client.listDeployingDomains!(ctx),

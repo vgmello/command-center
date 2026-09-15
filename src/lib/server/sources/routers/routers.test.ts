@@ -146,15 +146,28 @@ describe('the deployment router', () => {
 	});
 
 	test('a capability nobody accumulates throws rather than answering empty', async () => {
-		// No fixture provider declares `deployment.serviceTrends` yet (that lands with
-		// Task 5), so this is unavailable with or without a deployment connection — and
-		// that is the point: an empty array here would read as "nothing deployed", not
-		// "nothing is measuring this", which is the opposite statement.
+		// With no deployment connection at all, this is unavailable regardless of which
+		// providers declare the capability — and that is the point: an empty array here
+		// would read as "nothing deployed", not "nothing is measuring this", which is the
+		// opposite statement.
 		const { deployment } = build({ connections: [] });
 
 		await expect(deployment.readServiceTrends(scope, 'daily')).rejects.toThrow(
 			CapabilityUnavailableError
 		);
+	});
+
+	test('per-service trends come back grouped by service', async () => {
+		const { deployment } = build();
+		const rows = await deployment.readServiceTrends(scope, 'daily');
+
+		expect(rows.length).toBeGreaterThan(0);
+		for (const row of rows) {
+			expect(row.service.length).toBeGreaterThan(0);
+			// One axis, so a domain can be summed bucket by bucket later.
+			expect(row.runs.points.length).toBe(row.failures.points.length);
+			expect(row.runs.points.length).toBe(row.durationTotal.points.length);
+		}
 	});
 });
 
