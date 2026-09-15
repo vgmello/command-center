@@ -133,32 +133,59 @@ export async function buildDeploymentsSnapshot(
 	grain: TrendGrain = 'daily',
 	now: Date = new Date()
 ): Promise<DeploymentsSnapshot> {
+	/*
+	 * Every read wrapped, not just the insights one.
+	 *
+	 * Insights were wrapped first because Octopus reports what ran rather than what it
+	 * means, which made them the obvious gap. The rest were left bare, and that was a
+	 * latent version of the bug an ARM-only Azure adapter exposed on the infrastructure
+	 * screen: a source is entitled to decline any capability, and one declined read must
+	 * cost its panel rather than the page.
+	 */
 	const [summary, statusTrend, byDomain, trends, insights, recent, domains] = await Promise.all([
-		source.readSummary(scope),
-		source.readStatusTrend(scope),
-		source.readDomainBreakdown(scope),
-		source.readTrends(scope, grain),
-		// The one read on this screen a source may legitimately not answer: Octopus
-		// reports what ran, not what it means. Wrapped so the page states the gap instead
-		// of dying on it.
+		panel('deployment.summary', async () => ({ data: await source.readSummary(scope) })),
+		panel('deployment.statusTrend', async () => ({ data: await source.readStatusTrend(scope) })),
+		panel('deployment.breakdown', async () => ({ data: await source.readDomainBreakdown(scope) })),
+		panel('deployment.trends', async () => ({ data: await source.readTrends(scope, grain) })),
 		panel('deployment.insights', async () => ({ data: await source.listInsights(scope) })),
-		source.listDeployments(scope, RECENT_DEPLOYMENT_LIMIT),
-		source.listDeployingDomains(scope)
+		panel('deployment.log', async () => ({
+			data: await source.listDeployments(scope, RECENT_DEPLOYMENT_LIMIT)
+		})),
+		panel('deployment.domains', async () => ({ data: await source.listDeployingDomains(scope) }))
 	]);
+
+	const totals = summary.status === 'ok' ? summary.data : null;
 
 	return {
 		generatedAt: now.toISOString(),
 		environment: scope.environment,
 		timeRange: scope.timeRange,
-		counts: buildDeploymentTiles(summary),
-		rates: buildRateTiles(summary),
+		// The tiles come from the summary, so without it they state that nothing counted
+		// rather than printing zeroes that read as a quiet day.
+		counts: totals ? buildDeploymentTiles(totals) : unreportedDeploymentTiles(),
+		rates: totals ? buildRateTiles(totals) : [],
 		statusTrend,
 		byDomain,
 		insights,
-		frequency: trends.frequency,
-		meanDuration: trends.meanDuration,
+		frequency: trends.status === 'ok' ? { ...trends, data: trends.data.frequency } : trends,
+		meanDuration: trends.status === 'ok' ? { ...trends, data: trends.data.meanDuration } : trends,
 		summary,
 		recent,
 		domains
 	};
+}
+
+/** The count strip when no source reports what ran. */
+function unreportedDeploymentTiles(): CountTile[] {
+	return [
+		{
+			id: 'total',
+			label: 'Deployments Today',
+			icon: 'rocket',
+			value: null,
+			percentage: null,
+			caption: 'Not reported',
+			tone: null
+		}
+	];
 }

@@ -172,6 +172,23 @@ wrapped afterwards, which fixes the case that broke and defends against nothing.
 time, and then a whole kind at a time, and runs every screen against the result. It found
 seventeen more, and it is what makes the eighteenth a red test instead of a blank page.
 
+**No screen falls over, full stop.** The rule used to exempt a screen "dedicated to" a
+kind — infrastructure is a view of a cloud account, deployments a view of a CI/CD system —
+on the grounds that with the kind absent there is nothing to draw. That was true of the
+data and false of the page, and it hid a real bug: dedicated meant _exempt from every
+single-capability gap too_, so the first real cloud provider took the infrastructure page
+down on one missing capability. An ARM-only Azure adapter serves regions, nodes and spend
+and leaves utilisation to Monitor; the page died on `cloud.utilization`. Every read on both
+screens is wrapped now, and the sweep asserts the stronger rule with no exemptions.
+
+**A fan-out's cache key names the connections that answered it.** Aggregate reads were
+keyed under the literal string `fan-out`, which cannot tell one set of connections from
+another — so swapping a fixture cloud for a real Azure left every stored answer matching,
+and the page served storage, database and queue readings from a source that was no longer
+connected, for capabilities the new one does not declare. Invented numbers with nothing on
+the page admitting it, which is the failure this whole section exists to prevent. Found by
+looking at a running page, not by a test.
+
 Two consequences for new work:
 
 - **An assembler's source-backed reads are wrapped; its catalog reads are not.** The

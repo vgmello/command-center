@@ -1,7 +1,7 @@
 {
 	"$comment": [
 		"Full end-to-end: the real Azure, Octopus and Coralogix adapters, pointed at local",
-		"emulators. Only the base URLs differ from a production file — the providers, their",
+		"emulators. Only the base URLs differ from a production file \u2014 the providers, their",
 		"mapping, their paging and their auth are the production code paths.",
 		"",
 		"  bun run db:up        # Postgres and floci-az",
@@ -11,14 +11,14 @@
 		"",
 		"  SOURCES_CONFIG=sources.local.json \\",
 		"  DATABASE_URL=postgres://postgres:postgres@localhost:5432/command_center \\",
-		"  bun --bun node_modules/.bin/vite dev",
+		"  bun run dev",
 		"",
-		"No SOURCES_ALLOW_FIXTURES here, and no fixture-cloud: every kind has a real",
-		"adapter now, and loadConnections would refuse a fixture beside one anyway.",
-		"",
-		"Two Azure surfaces have no local backing and are stated gaps rather than faked:",
-		"Cost Management, which floci-az does not emulate and our own mock serves on 4593,",
-		"and Service Bus, which it refuses to provision through ARM at all."
+		"SOURCES_ALLOW_FIXTURES is needed because the Azure provider declares three of the nine",
+		"cloud capabilities: regions, nodes and spend are in ARM, and the other six \u2014",
+		"utilisation, storage, databases, queues, alerts \u2014 are Azure Monitor readings that",
+		"floci-az does not emulate. The fixture cloud is not connected alongside it (loadConnections",
+		"refuses a fixture beside a real source of the same kind), so those six render as stated",
+		"gaps. Set it to false once a Monitor mock exists."
 	],
 	"connections": [
 		{
@@ -31,7 +31,7 @@
 				"subscriptionId": "00000000-0000-0000-0000-000000000001",
 				"tenantId": "00000000-0000-0000-0000-000000000002",
 				"clientId": "local",
-				"clientSecret": { "$env": "AZURE_LOCAL_SECRET" }
+				"clientSecret": "local-dev-only"
 			}
 		},
 		{
@@ -49,7 +49,10 @@
 			"id": "coralogix-local",
 			"provider": "coralogix",
 			"label": "Coralogix (mock)",
-			"settings": { "baseUrl": "http://localhost:4592", "apiKey": "local-dev-key" }
+			"settings": {
+				"baseUrl": "http://localhost:4592",
+				"apiKey": "local-dev-key"
+			}
 		}
 	]
 }

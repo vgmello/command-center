@@ -53,11 +53,21 @@ describe('describeOverallHealth', () => {
 	});
 });
 
+/**
+ * Every source-backed field is a panel now, because a real cloud provider answers some
+ * capabilities and not others. These tests assert the fixture's happy path, so they unwrap.
+ */
+function ok<T>(panel: { status: string; data?: T }): T {
+	if (panel.status !== 'ok') throw new Error(`expected a resolved panel, got ${panel.status}`);
+	return panel.data as T;
+}
+
 describe('buildInfraStats', () => {
 	test('the node tile counts what the donut counts', async () => {
 		const snapshot = await buildInfrastructureSnapshot(source, scope);
 		const tile = snapshot.stats.find((stat) => stat.id === 'nodes');
-		const donutTotal = snapshot.nodes.healthy + snapshot.nodes.warning + snapshot.nodes.down;
+		const donutTotal =
+			ok(snapshot.nodes).healthy + ok(snapshot.nodes).warning + ok(snapshot.nodes).down;
 
 		expect(tile?.kind).toBe('ratio');
 		if (tile?.kind !== 'ratio') throw new Error('unreachable');
@@ -67,12 +77,16 @@ describe('buildInfraStats', () => {
 	test('the four utilisation tiles are the four panels, not a second reading', async () => {
 		const snapshot = await buildInfrastructureSnapshot(source, scope);
 
-		for (const resource of snapshot.resources) {
+		for (const resource of ok(snapshot.resources)) {
 			const tile = snapshot.stats.find((stat) => stat.id === resource.id);
 			expect(tile?.kind).toBe('trend');
 			if (tile?.kind !== 'trend') throw new Error('unreachable');
 			expect(tile.formatted).toBe(resource.formatted);
-			expect(tile.unit).toBe(resource.unit);
+			// The unit the headline is printed in, not the one the series carries. The tile
+			// used to take `unit` and read "1.2 bps" beside a panel reading "1.2 Gbps" —
+			// two renderings of one measurement, disagreeing, which is the exact thing
+			// this test's name says it prevents.
+			expect(tile.unit).toBe(resource.displayUnit);
 		}
 	});
 
@@ -94,15 +108,15 @@ describe('buildInfrastructureSnapshot', () => {
 	test('honours its limits rather than trusting the source to slice', async () => {
 		const snapshot = await buildInfrastructureSnapshot(source, scope);
 
-		expect(snapshot.clusters.length).toBeLessThanOrEqual(CLUSTER_LIMIT);
-		expect(snapshot.alerts.length).toBeLessThanOrEqual(ALERT_LIMIT);
+		expect(ok(snapshot.clusters).length).toBeLessThanOrEqual(CLUSTER_LIMIT);
+		expect(ok(snapshot.alerts).length).toBeLessThanOrEqual(ALERT_LIMIT);
 	});
 
 	test('every region carries coordinates a map can place', async () => {
 		const snapshot = await buildInfrastructureSnapshot(source, scope);
 
-		expect(snapshot.regions.length).toBeGreaterThan(0);
-		for (const region of snapshot.regions) {
+		expect(ok(snapshot.regions).length).toBeGreaterThan(0);
+		for (const region of ok(snapshot.regions)) {
 			expect(Math.abs(region.latitude)).toBeLessThanOrEqual(90);
 			expect(Math.abs(region.longitude)).toBeLessThanOrEqual(180);
 		}
@@ -110,7 +124,7 @@ describe('buildInfrastructureSnapshot', () => {
 
 	test('the storage slices account for the whole total', async () => {
 		const snapshot = await buildInfrastructureSnapshot(source, scope);
-		const shares = snapshot.storage.classes.reduce((sum, one) => sum + one.percentage, 0);
+		const shares = ok(snapshot.storage).classes.reduce((sum, one) => sum + one.percentage, 0);
 
 		expect(shares).toBeGreaterThanOrEqual(99);
 		expect(shares).toBeLessThanOrEqual(101);
@@ -118,11 +132,11 @@ describe('buildInfrastructureSnapshot', () => {
 
 	test('the cost columns add up to the headline', async () => {
 		const snapshot = await buildInfrastructureSnapshot(source, scope);
-		const drawn = snapshot.cost.categories.reduce(
+		const drawn = ok(snapshot.cost).categories.reduce(
 			(sum, category) => sum + category.daily.reduce((day, value) => day + value, 0),
 			0
 		);
-		const stated = snapshot.cost.categories.reduce((sum, category) => sum + category.amount, 0);
+		const stated = ok(snapshot.cost).categories.reduce((sum, category) => sum + category.amount, 0);
 
 		// A stacked chart whose columns sum to something other than the number printed
 		// beside it is worse than no chart.
@@ -132,14 +146,14 @@ describe('buildInfrastructureSnapshot', () => {
 	test('every category supplies a value for every day, so the columns stay aligned', async () => {
 		const snapshot = await buildInfrastructureSnapshot(source, scope);
 
-		for (const category of snapshot.cost.categories) {
-			expect(category.daily).toHaveLength(snapshot.cost.labels.length);
+		for (const category of ok(snapshot.cost).categories) {
+			expect(category.daily).toHaveLength(ok(snapshot.cost).labels.length);
 		}
 	});
 
 	test('the category shares sum to a whole', async () => {
 		const snapshot = await buildInfrastructureSnapshot(source, scope);
-		const shares = snapshot.cost.categories.reduce((sum, one) => sum + one.percentage, 0);
+		const shares = ok(snapshot.cost).categories.reduce((sum, one) => sum + one.percentage, 0);
 
 		expect(shares).toBeGreaterThanOrEqual(99);
 		expect(shares).toBeLessThanOrEqual(101);

@@ -58,6 +58,12 @@ function build() {
 	return { routers, count: () => calls, reset: () => (calls = 0), stop: () => server.stop(true) };
 }
 
+/** Panels now, because a deployment source may decline a capability. */
+function ok<T>(panel: { status: string; data?: T }): T {
+	if (panel.status !== 'ok') throw new Error(`expected a resolved panel, got ${panel.status}`);
+	return panel.data as T;
+}
+
 describe('one window, many capabilities', () => {
 	test('a whole deployments page costs far fewer requests than it did', async () => {
 		const harness = build();
@@ -123,13 +129,15 @@ describe('one window, many capabilities', () => {
 				new Date()
 			);
 
-			expect(snapshot.summary.total).toBeGreaterThan(0);
-			expect(snapshot.recent.length).toBeGreaterThan(0);
-			expect(snapshot.byDomain.slices.length).toBeGreaterThan(0);
+			expect(ok(snapshot.summary).total).toBeGreaterThan(0);
+			expect(ok(snapshot.recent).length).toBeGreaterThan(0);
+			expect(ok(snapshot.byDomain).slices.length).toBeGreaterThan(0);
 			// The parts still add up to the whole they are drawn from.
 			expect(
-				snapshot.summary.successful + snapshot.summary.failed + snapshot.summary.inProgress
-			).toBe(snapshot.summary.total);
+				ok(snapshot.summary).successful +
+					ok(snapshot.summary).failed +
+					ok(snapshot.summary).inProgress
+			).toBe(ok(snapshot.summary).total);
 		} finally {
 			harness.stop();
 		}

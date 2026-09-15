@@ -107,6 +107,12 @@ async function cost(run: (h: ReturnType<typeof harness>) => Promise<unknown>): P
 	}
 }
 
+/** Panels now, because a deployment source may decline a capability. */
+function ok<T>(panel: { status: string; data?: T }): T {
+	if (panel.status !== 'ok') throw new Error(`expected a resolved panel, got ${panel.status}`);
+	return panel.data as T;
+}
+
 describe('what a screen costs upstream', () => {
 	test('overview', async () => {
 		expect(
@@ -201,7 +207,7 @@ describe('every screen renders, not merely cheaply', () => {
 
 			expect(overview.counts.length).toBeGreaterThan(0);
 			expect(domains.counts.length).toBeGreaterThan(0);
-			expect(deployments.summary.total).toBeGreaterThan(0);
+			expect(ok(deployments.summary).total).toBeGreaterThan(0);
 		} finally {
 			h.stop();
 		}

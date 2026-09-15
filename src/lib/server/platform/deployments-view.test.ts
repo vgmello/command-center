@@ -29,6 +29,15 @@ const summary = (overrides: Partial<DeploymentSummary> = {}): DeploymentSummary 
 	...overrides
 });
 
+/**
+ * Every source-backed field is a panel now, because a deployment source may decline a
+ * capability. These tests assert the fixture's happy path, so they unwrap.
+ */
+function ok<T>(panel: { status: string; data?: T }): T {
+	if (panel.status !== 'ok') throw new Error(`expected a resolved panel, got ${panel.status}`);
+	return panel.data as T;
+}
+
 describe('buildDeploymentTiles', () => {
 	test('the status counts add up to the total', () => {
 		const [total, ...statuses] = buildDeploymentTiles(summary());
@@ -89,42 +98,42 @@ describe('buildDeploymentsSnapshot', () => {
 		const total = snapshot.counts.find((tile) => tile.id === 'total');
 
 		expect(total).toBeDefined();
-		expect(snapshot.byDomain.total).toBe(total!.value!);
+		expect(ok(snapshot.byDomain).total).toBe(total!.value!);
 	});
 
 	test('the donut slices account for every run', async () => {
 		const snapshot = await buildDeploymentsSnapshot(source, scope);
-		const counted = snapshot.byDomain.slices.reduce((sum, slice) => sum + slice.count, 0);
+		const counted = ok(snapshot.byDomain).slices.reduce((sum, slice) => sum + slice.count, 0);
 
-		expect(counted).toBe(snapshot.byDomain.total);
+		expect(counted).toBe(ok(snapshot.byDomain).total);
 	});
 
 	test('both trend charts bucket the same periods, so they can be read side by side', async () => {
 		const snapshot = await buildDeploymentsSnapshot(source, scope);
 
-		expect(snapshot.frequency.points.map((point) => point.label)).toEqual(
-			snapshot.meanDuration.points.map((point) => point.label)
+		expect(ok(snapshot.frequency).points.map((point) => point.label)).toEqual(
+			ok(snapshot.meanDuration).points.map((point) => point.label)
 		);
 	});
 
 	test('the newest frequency bucket matches the day the tiles report', async () => {
 		const snapshot = await buildDeploymentsSnapshot(source, scope);
-		const last = snapshot.frequency.points.at(-1);
+		const last = ok(snapshot.frequency).points.at(-1);
 
-		expect(last?.value).toBe(snapshot.summary.total);
+		expect(last?.value).toBe(ok(snapshot.summary).total);
 	});
 
 	test('honours the recent limit rather than trusting the source to slice', async () => {
 		const snapshot = await buildDeploymentsSnapshot(source, scope);
 
-		expect(snapshot.recent.length).toBeLessThanOrEqual(RECENT_DEPLOYMENT_LIMIT);
+		expect(ok(snapshot.recent).length).toBeLessThanOrEqual(RECENT_DEPLOYMENT_LIMIT);
 	});
 
 	test('sends the domain options, so the filter is not declared by the client', async () => {
 		const snapshot = await buildDeploymentsSnapshot(source, scope);
 
-		expect(snapshot.domains.length).toBeGreaterThan(0);
-		expect(snapshot.domains.every((domain) => domain.count > 0)).toBe(true);
+		expect(ok(snapshot.domains).length).toBeGreaterThan(0);
+		expect(ok(snapshot.domains).every((domain) => domain.count > 0)).toBe(true);
 	});
 });
 

@@ -101,6 +101,28 @@
 		}, scope.refreshIntervalMs);
 		return () => clearInterval(timer);
 	});
+
+	/**
+	 * The screen's panels, unwrapped with empties.
+	 *
+	 * Every source-backed read on this page is a `Panel` now, because a deployment source
+	 * may decline a capability and one declined read must cost its panel rather than the
+	 * page. They all come from the same source, so a single notice covers them rather than
+	 * six components each saying the same sentence.
+	 */
+	const EMPTY_SUMMARY = {
+		total: 0,
+		successful: 0,
+		failed: 0,
+		inProgress: 0,
+		totalChangePct: 0,
+		successRatePct: 0,
+		successRateChangePct: 0,
+		meanDurationSeconds: 0,
+		meanDurationChangePct: 0,
+		changeFailureRatePct: 0
+	};
+	const EMPTY_SERIES = { id: '', label: '', points: [], min: 0, max: 0 };
 </script>
 
 <svelte:head><title>Deployments · Command Center</title></svelte:head>
@@ -142,7 +164,7 @@
 						stateOptions={shell.current.deploymentStates}
 						windowOptions={shell.current.deploymentWindows}
 						pageSizes={shell.current.deploymentPageSizes}
-						domains={snapshot.current.domains}
+						domains={snapshot.current.domains.status === 'ok' ? snapshot.current.domains.data : []}
 						environments={shell.current.environments}
 						search={searchInput}
 						state={tab}
@@ -168,11 +190,12 @@
 				<div class="grid gap-4 lg:grid-cols-2">
 					<TrendCard
 						title="Deployment Frequency"
-						series={view.frequency}
+						series={view.frequency.status === 'ok' ? view.frequency.data : EMPTY_SERIES}
 						kind="bars"
-						formatted={String(view.summary.total)}
+						formatted={String(view.summary.status === 'ok' ? view.summary.data.total : 0)}
 						caption="Deployments"
-						changePct={view.summary.totalChangePct}
+						changePct={(view.summary.status === 'ok' ? view.summary.data : EMPTY_SUMMARY)
+							.totalChangePct}
 						polarity="higher-is-better"
 						{grain}
 						grainOptions={shell.current?.trendGrains ?? []}
@@ -180,16 +203,21 @@
 					/>
 					<TrendCard
 						title="Mean Deployment Time"
-						series={view.meanDuration}
+						series={view.meanDuration.status === 'ok' ? view.meanDuration.data : EMPTY_SERIES}
 						kind="line"
-						formatted={formatDuration(view.summary.meanDurationSeconds)}
+						formatted={formatDuration(
+							(view.summary.status === 'ok' ? view.summary.data : EMPTY_SUMMARY).meanDurationSeconds
+						)}
 						caption="Mean time"
-						changePct={view.summary.meanDurationChangePct}
+						changePct={(view.summary.status === 'ok' ? view.summary.data : EMPTY_SUMMARY)
+							.meanDurationChangePct}
 						polarity="lower-is-better"
 						{grain}
 						grainOptions={shell.current?.trendGrains ?? []}
 						onGrainChange={(value) => (grain = value)}
-						formatValue={durationAxisFormatter(view.meanDuration.max)}
+						formatValue={durationAxisFormatter(
+							view.meanDuration.status === 'ok' ? view.meanDuration.data.max : 0
+						)}
 						axisWidth={38}
 					/>
 				</div>
@@ -207,12 +235,14 @@
 			<svelte:boundary>
 				{@const view = await getDeploymentsView({ ...scopeArgs, grain })}
 				<DeploymentStatusChart
-					series={view.statusTrend}
+					series={view.statusTrend.status === 'ok' ? view.statusTrend.data : []}
 					ranges={shell.current?.timeRanges ?? []}
 					range={scope.timeRange}
 					onRangeChange={(value) => (scope.timeRange = value)}
 				/>
-				<DomainBreakdownCard breakdown={view.byDomain} />
+				<DomainBreakdownCard
+					breakdown={view.byDomain.status === 'ok' ? view.byDomain.data : { total: 0, slices: [] }}
+				/>
 				<InsightsCard insights={view.insights} />
 
 				{#snippet pending()}
@@ -226,7 +256,7 @@
 
 	<svelte:boundary>
 		{@const view = await getDeploymentsView({ ...scopeArgs, grain })}
-		<RecentServicesStrip deployments={view.recent} />
+		<RecentServicesStrip deployments={view.recent.status === 'ok' ? view.recent.data : []} />
 
 		{#snippet pending()}
 			<Skeleton class="h-[152px] rounded-xl" />

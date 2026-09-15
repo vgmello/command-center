@@ -1,4 +1,6 @@
 <script lang="ts">
+	import PanelGap from '../PanelGap.svelte';
+	import type { Panel } from '$lib/platform/sources';
 	import Icon from '../Icon.svelte';
 	import RelativeTime from '../RelativeTime.svelte';
 	import SectionCard from '../SectionCard.svelte';
@@ -7,17 +9,20 @@
 	import type { InfraAlert } from '$lib/platform/types';
 
 	interface Props {
-		alerts: InfraAlert[];
+		alerts: Panel<InfraAlert[]>;
 	}
 
 	let { alerts }: Props = $props();
 
+	const rows = $derived(alerts.status === 'ok' ? alerts.data : []);
+
 	const ICONS = { critical: 'circle-alert', warning: 'triangle-alert', info: 'info' } as const;
 </script>
 
-<SectionCard title="Recent Alerts" href="/alerts" viewAllLabel="View all alerts">
+<SectionCard title="Recent Alerts" href="/rows" viewAllLabel="View all rows">
+	<PanelGap panel={alerts} noun="infrastructure alerts" class="px-4 pb-4" />
 	<ul class="px-4 pb-3">
-		{#each alerts as alert (alert.id)}
+		{#each rows as alert (alert.id)}
 			{@const tone = severityTone(alert.severity)}
 			<li class="flex items-start gap-2.5 border-t border-border/60 py-2 first:border-t-0">
 				<span class="grid size-6 shrink-0 place-items-center rounded-md {tone.chip} border-0">

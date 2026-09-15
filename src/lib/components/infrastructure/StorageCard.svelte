@@ -1,15 +1,19 @@
 <script lang="ts">
+	import PanelGap from '../PanelGap.svelte';
+	import type { Panel } from '$lib/platform/sources';
 	import SectionCard from '../SectionCard.svelte';
 	import { donutSegments } from '$lib/platform/geometry';
 	import { accentDot, accentStroke } from '../tone';
 	import type { StorageClassView } from '$lib/platform/types';
 
 	interface Props {
-		totalFormatted: string;
-		classes: StorageClassView[];
+		storage: Panel<{ totalBytes: number; totalFormatted: string; classes: StorageClassView[] }>;
 	}
 
-	let { totalFormatted, classes }: Props = $props();
+	let { storage }: Props = $props();
+
+	const totalFormatted = $derived(storage.status === 'ok' ? storage.data.totalFormatted : '—');
+	const classes = $derived(storage.status === 'ok' ? storage.data.classes : []);
 
 	const size = 116;
 	const thickness = 13;
@@ -33,6 +37,7 @@
 	href="/infrastructure/storage"
 	viewAllLabel="View all storage"
 >
+	<PanelGap panel={storage} noun="a storage inventory" class="px-4 pb-4" />
 	<div class="flex items-center gap-4 px-4 pb-4">
 		<div class="relative shrink-0" style="width:{size}px;height:{size}px">
 			<svg viewBox="0 0 {size} {size}" width={size} height={size} class="-rotate-90">

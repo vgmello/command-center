@@ -1,4 +1,6 @@
 <script lang="ts">
+	import PanelGap from '../PanelGap.svelte';
+	import type { Panel } from '$lib/platform/sources';
 	import { formatPercent } from '$lib/platform/format';
 	import SectionCard from '../SectionCard.svelte';
 	import { donutSegments } from '$lib/platform/geometry';
@@ -7,17 +9,23 @@
 	import type { ClusterLoad, HealthStatus, NodeCounts } from '$lib/platform/types';
 
 	interface Props {
-		nodes: NodeCounts;
-		clusters: ClusterLoad[];
+		nodes: Panel<NodeCounts>;
+		clusters: Panel<ClusterLoad[]>;
 	}
 
 	let { nodes, clusters }: Props = $props();
+
+	const counts = $derived(nodes.status === 'ok' ? nodes.data : { healthy: 0, warning: 0, down: 0 });
+	const clusterRows = $derived(clusters.status === 'ok' ? clusters.data : []);
+	// One gap line, not two: both reads come from the same source, and saying the same
+	// sentence twice would read as two different problems.
+	const gap = $derived(nodes.status !== 'ok' ? nodes : clusters);
 
 	const size = 116;
 	const thickness = 13;
 	const radius = (size - thickness) / 2;
 
-	const total = $derived(nodes.healthy + nodes.warning + nodes.down);
+	const total = $derived(counts.healthy + counts.warning + counts.down);
 
 	/*
 	 * "Warning" is the estate's word for a degraded node, so the legend prints it while
@@ -26,9 +34,9 @@
 	 */
 	const rows = $derived(
 		[
-			{ status: 'healthy' as HealthStatus, label: 'Healthy', count: nodes.healthy },
-			{ status: 'degraded' as HealthStatus, label: 'Warning', count: nodes.warning },
-			{ status: 'down' as HealthStatus, label: 'Down', count: nodes.down }
+			{ status: 'healthy' as HealthStatus, label: 'Healthy', count: counts.healthy },
+			{ status: 'degraded' as HealthStatus, label: 'Warning', count: counts.warning },
+			{ status: 'down' as HealthStatus, label: 'Down', count: counts.down }
 		].map((row) => ({
 			...row,
 			percentage: total === 0 ? 0 : Math.round((row.count / total) * 100)
@@ -43,6 +51,7 @@
 	href="/infrastructure/compute"
 	viewAllLabel="View all clusters"
 >
+	<PanelGap panel={gap} noun="compute readings" class="px-4 pb-4" />
 	<div class="grid gap-5 px-4 pb-4 lg:grid-cols-[1fr_1fr]">
 		<div class="flex items-center gap-4">
 			<div class="relative shrink-0" style="width:{size}px;height:{size}px">
@@ -95,7 +104,7 @@
 		<div class="min-w-0">
 			<p class="pb-2 text-[12px] font-medium">Top Clusters by CPU</p>
 			<ul class="space-y-2.5">
-				{#each clusters as cluster (cluster.id)}
+				{#each clusterRows as cluster (cluster.id)}
 					{@const tone = statusTone(cluster.status)}
 					<li class="flex items-center gap-2.5">
 						<span class="min-w-0 flex-1 truncate text-[11.5px]" title={cluster.name}>

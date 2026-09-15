@@ -1,4 +1,6 @@
 <script lang="ts">
+	import PanelGap from '../PanelGap.svelte';
+	import type { Panel } from '$lib/platform/sources';
 	import SectionCard from '../SectionCard.svelte';
 	import WorldMap from './WorldMap.svelte';
 	import { STATUS_LABELS } from '$lib/platform/health';
@@ -6,16 +8,19 @@
 	import type { InfraRegion } from '$lib/platform/types';
 
 	interface Props {
-		regions: InfraRegion[];
+		regions: Panel<InfraRegion[]>;
 	}
 
 	let { regions }: Props = $props();
+
+	const rows = $derived(regions.status === 'ok' ? regions.data : []);
 </script>
 
 <SectionCard title="Infrastructure Health">
+	<PanelGap panel={regions} noun="a region inventory" class="px-4 pb-4" />
 	<div class="grid gap-4 px-4 pb-4 lg:grid-cols-[1.4fr_1fr]">
 		<div class="min-w-0 self-center">
-			<WorldMap {regions} />
+			<WorldMap regions={rows} />
 		</div>
 
 		<div class="min-w-0">
@@ -24,7 +29,7 @@
 				<span>Health</span>
 			</div>
 			<ul>
-				{#each regions as region (region.id)}
+				{#each rows as region (region.id)}
 					{@const tone = statusTone(region.status)}
 					<li class="flex items-center justify-between gap-3 border-t border-border/60 py-[7px]">
 						<span class="tabular min-w-0 truncate text-[12.5px]">{region.name}</span>

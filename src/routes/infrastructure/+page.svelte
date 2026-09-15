@@ -48,10 +48,7 @@
 
 		<div class="grid gap-4 xl:grid-cols-[1.75fr_1fr]">
 			<UtilizationCard resources={snapshot.resources} />
-			<StorageCard
-				totalFormatted={snapshot.storage.totalFormatted}
-				classes={snapshot.storage.classes}
-			/>
+			<StorageCard storage={snapshot.storage} />
 		</div>
 
 		<div class="grid gap-4 xl:grid-cols-3">

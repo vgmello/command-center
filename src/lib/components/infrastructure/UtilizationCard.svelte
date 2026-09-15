@@ -1,4 +1,6 @@
 <script lang="ts">
+	import PanelGap from '../PanelGap.svelte';
+	import type { Panel } from '$lib/platform/sources';
 	import LineChart from '../LineChart.svelte';
 	import SectionCard from '../SectionCard.svelte';
 	import { sentimentText } from '../tone';
@@ -6,10 +8,12 @@
 	import type { ResourceUsage } from '$lib/platform/types';
 
 	interface Props {
-		resources: ResourceUsage[];
+		resources: Panel<ResourceUsage[]>;
 	}
 
 	let { resources }: Props = $props();
+
+	const rows = $derived(resources.status === 'ok' ? resources.data : []);
 
 	/*
 	 * Each panel is drawn against its own stated ceiling, not against its own peak.
@@ -34,10 +38,11 @@
 <SectionCard
 	title="Resource Utilization"
 	href="/infrastructure/capacity"
-	viewAllLabel="View all resources"
+	viewAllLabel="View all rows"
 >
+	<PanelGap panel={resources} noun="utilisation readings" class="px-4 pb-4" />
 	<div class="grid gap-4 px-4 pb-4 sm:grid-cols-2 xl:grid-cols-4">
-		{#each resources as resource (resource.id)}
+		{#each rows as resource (resource.id)}
 			{@const sentiment = trendSentiment(resource.direction, resource.polarity)}
 			{@const ceiling = {
 				...resource.series,

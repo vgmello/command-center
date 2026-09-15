@@ -1,4 +1,6 @@
 <script lang="ts">
+	import PanelGap from '../PanelGap.svelte';
+	import type { Panel } from '$lib/platform/sources';
 	import SectionCard from '../SectionCard.svelte';
 	import {
 		axisTicks,
@@ -13,10 +15,25 @@
 	import type { CostBreakdownView } from '$lib/platform/types';
 
 	interface Props {
-		cost: CostBreakdownView;
+		cost: Panel<CostBreakdownView>;
 	}
 
 	let { cost }: Props = $props();
+
+	const spend = $derived(
+		cost.status === 'ok'
+			? cost.data
+			: {
+					labels: [],
+					categories: [],
+					total: 0,
+					totalFormatted: '—',
+					changePct: 0,
+					forecast: 0,
+					forecastFormatted: '—',
+					forecastChangePct: 0
+				}
+	);
 
 	const width = 760;
 	const height = 190;
@@ -31,19 +48,19 @@
 	};
 
 	const series = $derived(
-		cost.categories.map((category) => ({
+		spend.categories.map((category) => ({
 			id: category.id,
 			label: category.label,
 			values: category.daily
 		}))
 	);
 
-	const bounds = $derived(niceScale(stackedMax(series, cost.labels.length), 0, 4));
-	const segments = $derived(plotStackedBars(series, cost.labels, plot, bounds));
+	const bounds = $derived(niceScale(stackedMax(series, spend.labels.length), 0, 4));
+	const segments = $derived(plotStackedBars(series, spend.labels, plot, bounds));
 	const ticks = $derived(axisTicks(bounds));
 	const labels = $derived(
 		thinLabels(
-			cost.labels.map((label) => ({ label, value: 0 })),
+			spend.labels.map((label) => ({ label, value: 0 })),
 			8
 		)
 	);
@@ -61,15 +78,15 @@
 	};
 
 	const fillFor = $derived((id: string) => {
-		const category = cost.categories.find((one) => one.id === id);
+		const category = spend.categories.find((one) => one.id === id);
 		return category ? (FILLS[accentStroke(category.accent)] ?? 'fill-info') : 'fill-info';
 	});
 
 	const spendSentiment = $derived(
-		trendSentiment(cost.changePct > 0 ? 'up' : 'down', 'lower-is-better')
+		trendSentiment(spend.changePct > 0 ? 'up' : 'down', 'lower-is-better')
 	);
 	const forecastSentiment = $derived(
-		trendSentiment(cost.forecastChangePct > 0 ? 'up' : 'down', 'lower-is-better')
+		trendSentiment(spend.forecastChangePct > 0 ? 'up' : 'down', 'lower-is-better')
 	);
 </script>
 
@@ -78,15 +95,16 @@
 	href="/infrastructure/costs"
 	viewAllLabel="View cost analysis"
 >
+	<PanelGap panel={cost} noun="spend" class="px-4 pb-4" />
 	<div class="grid gap-5 px-4 pb-4 xl:grid-cols-[1fr_auto]">
 		<div class="flex min-w-0 gap-4">
 			<div class="w-[112px] shrink-0">
 				<p class="tabular text-[26px] leading-none font-semibold whitespace-nowrap">
-					{cost.totalFormatted}
+					{spend.totalFormatted}
 				</p>
 				<p class="mt-1 text-[11px] text-muted-foreground">MTD Spend</p>
 				<p class="tabular mt-3 text-[11.5px] {sentimentText(spendSentiment)}">
-					{formatChange(cost.changePct, '%', 1)}
+					{formatChange(spend.changePct, '%', 1)}
 				</p>
 				<p class="text-[10.5px] text-muted-foreground">vs last month</p>
 			</div>
@@ -148,7 +166,7 @@
 
 		<div class="flex flex-wrap gap-6 xl:flex-nowrap">
 			<ul class="min-w-[188px] space-y-2 self-center">
-				{#each cost.categories as category (category.id)}
+				{#each spend.categories as category (category.id)}
 					<li class="flex items-center gap-2 text-[11.5px]">
 						<span
 							class="size-2 shrink-0 rounded-full {accentDot(category.accent)}"
@@ -166,10 +184,10 @@
 			<div class="self-center border-border xl:border-l xl:pl-6">
 				<p class="text-[11px] text-muted-foreground">Forecast (End of Month)</p>
 				<p class="tabular mt-1 text-[24px] leading-none font-semibold whitespace-nowrap">
-					{cost.forecastFormatted}
+					{spend.forecastFormatted}
 				</p>
 				<p class="tabular mt-2 text-[11.5px] {sentimentText(forecastSentiment)}">
-					{formatChange(cost.forecastChangePct, '%', 1)}
+					{formatChange(spend.forecastChangePct, '%', 1)}
 					<span class="ml-1 text-muted-foreground">vs last month</span>
 				</p>
 			</div>

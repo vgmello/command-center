@@ -15,7 +15,7 @@ import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
 import { buildInfrastructureSnapshot } from './infrastructure-view';
-import { kindOf, type Capability, type SourceKind } from '$lib/platform/sources';
+import { kindOf, type Capability } from '$lib/platform/sources';
 import type { ProviderDefinition } from '../sources/provider';
 import type { PlatformScope } from '$lib/platform/query';
 
@@ -43,46 +43,37 @@ import type { PlatformScope } from '$lib/platform/query';
 
 const scope: PlatformScope = { environment: 'production', timeRange: '1h' };
 
-/** The kind a screen cannot be drawn without. `null` means it composes several. */
 const SCREENS: Array<{
 	name: string;
-	dedicatedTo: SourceKind | null;
 	run: (routers: Routers) => Promise<unknown>;
 }> = [
 	{
 		name: 'overview',
-		dedicatedTo: null,
 		run: (r) => buildOverview(r.platform, r.deployment, r.infrastructure, scope, new Date())
 	},
 	{
 		name: 'domains',
-		dedicatedTo: null,
 		run: (r) => buildDomainsSnapshot(r.platform, r.deployment, scope, new Date())
 	},
 	{
 		name: 'domain detail',
-		dedicatedTo: null,
 		run: (r) =>
 			buildDomainSnapshot(r.platform, r.service, r.deployment, scope, 'payments', new Date())
 	},
 	{
 		name: 'service detail',
-		dedicatedTo: null,
 		run: (r) => buildServiceSnapshot(r.service, r.deployment, scope, 'payments-api', new Date())
 	},
 	{
 		name: 'service metrics',
-		dedicatedTo: null,
 		run: (r) => buildServiceMetricsSnapshot(r.service, scope, 'payments-api', new Date())
 	},
 	{
 		name: 'deployments',
-		dedicatedTo: 'deployment',
 		run: (r) => buildDeploymentsSnapshot(r.deployment, scope, 'daily', new Date())
 	},
 	{
 		name: 'infrastructure',
-		dedicatedTo: 'cloud',
 		run: (r) => buildInfrastructureSnapshot(r.infrastructure, scope, new Date())
 	}
 ];
@@ -137,11 +128,23 @@ async function outcome(
 
 describe('one capability missing', () => {
 	for (const capability of ALL_CAPABILITIES) {
-		test(`${capability}: only its own dedicated screen may fall over`, async () => {
+		test(`${capability}: no screen falls over, not even its own`, async () => {
+			/*
+			 * No exemption here, and that is the correction.
+			 *
+			 * This used to skip the assertion when the screen was dedicated to the
+			 * capability's kind, which sounded reasonable and hid a real bug: the
+			 * infrastructure page is dedicated to `cloud`, so a *single* missing cloud
+			 * capability was allowed to take it down. The first real cloud provider found
+			 * it immediately — an ARM-only Azure adapter serves regions, nodes and spend
+			 * and leaves utilisation to Monitor, and the page died on `cloud.utilization`.
+			 *
+			 * Being dedicated to a kind earns a screen an exemption when that kind is
+			 * *absent entirely*, which the next block still allows. It earns nothing when
+			 * the source is connected and merely cannot answer one question.
+			 */
 			for (const screen of SCREENS) {
 				const result = await outcome(screen, [capability]);
-
-				if (screen.dedicatedTo === kindOf(capability)) continue;
 
 				expect(`${screen.name}: ${result}`).toBe(`${screen.name}: rendered`);
 			}
@@ -153,11 +156,18 @@ describe('a whole kind missing', () => {
 	for (const kind of ['cloud', 'apm', 'deployment'] as const) {
 		const dropped = ALL_CAPABILITIES.filter((one) => kindOf(one) === kind);
 
-		test(`no ${kind} source: every screen but its own still renders`, async () => {
+		test(`no ${kind} source: every screen still renders`, async () => {
+			/*
+			 * No exemption here either, which is the stronger rule this ended at.
+			 *
+			 * The infrastructure and deployments screens used to be excused on the grounds
+			 * that a view of a cloud account with no cloud account has nothing to draw.
+			 * That was true of the data and false of the page: the chrome, the headings and
+			 * the stated gaps are worth more than an error boundary, and once every read on
+			 * those two screens was wrapped they render without the exemption.
+			 */
 			for (const screen of SCREENS) {
 				const result = await outcome(screen, dropped);
-
-				if (screen.dedicatedTo === kind) continue;
 
 				expect(`${screen.name}: ${result}`).toBe(`${screen.name}: rendered`);
 			}
@@ -166,15 +176,14 @@ describe('a whole kind missing', () => {
 });
 
 describe('the rule is worth something', () => {
-	test('a dedicated screen does fall over without its kind, so the exemption is real', async () => {
-		// Without this the rule above would be satisfied by a suite that never exercises a
-		// gap at all — the exemptions have to be load-bearing to mean anything.
-		for (const screen of SCREENS) {
-			if (!screen.dedicatedTo) continue;
+	test('the sweep really does remove capabilities, so the rule is not vacuous', async () => {
+		// Every assertion above is that something renders, which a suite dropping nothing
+		// would also satisfy. This checks the mechanism itself.
+		const routers = routersWithout(['cloud.regions']);
 
-			const dropped = ALL_CAPABILITIES.filter((one) => kindOf(one) === screen.dedicatedTo);
-			expect(await outcome(screen, dropped)).toBe('gap');
-		}
+		expect(
+			routers.infrastructure.listRegions({ environment: 'production', timeRange: '1h' })
+		).rejects.toThrow(CapabilityUnavailableError);
 	});
 
 	test('with everything declared, every screen renders', async () => {

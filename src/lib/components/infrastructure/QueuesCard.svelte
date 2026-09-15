@@ -1,21 +1,26 @@
 <script lang="ts">
+	import PanelGap from '../PanelGap.svelte';
+	import type { Panel } from '$lib/platform/sources';
 	import SectionCard from '../SectionCard.svelte';
 	import { statusTone } from '../tone';
 	import { STATUS_LABELS } from '$lib/platform/health';
 	import type { MessageQueue } from '$lib/platform/types';
 
 	interface Props {
-		queues: MessageQueue[];
+		queues: Panel<MessageQueue[]>;
 	}
 
 	let { queues }: Props = $props();
+
+	const rows = $derived(queues.status === 'ok' ? queues.data : []);
 </script>
 
 <SectionCard
 	title="Messaging Overview"
 	href="/infrastructure/messaging"
-	viewAllLabel="View all queues"
+	viewAllLabel="View all rows"
 >
+	<PanelGap panel={queues} noun="queue readings" class="px-4 pb-4" />
 	<div class="overflow-x-auto px-4 pb-4">
 		<table class="w-full">
 			<thead>
@@ -28,7 +33,7 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each queues as queue (queue.id)}
+				{#each rows as queue (queue.id)}
 					{@const tone = statusTone(queue.status)}
 					<tr class="border-t border-border/60">
 						<td class="py-[7px] text-[12.5px] whitespace-nowrap">{queue.name}</td>

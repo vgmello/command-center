@@ -61,6 +61,28 @@ function scopedArgs(scope: PlatformScope, args: string): string {
  * Shared by every router, because what differs between them is which capability answers
  * which port method — never how dispatch or caching work.
  */
+
+/**
+ * Which connections answer a capability, as a cache key component.
+ *
+ * `'fan-out'` alone was the key for every aggregate read, which meant the key could not
+ * tell one set of connections from another. Swapping a fixture cloud for a real Azure left
+ * every previously-stored answer matching: the page served storage, database and queue
+ * readings from a provider that was no longer connected, for capabilities the new one does
+ * not declare — invented numbers with nothing on the page admitting it, which is the exact
+ * failure the throw-on-unknown-capability rule exists to prevent.
+ *
+ * Sorted, so the same two connections in either order are the same key.
+ */
+function fanOutKey(deps: RouterDeps, capability: Capability): string {
+	const ids = deps.registry
+		.supporting(capability)
+		.map((one) => one.ref.id)
+		.sort();
+
+	return `fan-out:${ids.join(',')}`;
+}
+
 export async function fanOut<T>(
 	deps: RouterDeps,
 	capability: Capability,
@@ -73,7 +95,7 @@ export async function fanOut<T>(
 	// without changing the port interfaces. It lands once the panel types carry it.
 	const { data } = await deps.cache.read(
 		{
-			connectionId: 'fan-out',
+			connectionId: fanOutKey(deps, capability),
 			capability,
 			args: scopedArgs(scope, args),
 			ttlSeconds: ttlFor(deps, capability)
@@ -105,7 +127,7 @@ export async function fanOutSingle<T>(
 	// carry it without changing the port interfaces, which this work must not touch.
 	const { data } = await deps.cache.read(
 		{
-			connectionId: 'fan-out',
+			connectionId: fanOutKey(deps, capability),
 			capability,
 			args: scopedArgs(scope, args),
 			ttlSeconds: ttlFor(deps, capability)

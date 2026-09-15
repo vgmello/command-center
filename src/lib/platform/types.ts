@@ -356,9 +356,15 @@ export interface DeploymentsSnapshot {
 	counts: CountTile[];
 	/** The two rate tiles, which read differently from a count. */
 	rates: RateTile[];
-	/** Successful / in-progress / failed, plotted across the scope's window. */
-	statusTrend: TimeSeries[];
-	byDomain: DomainBreakdown;
+	/**
+	 * Every source-backed panel, separately.
+	 *
+	 * A deployment source declares what it can answer and a real one may answer less than
+	 * the whole screen. Unwrapped, a single undeclared capability took the page down —
+	 * the same failure an ARM-only Azure adapter produced on the infrastructure screen.
+	 */
+	statusTrend: Panel<TimeSeries[]>;
+	byDomain: Panel<DomainBreakdown>;
 	/**
 	 * Deployment insights, or an account of why there are none.
 	 *
@@ -368,13 +374,13 @@ export interface DeploymentsSnapshot {
 	 * do insights", and a reader cannot tell them apart.
 	 */
 	insights: Panel<DeploymentInsight[]>;
-	frequency: TimeSeries;
-	meanDuration: TimeSeries;
-	summary: DeploymentSummary;
+	frequency: Panel<TimeSeries>;
+	meanDuration: Panel<TimeSeries>;
+	summary: Panel<DeploymentSummary>;
 	/** The horizontal strip along the bottom. */
-	recent: Deployment[];
+	recent: Panel<Deployment[]>;
 	/** The domain filter's options, read from the source rather than declared by the UI. */
-	domains: FacetOption[];
+	domains: Panel<FacetOption[]>;
 }
 
 /** A labelled destination outside this app — a repo, a chat channel, a runbook. */
@@ -949,15 +955,25 @@ export interface InfrastructureSnapshot {
 	environment: EnvironmentId;
 	timeRange: TimeRangeId;
 	stats: ServiceStat[];
-	regions: InfraRegion[];
-	nodes: NodeCounts;
-	clusters: ClusterLoad[];
-	resources: ResourceUsage[];
-	storage: { totalBytes: number; totalFormatted: string; classes: StorageClassView[] };
-	databases: DatabaseInstance[];
-	queues: MessageQueue[];
-	alerts: InfraAlert[];
-	cost: CostBreakdownView;
+	/**
+	 * Every panel, separately.
+	 *
+	 * A cloud provider declares only what it can answer, and a real one answers less than
+	 * the whole screen: Azure keeps utilisation, storage, database and queue readings in
+	 * Monitor rather than in Resource Manager, so a provider built on ARM alone serves
+	 * regions, nodes and spend and states the rest as gaps. Unwrapped, one missing
+	 * capability took the entire page down — which is the failure the panel contract
+	 * exists to prevent, and which the overview and domains screens were already fixed for.
+	 */
+	regions: Panel<InfraRegion[]>;
+	nodes: Panel<NodeCounts>;
+	clusters: Panel<ClusterLoad[]>;
+	resources: Panel<ResourceUsage[]>;
+	storage: Panel<{ totalBytes: number; totalFormatted: string; classes: StorageClassView[] }>;
+	databases: Panel<DatabaseInstance[]>;
+	queues: Panel<MessageQueue[]>;
+	alerts: Panel<InfraAlert[]>;
+	cost: Panel<CostBreakdownView>;
 }
 
 /** One column of the infrastructure summary: clusters, nodes, databases, queues. */

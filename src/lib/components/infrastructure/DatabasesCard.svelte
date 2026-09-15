@@ -1,4 +1,6 @@
 <script lang="ts">
+	import PanelGap from '../PanelGap.svelte';
+	import type { Panel } from '$lib/platform/sources';
 	import { formatPercent } from '$lib/platform/format';
 	import SectionCard from '../SectionCard.svelte';
 	import { statusTone } from '../tone';
@@ -7,17 +9,16 @@
 	import type { DatabaseInstance } from '$lib/platform/types';
 
 	interface Props {
-		databases: DatabaseInstance[];
+		databases: Panel<DatabaseInstance[]>;
 	}
 
 	let { databases }: Props = $props();
+
+	const rows = $derived(databases.status === 'ok' ? databases.data : []);
 </script>
 
-<SectionCard
-	title="Database Overview"
-	href="/infrastructure/databases"
-	viewAllLabel="View all databases"
->
+<SectionCard title="Database Overview" href="/infrastructure/rows" viewAllLabel="View all rows">
+	<PanelGap panel={databases} noun="database readings" class="px-4 pb-4" />
 	<div class="overflow-x-auto px-4 pb-4">
 		<table class="w-full">
 			<thead>
@@ -31,7 +32,7 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each databases as database (database.id)}
+				{#each rows as database (database.id)}
 					{@const tone = statusTone(database.status)}
 					<tr class="border-t border-border/60">
 						<td class="py-[7px] text-[12.5px] whitespace-nowrap">{database.name}</td>

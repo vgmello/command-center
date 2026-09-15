@@ -1,6 +1,7 @@
 import type {
 	InfrastructureSnapshot,
 	NodeCounts,
+	ResourceUsage,
 	ServiceStat,
 	StorageClass
 } from '$lib/platform/types';
@@ -8,6 +9,7 @@ import type { PlatformScope } from '$lib/platform/query';
 import type { InfrastructureSource } from './source';
 import { toCostView, toStorageView, toUsageView } from '$lib/platform/infrastructure';
 import { toSeries } from './snapshot';
+import { panel } from '../sources/panel';
 
 /**
  * Assembles the infrastructure overview from whatever estate source is configured.
@@ -64,20 +66,22 @@ export function estateHealth(nodes: NodeCounts): {
  * to keep in step for no gain.
  */
 export function buildInfraStats(
-	nodes: NodeCounts,
+	/**
+	 * `null` when no connected cloud source counts nodes.
+	 *
+	 * The tiles that describe the estate's health are built from this, so without it they
+	 * state that nothing is counting rather than printing a confident zero — the same
+	 * distinction the domain header makes between no incidents and nothing watching.
+	 */
+	nodes: NodeCounts | null,
 	nodeCapacity: number,
 	clusterCount: number,
-	resources: InfrastructureSnapshot['resources']
+	resources: ResourceUsage[]
 ): ServiceStat[] {
+	if (!nodes) return unreportedInfraStats(resources, clusterCount);
+
 	const totalNodes = nodes.healthy + nodes.warning + nodes.down;
 	const estate = estateHealth(nodes);
-
-	const RESOURCE_ICONS: Record<string, string> = {
-		cpu: 'cpu',
-		memory: 'memory-stick',
-		disk: 'hard-drive',
-		network: 'network'
-	};
 
 	const stats: ServiceStat[] = [
 		{
@@ -114,22 +118,74 @@ export function buildInfraStats(
 	// The four utilisation readings appear twice on this screen — once as a tile and
 	// once as a panel — so both are built from one source rather than measured twice.
 	for (const resource of resources) {
-		stats.push({
-			kind: 'trend',
-			id: resource.id,
-			label: `${resource.label}${resource.id === 'network' ? '' : ' Usage'}`,
-			formatted: resource.formatted,
-			unit: resource.unit,
-			// The panel plots a labelled TimeSeries; a tile's sparkline only needs the
-			// shape, so the labels are dropped rather than carried across the wire twice.
-			series: toSeries(resource.series.points.map((point) => point.value)),
-			changeFormatted: resource.changeFormatted,
-			comparedToLabel: resource.comparedToLabel,
-			direction: resource.direction,
-			polarity: resource.polarity,
+		stats.push(trendStatFor(resource));
+	}
+
+	return stats;
+}
+
+/** The four utilisation readings, as the tile the strip draws. */
+function trendStatFor(resource: ResourceUsage): ServiceStat {
+	const RESOURCE_ICONS: Record<string, string> = {
+		cpu: 'cpu',
+		memory: 'memory-stick',
+		disk: 'hard-drive',
+		network: 'network'
+	};
+
+	return {
+		kind: 'trend',
+		id: resource.id,
+		label: `${resource.label}${resource.id === 'network' ? '' : ' Usage'}`,
+		formatted: resource.formatted,
+		unit: resource.displayUnit,
+		// The panel plots a labelled TimeSeries; a tile's sparkline only needs the shape,
+		// so the labels are dropped rather than carried across the wire twice.
+		series: toSeries(resource.series.points.map((point) => point.value)),
+		changeFormatted: resource.changeFormatted,
+		comparedToLabel: resource.comparedToLabel,
+		direction: resource.direction,
+		polarity: resource.polarity,
+		tone: null,
+		icon: RESOURCE_ICONS[resource.id]
+	};
+}
+
+/**
+ * The strip when nothing counts the estate.
+ *
+ * The cluster count still comes from the groups read, and any utilisation readings that
+ * did arrive are still drawn — a provider that answers four of nine capabilities should
+ * show the four.
+ */
+function unreportedInfraStats(resources: ResourceUsage[], clusterCount: number): ServiceStat[] {
+	const stats: ServiceStat[] = [
+		{
+			kind: 'note',
+			id: 'overall',
+			label: 'Overall Health',
+			formatted: 'Not reported',
+			caption: 'No connected cloud source counts nodes.',
 			tone: null,
-			icon: RESOURCE_ICONS[resource.id]
+			icon: 'circle-help'
+		}
+	];
+
+	if (clusterCount > 0) {
+		stats.push({
+			kind: 'ratio',
+			id: 'clusters',
+			label: 'Clusters',
+			value: clusterCount,
+			total: clusterCount,
+			caption: 'Healthy',
+			tone: 'healthy',
+			icon: 'boxes'
 		});
+	}
+
+	for (const resource of resources) {
+		stats.push(trendStatFor(resource));
 	}
 
 	return stats;
@@ -147,45 +203,62 @@ export async function buildInfrastructureSnapshot(
 	scope: PlatformScope,
 	now: Date = new Date()
 ): Promise<InfrastructureSnapshot> {
+	/**
+	 * Every read wrapped, because a cloud provider answers what it can and no more.
+	 *
+	 * An ARM-only Azure adapter serves regions, nodes and spend; utilisation, storage,
+	 * databases and queues live in Monitor. Unwrapped, the first of those gaps took the
+	 * whole page down with `CapabilityUnavailableError` — the failure `panel()` exists to
+	 * turn into a stated empty state, and one the overview and domains screens had already
+	 * been fixed for.
+	 */
 	const [groups, regions, nodes, clusters, resources, storage, databases, queues, alerts, cost] =
 		await Promise.all([
-			source.listGroups(scope),
-			source.listRegions(scope),
-			source.readNodeCounts(scope),
-			source.listClusters(scope, CLUSTER_LIMIT),
-			source.readUtilization(scope),
-			source.readStorage(scope),
-			source.listDatabases(scope, DATABASE_LIMIT),
-			source.listQueues(scope, QUEUE_LIMIT),
-			source.listAlerts(scope, ALERT_LIMIT),
-			source.readCost(scope)
+			panel('cloud.nodes', async () => ({ data: await source.listGroups(scope) })),
+			panel('cloud.regions', async () => ({ data: await source.listRegions(scope) })),
+			panel('cloud.nodes', async () => ({ data: await source.readNodeCounts(scope) })),
+			panel('cloud.clusters', async () => ({
+				data: await source.listClusters(scope, CLUSTER_LIMIT)
+			})),
+			panel('cloud.utilization', async () => ({ data: await source.readUtilization(scope) })),
+			panel('cloud.storage', async () => ({ data: await source.readStorage(scope) })),
+			panel('cloud.databases', async () => ({
+				data: await source.listDatabases(scope, DATABASE_LIMIT)
+			})),
+			panel('cloud.queues', async () => ({ data: await source.listQueues(scope, QUEUE_LIMIT) })),
+			panel('cloud.alerts', async () => ({ data: await source.listAlerts(scope, ALERT_LIMIT) })),
+			panel('cloud.cost', async () => ({ data: await source.readCost(scope) }))
 		]);
 
 	// The readings arrive as facts; how they read is decided here, once, so a cloud
 	// adapter never formats a number or picks a tint.
-	const usage = resources.map(toUsageView);
+	const usage = resources.status === 'ok' ? resources.data.map(toUsageView) : [];
+	const counts = nodes.status === 'ok' ? nodes.data : null;
+	const groupRows = groups.status === 'ok' ? groups.data : [];
+	const clusterRows = clusters.status === 'ok' ? clusters.data : [];
 
-	const clusterCount = groups.find((group) => group.id === 'clusters')?.count ?? clusters.length;
+	const clusterCount =
+		groupRows.find((group) => group.id === 'clusters')?.count ?? clusterRows.length;
 	// Capacity is nodes provisioned, which is the total plus whatever is not reporting.
 	const nodeCapacity = Math.max(
-		nodes.healthy + nodes.warning + nodes.down,
-		groups.find((group) => group.id === 'nodes')?.count ?? 0
+		counts ? counts.healthy + counts.warning + counts.down : 0,
+		groupRows.find((group) => group.id === 'nodes')?.count ?? 0
 	);
 
 	return {
 		generatedAt: now.toISOString(),
 		environment: scope.environment,
 		timeRange: scope.timeRange,
-		stats: buildInfraStats(nodes, nodeCapacity, clusterCount, usage),
+		stats: buildInfraStats(counts, nodeCapacity, clusterCount, usage),
 		regions,
 		nodes,
 		clusters,
-		resources: usage,
-		storage: toStorageView(storage),
+		resources: resources.status === 'ok' ? { ...resources, data: usage } : resources,
+		storage: storage.status === 'ok' ? { ...storage, data: toStorageView(storage.data) } : storage,
 		databases,
 		queues,
 		alerts,
-		cost: toCostView(cost)
+		cost: cost.status === 'ok' ? { ...cost, data: toCostView(cost.data) } : cost
 	};
 }
 
