@@ -1186,3 +1186,29 @@ export interface CurrentUser {
 	initials: string;
 	unreadNotifications: number;
 }
+
+/** One service's contribution to its domain's deployment figures. */
+export interface ServiceDeployShare {
+	service: string;
+	total: number;
+	failures: number;
+	changeFailureRatePct: number;
+	/** Runs per bucket, for the row's sparkline. */
+	frequency: TimeSeries;
+}
+
+/**
+ * A domain's deployment figures, summed from its services.
+ *
+ * Every field is derived from additive quantities: the rate is two counts divided after
+ * summing, and the mean is a total over a count. Neither is an average of averages.
+ */
+export interface DomainDeploymentStats {
+	total: number;
+	failures: number;
+	changeFailureRatePct: number;
+	meanDurationSeconds: number;
+	frequency: TimeSeries;
+	/** Worst failure rate first — the row a reader is looking for. */
+	byService: ServiceDeployShare[];
+}
