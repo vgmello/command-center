@@ -159,11 +159,9 @@ the failure the resolver's throw-on-unknown-name exists to prevent. `panel()` an
 `Panel<T>` are the contract that turns one of those into a rendered empty state, and
 `PanelGap.svelte` is the one place the two sentences a gap can produce are written.
 
-**A screen falls over only when the source kind it is dedicated to cannot answer.** The
-infrastructure page is a view of a cloud account and the deployments page is a view of a
-CI/CD system; with those absent there is no page left to draw. Every other screen composes
-several kinds, so a gap in one costs the reader that panel and nothing else — a missing
-queue metric must not take down the dashboard.
+**No screen falls over, full stop.** A gap costs the reader that panel and nothing else —
+a missing queue metric must not take down the dashboard, and a missing `cloud.utilization`
+must not take down infrastructure.
 
 That rule was reactive for four rounds. `deployment.insights`, `apm.insights`,
 `apm.dependencies` and `apm.activity` each took a page down in production and each got
@@ -172,14 +170,15 @@ wrapped afterwards, which fixes the case that broke and defends against nothing.
 time, and then a whole kind at a time, and runs every screen against the result. It found
 seventeen more, and it is what makes the eighteenth a red test instead of a blank page.
 
-**No screen falls over, full stop.** The rule used to exempt a screen "dedicated to" a
+**It used to carry an exemption, and the exemption was the bug.** A screen "dedicated to" a
 kind — infrastructure is a view of a cloud account, deployments a view of a CI/CD system —
-on the grounds that with the kind absent there is nothing to draw. That was true of the
-data and false of the page, and it hid a real bug: dedicated meant _exempt from every
-single-capability gap too_, so the first real cloud provider took the infrastructure page
-down on one missing capability. An ARM-only Azure adapter serves regions, nodes and spend
-and leaves utilisation to Monitor; the page died on `cloud.utilization`. Every read on both
-screens is wrapped now, and the sweep asserts the stronger rule with no exemptions.
+was allowed to fall over when that kind could not answer, on the grounds that with the kind
+absent there is no page left to draw. True of the data and false of the page, and
+_dedicated_ quietly meant exempt from every **single**-capability gap too — so the first
+real cloud provider took the infrastructure page down on one missing capability. An
+ARM-only Azure adapter served regions, nodes and spend and left utilisation to Monitor; the
+page died on `cloud.utilization`. Every read on both screens is wrapped now, and the sweep
+asserts the rule with no exemptions.
 
 **A mock of the API, not a mock of the answer.** floci-az emulates ARM but not Monitor —
 a metrics request against it returns "Unsupported Microsoft.Compute path" — and almost
@@ -710,7 +709,7 @@ Note that `bun test` cannot compile `.svelte` files, so component rendering is o
 
 ### Tests that run the app, not just its logic
 
-`bun test src` is the logic suite: 803 tests, a few seconds, nothing booted. `bun run
+`bun test src` is the logic suite: 844 tests, a few seconds, nothing booted. `bun run
 test:e2e` builds the app, starts `build/index.js`, and asks it questions over HTTP. The two
 answer different things, and the split is not academic — every rendering bug this repo has
 had passed `check`, `lint` and the full unit suite:
@@ -811,8 +810,9 @@ an `@` costs its full length in every session, whether or not the session touche
 ## State
 
 Overview, Domains, Deployments, the Service detail view and Infrastructure built and
-verified, plus the service Metrics tab and the Domain detail view. `bun test` (786 tests), `bun run check`, `bun run lint`,
-and `bun run build` all pass, and the production server boots and serves.
+verified, plus the service Metrics tab and the Domain detail view. `bun test src` (844 tests),
+`bun run check`, `bun run lint` and `bun run build` all pass, the e2e suites pass against
+every stack whose backends are up, and the production server boots and serves.
 
 What exists:
 
@@ -836,13 +836,15 @@ What exists:
   every panel reflects the same estate at the same moment. All remote
   functions are Valibot-validated against the schemas the JSON API shares, the service
   slug included: it arrives from a URL anyone can edit
-- `src/routes/api/v1/` — public JSON API, thirty-two paths: `domains` (+ `summary`,
+- `src/routes/api/v1/` — public JSON API, thirty-four paths: `domains` (+ `summary`,
   `owners`, `changes`, `{slug}` and its `vitals`, `dependencies`, `services`),
   `services` (+ `{slug}` and its `health`, `dependencies`, `endpoints`, `metrics`,
   `slo`, `insights`), `deployments` (+ `summary`), `infrastructure` (+ `regions`,
   `nodes`, `clusters`, `utilization`, `storage`, `databases`, `queues`, `alerts`,
-  `cost`), `activity`, `metrics`, `incidents`, `status`. Token-authenticated, frozen
-  DTOs in `src/lib/server/api/v1/dto.ts` with a shape test per resource
+  `cost`), `activity`, `insights`, `metrics`, `incidents`, `sources`, `status`.
+  Token-authenticated, frozen DTOs in `src/lib/server/api/v1/dto.ts` with a shape test
+  per resource. `sources` publishes each connection's id, provider, kind and
+  capabilities and **never its settings** — credentials do not leave the server
 - `/api/v1/openapi.json` and `/api` — the generated OpenAPI document and
   the Scalar reference that renders it
 - `src/hooks.server.ts` — `handleValidationError`: generic message to the client,
