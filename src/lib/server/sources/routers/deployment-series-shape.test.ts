@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { statusTrendShape, trendsShape } from './deployment-series-shape';
+import { serviceTrendsShape, statusTrendShape, trendsShape } from './deployment-series-shape';
 import { SEPARATOR, geometryFor, groupSamples, toSamples } from '../series';
+import type { Capability } from '$lib/platform/sources';
 import type { TimeSeries } from '$lib/platform/types';
 import type { StoredSample } from '../../store/source-store';
 
@@ -38,7 +39,7 @@ function roundTrip<T>(
 		rebuild: (groups: Map<string, StoredSample[]>, window: { from: Date; to: Date }) => T;
 	},
 	answer: T,
-	capability: 'deployment.trends' | 'deployment.statusTrend'
+	capability: Capability
 ): T {
 	const samples = toSamples(
 		shape.flatten(answer, window),
@@ -146,5 +147,56 @@ describe('status trend round trip', () => {
 			`${SEPARATOR}success`,
 			`${SEPARATOR}failed`
 		]);
+	});
+});
+
+describe('serviceTrendsShape', () => {
+	const answer = [
+		{
+			service: 'payment-api',
+			runs: seriesOf('runs', [2, 4]),
+			failures: seriesOf('failures', [0, 1]),
+			durationTotal: seriesOf('duration-total', [20, 4_000])
+		},
+		{
+			service: 'payment-gateway',
+			runs: seriesOf('runs', [1, 1]),
+			failures: seriesOf('failures', [1, 0]),
+			durationTotal: seriesOf('duration-total', [10, 10])
+		}
+	];
+
+	test('writes one entity per service, so a domain can be summed from them', () => {
+		const keys = serviceTrendsShape('daily').flatten(answer, {
+			from: new Date('2026-09-14T00:00:00Z'),
+			to: new Date('2026-09-15T00:00:00Z')
+		});
+
+		expect([...new Set(keys.map((one) => one.key.entity))].sort()).toEqual([
+			'payment-api',
+			'payment-gateway'
+		]);
+		expect([...new Set(keys.map((one) => one.key.metric))].sort()).toEqual([
+			'duration_total',
+			'failure_count',
+			'run_count'
+		]);
+	});
+
+	test('survives a round trip through the store', () => {
+		const back = roundTrip(serviceTrendsShape('daily'), answer, 'deployment.serviceTrends');
+
+		expect(back.map((one) => one.service).sort()).toEqual(['payment-api', 'payment-gateway']);
+		const api = back.find((one) => one.service === 'payment-api');
+		expect(api?.runs.points.reduce((sum, one) => sum + one.value, 0)).toBe(6);
+		expect(api?.failures.points.reduce((sum, one) => sum + one.value, 0)).toBe(1);
+	});
+
+	test('counts sum across a coarser grain rather than averaging', () => {
+		// A week that averaged its days reports a seventh of the deployments that happened.
+		const back = roundTrip(serviceTrendsShape('weekly'), answer, 'deployment.serviceTrends');
+		const api = back.find((one) => one.service === 'payment-api');
+
+		expect(api?.runs.points.reduce((sum, one) => sum + one.value, 0)).toBe(6);
 	});
 });
