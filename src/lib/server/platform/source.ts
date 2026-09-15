@@ -177,8 +177,8 @@ export interface DeploymentSource {
 	 * Per-service run counts, failures and duration totals at the requested grain.
 	 *
 	 * The domain tabs sum these; the estate figures are the same sum over every service.
-	 * Returns an empty array when no connection accumulates them, which the assembler
-	 * turns into a stated gap rather than a zero.
+	 * Throws `CapabilityUnavailableError` when no connection accumulates them, which
+	 * `panel()` renders as a stated gap rather than a zero.
 	 */
 	readServiceTrends(scope: PlatformScope, grain: TrendGrain): Promise<ServiceTrend[]>;
 

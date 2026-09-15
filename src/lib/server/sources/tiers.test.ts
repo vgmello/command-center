@@ -45,6 +45,7 @@ describe('CAPABILITY_TIER', () => {
 		const accumulated = new Set<Capability>([
 			'apm.metricSeries',
 			'deployment.trends',
+			'deployment.serviceTrends',
 			'deployment.statusTrend'
 		]);
 		const declared = CAPABILITIES.filter((one) => CAPABILITY_TIER[one] === 'series');

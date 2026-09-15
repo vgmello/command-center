@@ -144,6 +144,18 @@ describe('the deployment router', () => {
 
 		await expect(deployment.readSummary(scope)).rejects.toThrow(CapabilityUnavailableError);
 	});
+
+	test('a capability nobody accumulates throws rather than answering empty', async () => {
+		// No fixture provider declares `deployment.serviceTrends` yet (that lands with
+		// Task 5), so this is unavailable with or without a deployment connection — and
+		// that is the point: an empty array here would read as "nothing deployed", not
+		// "nothing is measuring this", which is the opposite statement.
+		const { deployment } = build({ connections: [] });
+
+		await expect(deployment.readServiceTrends(scope, 'daily')).rejects.toThrow(
+			CapabilityUnavailableError
+		);
+	});
 });
 
 describe('a fan-out cache entry belongs to the connections that answered it', () => {

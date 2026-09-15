@@ -1,7 +1,12 @@
 import type { DeploymentSource } from '../../platform/source';
 import type { DeploymentProvider } from '../contracts';
 import { fanOut, fanOutSeries, fanOutSingle, type RouterDeps } from './shared';
-import { TREND_DAYS, statusTrendShape, trendsShape } from './deployment-series-shape';
+import {
+	TREND_DAYS,
+	serviceTrendsShape,
+	statusTrendShape,
+	trendsShape
+} from './deployment-series-shape';
 
 /** `DeploymentSource` has no catalog side: every method is a deployment source's answer. */
 export function createDeploymentRouter(deps: RouterDeps): DeploymentSource {
@@ -52,6 +57,20 @@ export function createDeploymentRouter(deps: RouterDeps): DeploymentSource {
 				'',
 				trendsShape(grain),
 				(client, ctx) => (client as DeploymentProvider).readTrends!(ctx, grain),
+				TREND_DAYS[grain] * 86_400
+			),
+
+		readServiceTrends: (scope, grain) =>
+			fanOutSeries(
+				deps,
+				'deployment.serviceTrends',
+				scope,
+				// No grain in the args, for the same reason `readTrends` omits it: one set of
+				// daily samples serves all three grains, and keying on the grain is what stops
+				// them sharing.
+				'',
+				serviceTrendsShape(grain),
+				(client, ctx) => (client as DeploymentProvider).readServiceTrends!(ctx, grain),
 				TREND_DAYS[grain] * 86_400
 			),
 
