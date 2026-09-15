@@ -5,7 +5,7 @@
 	import DomainDependencyGraph from '$lib/components/domains/DomainDependencyGraph.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { getScope } from '$lib/scope.svelte';
-	import { getDomainView } from '../../../domains.remote';
+	import { getDomainHeader, getDomainDependencies } from '../../../domains.remote';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 
@@ -29,9 +29,9 @@
 
 <div class="space-y-4 p-5">
 	<svelte:boundary>
-		{@const snapshot = await getDomainView(args)}
+		{@const domain = await getDomainHeader(args)}
 
-		{#if !snapshot}
+		{#if !domain}
 			<div class="flex flex-col items-center justify-center gap-2 py-24 text-center">
 				<p class="text-[15px] font-medium">No domain called “{slug}”.</p>
 				<a
@@ -42,22 +42,28 @@
 				</a>
 			</div>
 		{:else}
+			<!--
+				Non-null: the wrapper only returns null when the domain itself is missing,
+				and the `{#if !domain}` branch above already handled that case.
+			-->
+			{@const dependencies = (await getDomainDependencies(args))!}
+
 			<Breadcrumb
 				trail={[
 					{ label: 'Domains', href: '/domains' },
-					{ label: snapshot.domain.name, href: `/domains/${snapshot.domain.slug}` },
+					{ label: domain.name, href: `/domains/${domain.slug}` },
 					{ label: 'Dependencies' }
 				]}
 			/>
 
-			<DomainHeader domain={snapshot.domain} />
+			<DomainHeader {domain} />
 			<DomainTabs
-				slug={snapshot.domain.slug}
+				slug={domain.slug}
 				active="dependencies"
-				badges={{ alerts: snapshot.domain.activeIncidents }}
+				badges={{ alerts: domain.activeIncidents }}
 			/>
 
-			<DomainDependencyGraph domain={snapshot.domain} dependencies={snapshot.dependencies} />
+			<DomainDependencyGraph {domain} {dependencies} />
 		{/if}
 
 		{#snippet pending()}

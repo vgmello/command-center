@@ -1,6 +1,12 @@
 import { query } from '$app/server';
 import { scopeSchema, scopedDomainQuerySchema, scopedServiceSchema } from '$lib/server/api/schemas';
-import { readDomainPage, readDomainView, readDomainsView } from '$lib/server/platform/service';
+import {
+	readDomainDependencies,
+	readDomainHeader,
+	readDomainPage,
+	readDomainView,
+	readDomainsView
+} from '$lib/server/platform/service';
 
 /*
  * The domain table's transport, shared by the overview (which shows a summary of it)
@@ -47,4 +53,26 @@ export const getDomainsView = query(scopeSchema, async (scope) => readDomainsVie
  */
 export const getDomainView = query(scopedServiceSchema, async ({ slug, ...scope }) =>
 	readDomainView(scope, slug)
+);
+
+/**
+ * The domain header, shared by every tab.
+ *
+ * Its own query because it is identical on all of them and changes only with the scope,
+ * so a reader moving between tabs refetches the tab's own payload and nothing else,
+ * rather than the overview composite's service table, deployment log and incident list.
+ */
+export const getDomainHeader = query(scopedServiceSchema, async ({ slug, ...scope }) =>
+	readDomainHeader(scope, slug)
+);
+
+/**
+ * The dependency graph for one domain.
+ *
+ * Split from the header for the same reason: the graph and the breadcrumb change on
+ * different schedules from nothing here, but they are two different facts and a reader
+ * on another tab should not pay for a graph they are not looking at.
+ */
+export const getDomainDependencies = query(scopedServiceSchema, async ({ slug, ...scope }) =>
+	readDomainDependencies(scope, slug)
 );
