@@ -280,17 +280,42 @@ export const domainVitalsSchema = v.object({
 	sloWindow: v.string()
 });
 
+/**
+ * One hop out of a domain, with the readings that describe the edge.
+ *
+ * `kind` and the three measurements are additive: they arrived when the dependency view
+ * became a drawn graph and the port started carrying what an edge is and how it is doing.
+ * `icon` and `role` stay behind — the first is how our graph draws a node, and the second
+ * is prose written for this app's readers rather than a fact about the system.
+ */
 const domainNodeSchema = v.object({
 	id: v.string(),
 	name: v.string(),
-	status: healthStatusSchema
+	status: healthStatusSchema,
+	/** What the dependency is: a datastore, a queue, a service, an external provider. */
+	kind: v.picklist(['datastore', 'queue', 'service', 'external']),
+	/** Requests per second across this edge. */
+	requestRate: v.pipe(v.number(), v.minValue(0)),
+	latencyMs: v.pipe(v.number(), v.minValue(0)),
+	errorRatePct: v.pipe(v.number(), v.minValue(0))
 });
 
 export const domainDependenciesSchema = v.object({
 	upstream: v.array(domainNodeSchema),
 	downstream: v.array(domainNodeSchema),
 	/** Domain names in order, describing how a failure propagates. */
-	criticalPath: v.array(v.string())
+	criticalPath: v.array(v.string()),
+	/**
+	 * What the domain itself does across these edges.
+	 *
+	 * Carried here rather than left to a second call: a dependency view is about the
+	 * request path, and the middle of it is part of the answer.
+	 */
+	self: v.object({
+		requestRate: v.pipe(v.number(), v.minValue(0)),
+		latencyMs: v.pipe(v.number(), v.minValue(0)),
+		errorRatePct: v.pipe(v.number(), v.minValue(0))
+	})
 });
 
 /** One service of a domain, with the readings its health table prints. */
@@ -738,13 +763,18 @@ export function toDomainDependenciesDto(dependencies: DomainDependencies): Domai
 	const node = (one: DomainDependencies['upstream'][number]) => ({
 		id: one.id,
 		name: one.name,
-		status: one.status
+		status: one.status,
+		kind: one.kind,
+		requestRate: one.requestRate,
+		latencyMs: one.latencyMs,
+		errorRatePct: one.errorRatePct
 	});
 
 	return {
 		upstream: dependencies.upstream.map(node),
 		downstream: dependencies.downstream.map(node),
-		criticalPath: [...dependencies.criticalPath]
+		criticalPath: [...dependencies.criticalPath],
+		self: { ...dependencies.self }
 	};
 }
 

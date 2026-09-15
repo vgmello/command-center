@@ -545,10 +545,26 @@ components:
         downstream:
           items:
             properties:
+              errorRatePct:
+                minimum: 0
+                type: number
               id:
                 type: string
+              kind:
+                enum:
+                  - datastore
+                  - queue
+                  - service
+                  - external
+                type: string
+              latencyMs:
+                minimum: 0
+                type: number
               name:
                 type: string
+              requestRate:
+                minimum: 0
+                type: number
               status:
                 enum:
                   - healthy
@@ -560,15 +576,51 @@ components:
               - id
               - name
               - status
+              - kind
+              - requestRate
+              - latencyMs
+              - errorRatePct
             type: object
           type: array
+        self:
+          properties:
+            errorRatePct:
+              minimum: 0
+              type: number
+            latencyMs:
+              minimum: 0
+              type: number
+            requestRate:
+              minimum: 0
+              type: number
+          required:
+            - requestRate
+            - latencyMs
+            - errorRatePct
+          type: object
         upstream:
           items:
             properties:
+              errorRatePct:
+                minimum: 0
+                type: number
               id:
                 type: string
+              kind:
+                enum:
+                  - datastore
+                  - queue
+                  - service
+                  - external
+                type: string
+              latencyMs:
+                minimum: 0
+                type: number
               name:
                 type: string
+              requestRate:
+                minimum: 0
+                type: number
               status:
                 enum:
                   - healthy
@@ -580,12 +632,17 @@ components:
               - id
               - name
               - status
+              - kind
+              - requestRate
+              - latencyMs
+              - errorRatePct
             type: object
           type: array
       required:
         - upstream
         - downstream
         - criticalPath
+        - self
       type: object
     DomainPage:
       properties:

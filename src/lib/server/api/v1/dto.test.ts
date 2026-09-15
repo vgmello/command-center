@@ -376,6 +376,43 @@ describe('v1 domain detail shapes', () => {
 		expect(dto.criticalPath).toHaveLength(3);
 		expect(dto.criticalPath[1]).toBe('Payment Domain');
 	});
+
+	test('an edge publishes what it is and how it is doing', async () => {
+		// Added when the dependency view became a drawn graph. Without these the API
+		// described a smaller platform than the one that exists: a caller could see which
+		// domains touch which, and nothing about the traffic between them.
+		const dto = toDomainDependenciesDto(
+			await source.readDomainDependencies(scope, 'payment-domain')
+		);
+		const edge = dto.upstream[0];
+
+		expect(edge.kind).toBeDefined();
+		expect(edge.requestRate).toBeGreaterThan(0);
+		expect(edge.latencyMs).toBeGreaterThan(0);
+		expect(typeof edge.errorRatePct).toBe('number');
+	});
+
+	test('and the middle of the path, so a caller need not fetch the domain too', async () => {
+		const dto = toDomainDependenciesDto(
+			await source.readDomainDependencies(scope, 'payment-domain')
+		);
+
+		expect(dto.self.requestRate).toBeGreaterThan(0);
+	});
+
+	test('but not the icon or the prose, which are ours', async () => {
+		// `icon` is how our graph draws a node; `role` is a sentence written for this
+		// app's readers. Neither is a fact about the system.
+		const dto = toDomainDependenciesDto(
+			await source.readDomainDependencies(scope, 'payment-domain')
+		);
+
+		for (const field of ['icon', 'role']) {
+			expect(`${field}: ${(dto.upstream[0] as unknown as Record<string, unknown>)[field]}`).toBe(
+				`${field}: undefined`
+			);
+		}
+	});
 });
 
 describe('v1 metric and estate shapes', () => {
