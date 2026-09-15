@@ -1,8 +1,8 @@
 import { query } from '$app/server';
 import { scopeSchema, scopedDomainQuerySchema, scopedServiceSchema } from '$lib/server/api/schemas';
 import {
+	readDomain,
 	readDomainDependencies,
-	readDomainHeader,
 	readDomainPage,
 	readDomainView,
 	readDomainsView
@@ -61,9 +61,13 @@ export const getDomainView = query(scopedServiceSchema, async ({ slug, ...scope 
  * Its own query because it is identical on all of them and changes only with the scope,
  * so a reader moving between tabs refetches the tab's own payload and nothing else,
  * rather than the overview composite's service table, deployment log and incident list.
+ *
+ * Calls `readDomain` directly — the same lookup `/api/v1/domains/[slug]` uses. The name
+ * at this layer already says what it's for; a second service-layer function with the
+ * same body would be indirection with no behavioural difference to justify it.
  */
 export const getDomainHeader = query(scopedServiceSchema, async ({ slug, ...scope }) =>
-	readDomainHeader(scope, slug)
+	readDomain(scope, slug)
 );
 
 /**

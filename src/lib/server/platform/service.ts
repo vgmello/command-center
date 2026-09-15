@@ -294,20 +294,6 @@ export function readDomain(scope: PlatformScope, slug: string): Promise<Domain |
 	return platformSource().findDomain(scope, slug);
 }
 
-/**
- * The domain a tab draws its header and breadcrumb from.
- *
- * Every tab needs it and nothing else about it changes between them, so it is its own
- * read — a tab that called the overview composite for a name would fetch the service
- * table, the deployment log and the incident list to print one heading. Delegates to
- * `readDomain` rather than calling `platformSource().findDomain` a second time: the
- * public API's per-slug endpoint and a tab's header both want "the domain, or null",
- * and that lookup should have one owner.
- */
-export function readDomainHeader(scope: PlatformScope, slug: string): Promise<Domain | null> {
-	return readDomain(scope, slug);
-}
-
 export async function readServiceMetricSeries(scope: PlatformScope, slug: string) {
 	const source = serviceSource();
 	if (!(await source.findService(scope, slug))) return null;
