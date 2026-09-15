@@ -49,13 +49,27 @@ jobs:
       - name: Apply migrations
         run: bun run db:migrate
 
-      # `Bun.WebView` drives the system webview on macOS and Chrome over CDP elsewhere, so
-      # a Linux runner needs a Chrome present. No browser download and no Playwright.
-      # Bun.WebView drives Chrome over CDP on Linux. The suite passes --no-sandbox and
-      # --disable-dev-shm-usage there (see e2e/harness.ts) because a CI container runs as
-      # root, where Chromium refuses to launch and reports "Chrome process closed the
-      # pipe" — which reads like a Bun problem and is a sandbox one.
+      # Bun.WebView drives the system webview on macOS and Chrome over CDP everywhere
+      # else, so a Linux runner needs a Chrome. No browser download, no Playwright.
+      #
+      # The suite passes --no-sandbox and --disable-dev-shm-usage there (see
+      # e2e/harness.ts): a CI runner's container is root, where Chromium refuses to launch
+      # and reports "Chrome process closed the pipe" — which reads like a Bun problem and
+      # is a sandbox one.
       - uses: browser-actions/setup-chrome@v1
+        id: chrome
+
+      # Told, not discovered.
+      #
+      # Bun searches PATH and a list of standard locations, and the action installs to
+      # neither reliably — so leaving it to discovery makes the suite's ability to find a
+      # browser depend on where a third-party action happened to unpack one. BUN_CHROME_PATH
+      # is the documented override and the action states the path it installed, so the two
+      # are joined explicitly rather than hopefully.
+      - name: Point Bun at the installed Chrome
+        run: |
+          echo "BUN_CHROME_PATH=${{ steps.chrome.outputs.chrome-path }}" >> "$GITHUB_ENV"
+          "${{ steps.chrome.outputs.chrome-path }}" --version
 
       # The real Octopus, Coralogix and Azure-cost adapters need something to talk to.
       # Backgrounded because the suite boots the app itself and expects these listening.

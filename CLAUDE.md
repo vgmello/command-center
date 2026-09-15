@@ -718,6 +718,17 @@ Four things it found on its first run, none of which any test on macOS could hav
   suite stay on the host, where they prove exactly as much. `--full` runs them inside for
   anyone with a larger VM; CI has the memory and runs everything.
 
+**Tell Bun where Chrome is; do not hope it finds one.** Bun searches PATH and a list of
+standard locations, and `browser-actions/setup-chrome` installs to neither reliably — so
+discovery makes the suite depend on where a third-party action happened to unpack a
+browser. The workflow joins the two explicitly through `BUN_CHROME_PATH`.
+
+That the variable is load-bearing was measured, not assumed: with Chrome hidden from PATH,
+constructing a WebView fails with "Failed to spawn Chrome", and setting `BUN_CHROME_PATH`
+to the moved binary makes the same code pass. An earlier probe that left Chrome on PATH
+proved nothing — both a real path and a nonsense one succeeded, because discovery found it
+either way.
+
 **Assert on named tokens, not on screenshots.** The sweep looks for four-decimal floats,
 `undefined`, `NaN`, `[object Object]` and `Infinity`. Every one of those has reached a page
 here. Visual diffing was considered and skipped: the fixtures are deterministic enough to
