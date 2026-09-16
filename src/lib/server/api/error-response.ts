@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import * as v from 'valibot';
+import { gapSentence } from '$lib/platform/gaps';
 import type { Panel } from '$lib/platform/sources';
 import { CapabilityUnavailableError, SourceFailedError } from '../sources/errors';
 
@@ -45,10 +46,11 @@ export function errorResponse(cause: unknown): Response | null {
 		// source implements this capability, which is a statement about how the deployment
 		// is configured — so it is 501, and it names the capability so a caller can tell
 		// which one and stop asking for it.
+		// Same sentence the page prints — `gapSentence` is the single source.
 		return json(
 			{
 				error: 'capability_unavailable',
-				message: `No connected ${cause.kind} source implements ${cause.capability}.`,
+				message: gapSentence(cause.reason, cause.kind, cause.capability),
 				capability: cause.capability,
 				kind: cause.kind,
 				reason: cause.reason

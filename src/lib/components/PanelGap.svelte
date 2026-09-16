@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Panel, SourceKind } from '$lib/platform/sources';
+	import { gapSentence } from '$lib/platform/gaps';
 
 	/**
 	 * Why a panel has nothing to draw.
@@ -24,6 +25,7 @@
 		class?: string;
 	} = $props();
 
+	// Kept for the `failed` branch, which names the source rather than the kind's noun.
 	const KIND_LABEL: Record<SourceKind, string> = {
 		cloud: 'cloud',
 		apm: 'APM',
@@ -33,7 +35,7 @@
 
 {#if panel.status === 'unavailable'}
 	<p class="text-[12px] text-muted-foreground {className}">
-		No connected {KIND_LABEL[panel.kind]} source provides {noun}.
+		{gapSentence(panel.reason, panel.kind, noun)}
 	</p>
 {:else if panel.status === 'failed'}
 	<p class="text-[12px] text-muted-foreground {className}">

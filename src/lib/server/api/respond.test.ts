@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { gapSentence } from '$lib/platform/gaps';
 import type { Panel } from '$lib/platform/sources';
 import { errorResponse, NotFoundError, requirePanel } from './error-response';
 import { CapabilityUnavailableError, SourceFailedError } from '../sources/errors';
@@ -31,6 +32,25 @@ describe('a capability nobody implements', () => {
 		)!;
 
 		expect(((await response.json()) as Record<string, string>).reason).toBe('no-connection');
+	});
+
+	test('the message is the same sentence the page prints', async () => {
+		// One sentence on the page and on the wire — `gapSentence` is the single source,
+		// so this pins the wording via the function rather than a copy of its output.
+		const response = errorResponse(
+			new CapabilityUnavailableError('apm.dependencies', 'no-capability')
+		)!;
+		const body = (await response.json()) as Record<string, string>;
+
+		expect(body.message).toBe(gapSentence('no-capability', 'apm', 'apm.dependencies'));
+	});
+
+	test('an unbound domain gets its own sentence, not "no connected source"', async () => {
+		const response = errorResponse(new CapabilityUnavailableError('cloud.regions', 'no-binding'))!;
+		const body = (await response.json()) as Record<string, string>;
+
+		expect(body.reason).toBe('no-binding');
+		expect(body.message).toBe(gapSentence('no-binding', 'cloud', 'cloud.regions'));
 	});
 });
 

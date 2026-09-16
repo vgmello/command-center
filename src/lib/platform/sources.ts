@@ -72,10 +72,12 @@ export interface SourceRef {
 /**
  * Why a panel has no data.
  *
- * Four distinct causes, because the remedies differ: connect a source, bind the
- * resource, pick a provider that implements it, or nothing — it is simply absent.
+ * Five distinct causes, because the remedies differ: connect a source, bind the resource,
+ * name which of several connections the binding means, pick a provider that implements it,
+ * or nothing — it is simply absent.
  */
-export type GapReason = 'no-connection' | 'no-binding' | 'no-capability' | 'not-implemented';
+export type GapReason =
+	'no-connection' | 'no-binding' | 'no-capability' | 'not-implemented' | 'ambiguous-connection';
 
 /**
  * One panel's worth of data, or an account of why there is none.
