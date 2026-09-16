@@ -1,7 +1,7 @@
 # Domain detail: the Infrastructure tab
 
 **Date:** 2026-09-16
-**Status:** revised after review rounds 1–5 (round 5: 2 Critical, 1 Important, 3 Minor — all addressed; plus the two-worlds ownership finding); round 6 before planning
+**Status:** revised after review rounds 1–6 (round 6: nothing architectural — 1 Important count fix, 2 Minor); round 7 scoped close before planning
 
 ## Goal
 
@@ -70,7 +70,7 @@ both; only the Azure/floci-az stack leaves them as gaps on the estate screen.)
     so the catalog's `connectionId: ''` ("whichever connection of this kind answers") would throw
     `'no-connection'` on every read — `one()` has never been exercised with an empty id.
     `routeOne` resolves `''` first via `registry.supporting(capability)`: exactly one connection →
-    use it; zero → the same distinction `dispatcher.all()` already makes (`dispatch.ts:113-121`):
+    use it; zero → the same distinction `dispatcher.all()` already makes (`dispatch.ts:116-123`):
     `'no-capability'` when connections of the kind exist but none declares the capability,
     `'no-connection'` only when none of the kind exists — telling a reader whether to add a
     provider or a connection; more than one → a **new** `GapReason` `'ambiguous-connection'`, so the
@@ -170,7 +170,11 @@ clusters `prod-eu-west-1-a`…, databases `payment-db`, `order-db`, `user-db`, `
 **one table of domain assignments keyed by role** (`region-1..5`, `db-payments`, `db-orders`,
 `db-users`, `db-inventory`, `db-analytics`) and **two name maps** derived from it — fixture names
 and seed names — so the domain each row belongs to is stated once and each world attaches its
-names. Under fixtures **six** domains are bound (payment, order, user, inventory, notification,
+names. **Clusters inherit their region's owner** in both worlds rather than having roles of their
+own — a cluster lives in a region. The worlds therefore differ in count: fixtures hold two
+clusters in `eu-west-1` (`prod-eu-west-1-a`, `-b`), so `payment-domain` owns two there, while the
+seed provisions one AKS per group, so it owns one; the strip sketch above shows the seed world. The
+strip's `count`/`atLimit` shape makes that difference a number, not a contradiction. Under fixtures **six** domains are bound (payment, order, user, inventory, notification,
 analytics — `analytics-domain` exists in the 25-domain catalog and owns `analytics-db`); under the
 seed **five** (no ClickHouse there). Fixture storage classes are _types_, not resources, so the
 fixture holds a per-(domain, class) bytes table whose per-class sums equal the estate figures —
@@ -281,7 +285,7 @@ schemas already exist in `openApiComponents()`; `components.yaml` regenerated. S
 | Unit     | `ownsResource`: key case-insensitive, value case-sensitive, missing tag → false                                                                                                                                                                                                                                                              |
 | Unit     | `toInfraSummaryView`: `atLimit` → `100+`; the DTO carries `count` + `atLimit` and no string                                                                                                                                                                                                                                                  |
 | Unit     | `gapSentence`: `'no-binding'` and `'ambiguous-connection'` have their own sentences, the other three unchanged; `error-response`'s 501 message equals `gapSentence(...)` for the same reason                                                                                                                                                 |
-| Unit     | `collapseUnbound`: six × `'no-binding'` → true; five ok + one `'no-capability'` → false                                                                                                                                                                                                                                                      |
+| Unit     | `collapseUnbound`: seven × `'no-binding'` → true; six ok + one `'no-capability'` → false; six `'no-binding'` + one `'no-capability'` → false (mixed reasons never collapse)                                                                                                                                                                  |
 | Sweep    | new `SCREENS` entry (`'payment-domain'`, bound) + a second, unbound case asserting six stated gaps and no throw                                                                                                                                                                                                                              |
 | Budget   | rows for the bound tab, cold and warm, measured                                                                                                                                                                                                                                                                                              |
 | e2e      | `/domains/payment-domain/infrastructure` in `ROUTES` — renders under fixtures, `sources.example.json`, AND `sources.local.json`, where floci-az's stored tags are read for real                                                                                                                                                              |
