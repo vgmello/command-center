@@ -21,10 +21,11 @@
 - **`routeOne` resolves `connectionId: ''`** via `registry.supporting(capability)`: exactly one → use it; zero → `'no-capability'` if connections of the kind exist else `'no-connection'`; two or more → `'ambiguous-connection'`. Then wraps `dispatcher.one()` in `deps.cache.read` keyed `{ connectionId: <resolved id>, capability, args: scopedArgs(scope, 'owner=<slug>'), ttlSeconds: ttlFor(deps, capability) }`. `dispatcher.one()` itself is unchanged.
 - **No tag `$filter` is sent on ARM list requests.** The client-side check is the mechanism on every stack. Server-side narrowing via `/resources?$filter=tag…` is a `docs/todo` ceiling, not a claim.
 - **`GapReason` gains `'ambiguous-connection'`.** No 501 schema is documented (standing todo `api-501-undocumented.md`); the OpenAPI exact-set test is NOT touched.
+- **Estate figures never move.** `readNodeCounts()` with no owner returns today's constant `{42,4,2}`; owner reads are DERIVED from owned regions. The seed tags VMs, AKS and storage by their resource GROUP's owner, databases by their own name.
 - **Gap collapse rule:** all SEVEN reads `unavailable` with reason `'no-binding'` → snapshot `unbound: true`, page renders one sentence once; any other mix → per-panel `PanelGap`.
 - **Ownership lives in ONE module** `src/lib/platform/ownership.ts`: role-keyed domain assignments + two name maps (fixture, seed). Fixtures bind six domains (`payment`, `order`, `user`, `inventory`, `notification`, `analytics`), the seed five (no ClickHouse). Clusters inherit their region's owner. `tax-domain` is bound in neither world.
 - **Publish measurements.** `InfraSummary.storageBytes: number | null`; `clusters`/`databases` are `{ count, atLimit } | null` (null when that panel is a gap — a dash, never 0); `100+` is rendered only in `toInfraSummaryView`.
-- **API:** seven per-resource paths `/api/v1/domains/{slug}/infrastructure/{regions,nodes,clusters,databases,utilization,storage,cost}` reusing `toRegionDto`, `toNodeCountsDto`, `toClusterDto`, `toDatabaseDto`, `toResourceUsageDto`, `toStorageDto`, `toCostDto`; 404 unknown slug; 501 via `requirePanel`. The composite is never published.
+- **API:** seven per-resource paths `/api/v1/domains/{slug}/infrastructure/{regions,nodes,clusters,databases,utilization,storage,cost}` reusing `toRegionDto`, `toNodeCountsDto`, `toClusterDto`, `toDatabaseDto`, `toResourceUsageDto`, `toStorageDto`, `toCostDto`; the 501 body's free-text `message` changes from "…implements…" to the page's "…provides…" wording on every gap-capable route — intentional and pinned by a test, not a schema change; 404 unknown slug; 501 via `requirePanel`. The composite is never published.
 - Every number written into docs or test comments is MEASURED in that task, with the command in the report.
 - Commit trailers: `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01Jgha5PbXCX8KuAgLNTKpEW`.
 
@@ -217,13 +218,20 @@ export const FIXTURE_NAMES: Record<OwnershipRole, string[]> = {
 	'db-analytics': ['analytics-db']
 };
 
-/** Seed names per role: the resource group (everything in it) and the AKS; db roles name the server. */
+/**
+ * Seed names per role: the resource GROUP and its AKS; db roles name the server.
+ *
+ * Storage accounts are deliberately absent: the seed names them `ccst${location.slice(0, 12)}`,
+ * which truncates `southeastasia` to `southeastasi` — a name nobody should have to spell here.
+ * The seed tags VMs, AKS and storage by their GROUP's owner (`seedOwnerOf(group)`), so only the
+ * group needs a row; databases are tagged by their own name because they override the group.
+ */
 export const SEED_NAMES: Record<OwnershipRole, string[]> = {
-	'region-1': ['cc-westeurope', 'cc-westeurope-aks', 'ccstwesteurope'],
-	'region-2': ['cc-northeurope', 'cc-northeurope-aks', 'ccstnortheurope'],
-	'region-3': ['cc-eastus', 'cc-eastus-aks', 'ccsteastus'],
-	'region-4': ['cc-westus2', 'cc-westus2-aks', 'ccstwestus2'],
-	'region-5': ['cc-southeastasia', 'cc-southeastasia-aks', 'ccstsoutheastasia'],
+	'region-1': ['cc-westeurope', 'cc-westeurope-aks'],
+	'region-2': ['cc-northeurope', 'cc-northeurope-aks'],
+	'region-3': ['cc-eastus', 'cc-eastus-aks'],
+	'region-4': ['cc-westus2', 'cc-westus2-aks'],
+	'region-5': ['cc-southeastasia', 'cc-southeastasia-aks'],
 	'db-payments': ['cc-payments'],
 	'db-orders': ['cc-orders'],
 	'db-users': ['cc-users'],
@@ -322,15 +330,24 @@ import { describe, expect, test } from 'bun:test';
 import { collapseUnbound, gapSentence } from './gaps';
 import type { Panel } from './sources';
 
-const gap = (
-	reason: Panel<unknown> extends infer P ? (P extends { reason: infer R } ? R : never) : never
-) =>
-	({ status: 'unavailable', capability: 'cloud.nodes', kind: 'cloud', reason }) as Panel<unknown>;
-const ok: Panel<unknown> = {
-	status: 'ok',
-	data: 1,
-	source: { id: 'x', name: 'x', providerId: 'x', kind: 'cloud', link: null }
-} as Panel<unknown>;
+import type { GapReason, SourceRef } from './sources';
+// Check `SourceRef`'s exact fields in src/lib/platform/sources.ts:60-70 first; the literal must satisfy the type without a cast.
+const source: SourceRef = {
+	id: 'x',
+	connectionId: 'x',
+	name: 'x',
+	providerId: 'x',
+	kind: 'cloud',
+	icon: 'cloud',
+	link: null
+};
+const gap = (reason: GapReason): Panel<unknown> => ({
+	status: 'unavailable',
+	capability: 'cloud.nodes',
+	kind: 'cloud',
+	reason
+});
+const ok: Panel<unknown> = { status: 'ok', data: 1, source };
 
 describe('gapSentence', () => {
 	test("the three existing reasons keep today's wording", () => {
@@ -342,7 +359,7 @@ describe('gapSentence', () => {
 	});
 	test('an unbound domain is not "no connected source" — the cloud is connected', () => {
 		expect(gapSentence('no-binding', 'cloud', 'regions')).toBe(
-			'Not bound to a cloud — no resources carry `domain=<slug>`.'
+			'Not bound to a cloud — no resources are tagged for this domain.'
 		);
 	});
 	test('several connections need a named binding', () => {
@@ -414,7 +431,9 @@ const KIND_LABEL: Record<SourceKind, string> = {
 export function gapSentence(reason: GapReason, kind: SourceKind, noun: string): string {
 	switch (reason) {
 		case 'no-binding':
-			return `Not bound to a ${KIND_LABEL[kind]} — no resources carry \`domain=<slug>\`.`;
+			// Key-agnostic on purpose: `ownerTagKey` is a provider setting, and a sentence naming it
+			// would be wrong the moment someone changes it.
+			return `Not bound to a ${KIND_LABEL[kind]} — no resources are tagged for this domain.`;
 		case 'ambiguous-connection':
 			return `Several ${KIND_LABEL[kind]} connections are configured; this domain's binding must name one.`;
 		default:
@@ -466,7 +485,7 @@ import { gapSentence } from '$lib/platform/gaps';
 				message: gapSentence(cause.reason, cause.kind, cause.capability),
 ```
 
-(The estate routes pass the capability as the noun — "No connected cloud source provides cloud.regions." — which is what the message said before, restructured. Keep the comment above it; add one line: "Same sentence the page prints — `gapSentence` is the single source.")
+(The estate routes pass the capability as the noun. **This changes the 501 body's free-text `message`** from "No connected cloud source implements cloud.regions." to "…provides cloud.regions." on every gap-capable route — intentional: one sentence on the page and on the wire; free text, not schema. Pin the NEW wording in the 501 test so the change is deliberate rather than silent. Keep the comment above it; add one line: "Same sentence the page prints — `gapSentence` is the single source.")
 
 - [ ] **Step 7: Extend the 501 test** in the existing respond/error-response test: for a `CapabilityUnavailableError('cloud.regions', 'no-binding')` the body's `message` equals `gapSentence('no-binding', 'cloud', 'cloud.regions')` and `reason === 'no-binding'`.
 
@@ -705,57 +724,198 @@ Add imports: `SourceBinding` from `../provider`, `kindOf` from `$lib/platform/so
 
 ---
 
-### Task 5: The owner argument — port and router
+### Task 5: Fixture cloud honours the owner
 
 **Files:**
 
-- Modify: `src/lib/server/platform/source.ts:307-329` (`InfrastructureSource`)
-- Modify: `src/lib/server/sources/routers/infrastructure.ts` (whole file), `routers/index.ts:30`
-- Test: `src/lib/server/sources/routers/infrastructure.test.ts` (append)
+- Modify: `src/lib/server/platform/infrastructure-fixtures.ts` — `listRegions`, `listClusters`, `readNodeCounts`, `readUtilization`, `readStorage`, `listDatabases`, `readCost` gain an `owner?: string` parameter
+- Modify: `src/lib/server/sources/fixtures/cloud.ts:33-58` — pass `ctx.binding?.externalId`
+- Test: `src/lib/server/platform/infrastructure-fixtures.test.ts` (append)
 
-**Interfaces — Produces:** every `InfrastructureSource` method takes a trailing `owner?: string`; `createInfrastructureRouter(deps, catalog: CatalogSource)`.
+**Why before the port:** the router's owner path (Task 6) is only testable end to end once the fixture cloud filters. `ctx.binding` already exists on `SourceContext`, so this task needs nothing from Task 6.
 
-- [ ] **Step 1: Failing tests** (`infrastructure.test.ts`; use `createRouters` via the same `build()` shape as `routers.test.ts`)
+**Interfaces — Produces:** `listRegions(owner?)`, `listClusters(limit, owner?)`, `readNodeCounts(owner?)`, `readUtilization(now, owner?, buckets = 18)`, `readStorage(owner?)`, `listDatabases(limit, owner?)`, `readCost(now, owner?)`. With `owner` undefined every function returns EXACTLY what it returns today.
+
+- [ ] **Step 1: Failing tests**
 
 ```ts
+import { boundDomains } from '$lib/platform/ownership';
+import type { NodeCounts } from '$lib/platform/types';
+
+describe('owner-scoped fixtures', () => {
+	const total = (c: NodeCounts) => c.healthy + c.warning + c.down;
+
+	test('the estate figures do not move', () => {
+		// The estate donut, the node tile's Degraded status, e2e text and the DTO tests all encode these.
+		expect(readNodeCounts()).toEqual({ healthy: 42, warning: 4, down: 2 });
+		expect(listRegions().map((r) => r.id)).toEqual([
+			'eu-west-1',
+			'eu-central-1',
+			'us-east-1',
+			'us-west-2',
+			'ap-southeast-1'
+		]);
+	});
+	test('regions: payment-domain runs in eu-west-1 only', () => {
+		expect(listRegions('payment-domain').map((r) => r.id)).toEqual(['eu-west-1']);
+	});
+	test('clusters inherit the region: exactly the two in eu-west-1', () => {
+		expect(
+			listClusters(100, 'payment-domain')
+				.map((c) => c.id)
+				.sort()
+		).toEqual(['prod-eu-west-1-a', 'prod-eu-west-1-b']);
+	});
+	test("an owner's node count is derived from its regions, and the owners sum to the estate total", () => {
+		const mine = readNodeCounts('payment-domain');
+		expect(total(mine)).toBe(12); // eu-west-1 nodeCount
+		expect(mine.healthy).toBe(Math.floor((12 * 96) / 100)); // region score 96 → 11
+		expect(mine.down).toBe(0);
+		const owned = boundDomains('fixture').map((s) => total(readNodeCounts(s)));
+		expect(owned.reduce((t, n) => t + n, 0)).toBe(48); // the five regions' nodeCounts = the estate total
+	});
+	test('databases: analytics-domain owns analytics-db only', () => {
+		expect(listDatabases(100, 'analytics-domain').map((d) => d.id)).toEqual(['analytics-db']);
+	});
+	test("storage: a domain's classes come from FIXTURE_STORAGE_BYTES, and owners sum to the estate", () => {
+		const estate = readStorage();
+		const mine = readStorage('payment-domain');
+		expect(mine.classes.map((c) => c.id)).toEqual(estate.classes.map((c) => c.id));
+		const owned = boundDomains('fixture').map((s) => readStorage(s).totalBytes);
+		expect(owned.reduce((t, b) => t + b, 0)).toBeCloseTo(estate.totalBytes, -6);
+	});
+	test('an unbound owner gets empty lists — the router will have thrown first, but the fixture is honest too', () => {
+		expect(listRegions('tax-domain')).toEqual([]);
+		expect(total(readNodeCounts('tax-domain'))).toBe(0);
+	});
+});
+```
+
+- [ ] **Step 2: Run → fails** — `bun test src/lib/server/platform/infrastructure-fixtures.test.ts`.
+
+- [ ] **Step 3: Implement** — read each existing body first; every change is "compute what you compute today, then filter by owner":
+
+```ts
+import { FIXTURE_STORAGE_BYTES, fixtureOwnerOf } from '$lib/platform/ownership';
+
+/** Region rows carry `[id, name, lat, lon, nodeCount, score]` — the seeds at ~:53-57, hoisted to module scope. */
+const REGION_ROWS = /* the existing tuple array */;
+
+export function listRegions(owner?: string): InfraRegion[] {
+	const all = /* existing mapping of REGION_ROWS → InfraRegion */;
+	return owner === undefined ? all : all.filter((r) => fixtureOwnerOf(r.id) === owner);
+}
+
+export function listClusters(limit: number, owner?: string): ClusterLoad[] {
+	const all = /* existing */;
+	return (owner === undefined ? all : all.filter((c) => fixtureOwnerOf(c.id) === owner)).slice(0, limit);
+}
+
+/**
+ * The estate split is its own constant and does not move: the donut, the node tile's
+ * "Degraded" and the e2e text encode it. An owner's count is derived from its regions —
+ * healthy = floor(nodeCount · score / 100), warning = the rest, down = 0 — so the owners'
+ * totals sum to the estate total (48) by construction while the estate split stays honest.
+ */
+export function readNodeCounts(owner?: string): NodeCounts {
+	if (owner === undefined) return NODE_COUNTS; // the existing constant at ~:28
+	return listRegions(owner).reduce(
+		(acc, r) => {
+			const row = REGION_ROWS.find((one) => one[0] === r.id)!;
+			const healthy = Math.floor((row[4] * row[5]) / 100);
+			return { healthy: acc.healthy + healthy, warning: acc.warning + (row[4] - healthy), down: acc.down };
+		},
+		{ healthy: 0, warning: 0, down: 0 }
+	);
+}
+
+export function readStorage(owner?: string) {
+	if (owner === undefined) return /* existing */;
+	const mine = FIXTURE_STORAGE_BYTES[owner] ?? { block: 0, object: 0, file: 0 };
+	const classes = STORAGE_SEEDS.map(([id, label]) => ({ id, label, bytes: mine[id as 'block' | 'object' | 'file'] }));
+	return { totalBytes: classes.reduce((t, c) => t + c.bytes, 0), classes };
+}
+
+export function listDatabases(limit: number, owner?: string) { /* existing rows; filter by fixtureOwnerOf(id) === owner when set; then .slice(0, limit) */ }
+
+/** `owner` before `buckets` so callers never restate the default to reach it. */
+export function readUtilization(now: Date, owner?: string, buckets = 18): ResourceReading[] {
+	/* identical body; seed with `infra:${owner ?? ''}:${id}` so a domain's line is its own */
+}
+
+export function readCost(now: Date, owner?: string): CostBreakdown {
+	/* existing categories; when owner is set, scale each category by total(readNodeCounts(owner)) / 48 — derived, so the owners sum to the estate */
+}
+```
+
+Grep every existing caller of `readUtilization(` and move `buckets` to the third position.
+
+In `sources/fixtures/cloud.ts`: `async listRegions(ctx) { return estate.listRegions(ctx.binding?.externalId); }`, `async readNodeCounts(ctx) { return estate.readNodeCounts(ctx.binding?.externalId); }`, `async listClusters(ctx, limit) { return estate.listClusters(limit, ctx.binding?.externalId); }`, `async readUtilization(ctx) { return estate.readUtilization(new Date(), ctx.binding?.externalId); }`, `async readStorage(ctx) { return estate.readStorage(ctx.binding?.externalId); }`, `async listDatabases(ctx, limit) { return estate.listDatabases(limit, ctx.binding?.externalId); }`, `async readCost(ctx) { return estate.readCost(new Date(), ctx.binding?.externalId); }`.
+
+- [ ] **Step 4: Run** — `bun test src` → green with NO change to any existing assertion (the estate path is byte-identical). `check`, `lint`.
+
+- [ ] **Step 5: Commit** — `feat: the fixture cloud knows which domain owns what`
+
+---
+
+### Task 6: The owner argument — port and router
+
+**Files:**
+
+- Modify: `src/lib/server/platform/source.ts:300-331` (`InfrastructureSource`, methods ~:304-330)
+- Modify: `src/lib/server/platform/fixture-source.ts:230-274` (`FixtureInfrastructureSource` — add the optional parameter to every method and forward it to the Task 5 functions)
+- Modify: `src/lib/server/sources/routers/infrastructure.ts` (whole file), `routers/index.ts:31`
+- Modify: `src/lib/server/sources/routers/infrastructure.test.ts:13-26` — its existing `build()` calls `createInfrastructureRouter(deps)` with ONE argument and returns `{ registry, source }`; update it to pass `new FixtureCatalogSource()` and keep the return shape
+- Modify: `src/lib/server/sources/routers/dispatch-tiers.test.ts:30-52` — `Helper`, `ALLOWED`, and a second pattern
+
+**Red window, stated:** after Step 3 `bun run check` is red until Step 4 updates `FixtureInfrastructureSource`, the router, and `infrastructure.test.ts` — all inside this task. Do not commit between them.
+
+**Interfaces — Produces:** every `InfrastructureSource` method takes a trailing `owner?: string`; `createInfrastructureRouter(deps: RouterDeps, catalog: CatalogSource)`.
+
+- [ ] **Step 1: Failing tests** (append to `infrastructure.test.ts`, using its `build()` → `source`)
+
+```ts
+import { FixtureCatalogSource } from '../../catalog/fixture-source';
+
 describe('owner-scoped reads', () => {
-	test('a domain with a declared cloud binding gets its own answer', async () => {
-		const { infrastructure } = build();
-		const counts = await infrastructure.readNodeCounts(scope, 'payment-domain');
-		const estate = await infrastructure.readNodeCounts(scope);
-		expect(counts.healthy + counts.warning + counts.down).toBeLessThan(
-			estate.healthy + estate.warning + estate.down
-		);
+	test('a bound domain gets exactly its own resources', async () => {
+		const { source } = build();
+		expect((await source.listRegions(scope, 'payment-domain')).map((r) => r.id)).toEqual([
+			'eu-west-1'
+		]);
+		expect(
+			(await source.listClusters(scope, 100, 'payment-domain')).map((c) => c.id).sort()
+		).toEqual(['prod-eu-west-1-a', 'prod-eu-west-1-b']);
 	});
 	test('a domain with NO declared cloud binding is no-binding — the bindingFor fallback must not count', async () => {
-		const { infrastructure } = build();
-		await expect(infrastructure.readNodeCounts(scope, 'tax-domain')).rejects.toMatchObject({
+		const { source } = build();
+		await expect(source.readNodeCounts(scope, 'tax-domain')).rejects.toMatchObject({
 			reason: 'no-binding'
 		});
 	});
 	test('an unknown slug is no-binding too', async () => {
-		const { infrastructure } = build();
-		await expect(infrastructure.listRegions(scope, 'no-such-domain')).rejects.toMatchObject({
+		const { source } = build();
+		await expect(source.listRegions(scope, 'no-such-domain')).rejects.toMatchObject({
 			reason: 'no-binding'
 		});
 	});
-	test('the estate path is untouched: no owner, no binding lookup', async () => {
-		const { infrastructure } = build();
-		expect((await infrastructure.listRegions(scope)).length).toBeGreaterThan(0);
+	test('the estate path is untouched', async () => {
+		const { source } = build();
+		expect((await source.listRegions(scope)).map((r) => r.id)).toHaveLength(5);
 	});
 });
 ```
 
 - [ ] **Step 2: Run → fails** (TS: too many arguments).
 
-- [ ] **Step 3: Port** — in `source.ts`, each of the nine methods gains `owner?: string` as the last parameter, with one docblock above the interface addition:
+- [ ] **Step 3: Port** — in `source.ts` each of the nine methods gains `owner?: string` last, with one docblock:
 
 ```ts
 	/**
 	 * `owner` narrows a read to one domain's resources — the ones tagged with its slug.
 	 *
 	 * App vocabulary: the port says which domain, never which tag. The router resolves the
-	 * domain's declared cloud binding and throws `no-binding` when there is none, which the
+	 * domain's DECLARED cloud binding and throws `no-binding` when there is none, which the
 	 * assembler renders as a stated gap. Absent, the read is the estate's, exactly as before.
 	 */
 	listRegions(scope: PlatformScope, owner?: string): Promise<InfraRegion[]>;
@@ -769,19 +929,17 @@ describe('owner-scoped reads', () => {
 	readCost(scope: PlatformScope, owner?: string): Promise<CostBreakdown>;
 ```
 
-`bun run check` will now list every implementation missing the parameter — `FixtureInfrastructureSource` in `platform/fixture-source.ts` (add the optional param, ignore it) and the router. Fix both in this task.
-
-- [ ] **Step 4: Router** — `createInfrastructureRouter(deps: RouterDeps, catalog: CatalogSource)`; add a helper and use it in every method:
+- [ ] **Step 4: Implementations** — `FixtureInfrastructureSource`: add the parameter and forward it (`return listRegions(owner)` etc.; queues/alerts accept and ignore it). Router: `createInfrastructureRouter(deps: RouterDeps, catalog: CatalogSource)` with two helpers, every method rewritten:
 
 ```ts
 /**
- * A domain's declared cloud binding, or the reason there is none.
+ * A domain's DECLARED cloud binding, or the reason there is none.
  *
  * Declared only — `bindingFor()`'s fallback synthesises a slug binding for APM identity and
  * would make every domain look bound. Unknown slug and no binding are the same gap: nothing
  * to read for.
  */
-async function bindingFor(
+async function ownerBinding(
 	catalog: CatalogSource,
 	capability: Capability,
 	owner: string
@@ -792,7 +950,7 @@ async function bindingFor(
 	return { kind: 'cloud', connectionId: declared.connectionId, externalId: declared.externalId };
 }
 
-/** Estate → fan out as before; owner → resolve and route to one connection, cached per owner. */
+/** Estate → the fan-out as before; owner → resolve and route to one connection, cached per owner. */
 async function scoped<T>(
 	deps: RouterDeps,
 	catalog: CatalogSource,
@@ -804,7 +962,7 @@ async function scoped<T>(
 	estate: () => Promise<T>
 ): Promise<T> {
 	if (owner === undefined) return estate();
-	const binding = await bindingFor(catalog, capability, owner);
+	const binding = await ownerBinding(catalog, capability, owner);
 	return routeOne(
 		deps,
 		capability,
@@ -816,105 +974,21 @@ async function scoped<T>(
 }
 ```
 
-Then e.g.:
-
 ```ts
 		listRegions: (scope, owner) =>
 			scoped(deps, catalog, 'cloud.regions', scope, '', owner,
 				(client, ctx) => (client as CloudProvider).listRegions!(ctx),
-				() => fanOut(deps, 'cloud.regions', scope, '', (client, ctx) => (client as CloudProvider).listRegions!(ctx))),
+				() => fanOut(deps, 'cloud.regions', scope, '', (client, ctx) => (client as CloudProvider).listRegions!(ctx))
+			),
 ```
 
-Apply to all nine. `listGroups(scope)` is unchanged (estate only). Update the file's docstring ("it has no catalog side" → it has one, for bindings only). In `index.ts`: `infrastructure: createInfrastructureRouter(deps, catalog.services)`.
+…and likewise for the other eight (`readNodeCounts`/`readStorage`/`readCost` use `fanOutSingle` for the estate branch; `listClusters`/`listDatabases`/`listQueues`/`listAlerts` pass `limit=${limit}` as `args`). `listGroups(scope)` is unchanged. Rewrite the file's docstring: it has a catalog side now, for bindings only. In `routers/index.ts:31`: `infrastructure: createInfrastructureRouter(deps, catalog.services)`. Update `infrastructure.test.ts`'s `build()` to pass `new FixtureCatalogSource()`.
 
-- [ ] **Step 5: Run** — `bun test src`, `check`, `lint` → green. `dispatch-tiers.test.ts` now sees `routeOne(deps, 'cloud.regions'…)` calls — confirm it passes with `routeOne` allowed for `live`/`reference`.
+- [ ] **Step 5: `dispatch-tiers.test.ts`** — the regex at `:52` matches `fanOut(deps, 'cap'` literally and can never see a capability routed through `scoped(deps, catalog, 'cap'`. Add `'routeOne'` to `Helper` and to `live`/`reference` in `ALLOWED`, and add a second pattern `/\bscoped\s*\(\s*deps,\s*catalog,\s*'([^']+)'/g` that records helper `'routeOne'` for its capability. Run the file: every cloud capability must now report BOTH its fan-out helper (the estate branch) and `routeOne`.
 
-- [ ] **Step 6: Commit** — `feat: a domain can ask the estate about its own resources`
+- [ ] **Step 6: Run** — `bun test src`, `check` (0 errors — the window is closed), `lint`.
 
----
-
-### Task 6: Fixture cloud honours the owner
-
-**Files:**
-
-- Modify: `src/lib/server/platform/infrastructure-fixtures.ts` (`listRegions`, `listClusters`, `readNodeCounts`, `readUtilization`, `readStorage`, `listDatabases`, `readCost` gain `owner?: string`)
-- Modify: `src/lib/server/sources/fixtures/cloud.ts:33-58` (pass `ctx.binding?.externalId`)
-- Test: `src/lib/server/platform/infrastructure-fixtures.test.ts` (append) and `sources/fixtures/fixtures.test.ts`
-
-- [ ] **Step 1: Failing tests**
-
-```ts
-describe('owner-scoped fixtures', () => {
-	test('regions: payment-domain runs in eu-west-1 only', () => {
-		expect(listRegions('payment-domain').map((r) => r.id)).toEqual(['eu-west-1']);
-	});
-	test('clusters inherit the region: two in eu-west-1', () => {
-		expect(
-			listClusters(100, 'payment-domain')
-				.map((c) => c.id)
-				.sort()
-		).toEqual(['prod-eu-west-1-a', 'prod-eu-west-1-b']);
-	});
-	test("node counts are the owned regions' nodes, and the owned counts sum to the estate", () => {
-		const estate = readNodeCounts();
-		const owned = boundDomains('fixture').map((s) => readNodeCounts(s));
-		const total = (c: NodeCounts) => c.healthy + c.warning + c.down;
-		expect(owned.reduce((t, c) => t + total(c), 0)).toBe(total(estate));
-	});
-	test('databases: one per db role', () => {
-		expect(listDatabases(100, 'analytics-domain').map((d) => d.id)).toEqual(['analytics-db']);
-	});
-	test("storage: a domain's classes come from FIXTURE_STORAGE_BYTES and sum across domains to the estate", () => {
-		const estate = readStorage();
-		const owned = boundDomains('fixture').map((s) => readStorage(s).totalBytes);
-		expect(owned.reduce((t, b) => t + b, 0)).toBeCloseTo(estate.totalBytes, -6);
-	});
-	test('an unbound owner gets nothing — the router throws before this is reached, but the fixture is honest too', () => {
-		expect(listRegions('tax-domain')).toEqual([]);
-	});
-});
-```
-
-- [ ] **Step 2: Run → fails.**
-
-- [ ] **Step 3: Implement** — each function filters through `fixtureOwnerOf`:
-
-```ts
-import { FIXTURE_STORAGE_BYTES, fixtureOwnerOf } from '$lib/platform/ownership';
-
-export function listRegions(owner?: string): InfraRegion[] {
-	const all = /* existing body building regions */;
-	return owner === undefined ? all : all.filter((r) => fixtureOwnerOf(r.id) === owner);
-}
-export function listClusters(limit: number, owner?: string): ClusterLoad[] {
-	const all = /* existing */;
-	return (owner === undefined ? all : all.filter((c) => fixtureOwnerOf(c.id) === owner)).slice(0, limit);
-}
-export function readNodeCounts(owner?: string): NodeCounts {
-	// Derived from the owned regions, per the "two fixtures, one quantity" rule: each fixture region
-	// row carries `nodeCount` and a health score; healthy = floor(nodeCount * score / 100),
-	// warning = the remainder, down = 0. The ESTATE call (owner undefined) must keep returning what
-	// it does today; if deriving it from regions changes that figure, prefer the derivation and
-	// update every assertion that encoded the old number — say which in the report.
-}
-export function readStorage(owner?: string) {
-	if (owner === undefined) return /* existing */;
-	const mine = FIXTURE_STORAGE_BYTES[owner] ?? { block: 0, object: 0, file: 0 };
-	const classes = seeds.map(([id, label]) => ({ id, label, bytes: mine[id as 'block' | 'object' | 'file'] }));
-	return { totalBytes: classes.reduce((t, c) => t + c.bytes, 0), classes };
-}
-export function listDatabases(limit: number, owner?: string) { /* filter by fixtureOwnerOf(id) */ }
-export function readUtilization(now: Date, buckets = 18, owner?: string) { /* same series, seeded with `infra:${owner ?? ''}:${id}` so a domain's line differs from the estate's */ }
-export function readCost(now: Date, owner?: string) { /* categories scaled by the owner's share of nodes; sums across owners equal the estate — derive, do not seed twice */ }
-```
-
-Read each existing body before editing; the region→node seeds already exist (regions carry `nodeCount`), so `readNodeCounts(owner)` derives healthy/warning/down proportionally from the owned regions — state the rule in a comment.
-
-In `sources/fixtures/cloud.ts`, pass the owner: `async listRegions(ctx) { return estate.listRegions(ctx.binding?.externalId); }` and likewise for the others.
-
-- [ ] **Step 4: Run** — `bun test src` → green (the estate tests must not change: with `owner` undefined every function returns exactly what it did).
-
-- [ ] **Step 5: Commit** — `feat: the fixture cloud knows which domain owns what`
+- [ ] **Step 7: Commit** — `feat: a domain can ask the estate about its own resources`
 
 ---
 
@@ -923,40 +997,118 @@ In `sources/fixtures/cloud.ts`, pass the owner: `async listRegions(ctx) { return
 **Files:**
 
 - Modify: `src/lib/server/sources/providers/azure/map.ts` (`ArmResource` gains `tags?: Record<string, string>`)
-- Modify: `src/lib/server/sources/providers/azure/index.ts` (settings `ownerTagKey`; owner-keyed `loadMachines`; filter in every read; `readCost` filter)
-- Test: `src/lib/server/sources/providers/azure/provider.test.ts` (mapping tests + one floci-az test)
+- Modify: `src/lib/server/sources/providers/azure/index.ts` — settings `ownerTagKey`; `loadMachines(owner?)` as an owner-keyed `Map`; `listRegions(ctx)` and `readNodeCounts(ctx)` gain the `ctx` parameter they do not take today (`:170-176`); an `owned()` filter in `listClusters`/`readStorage`/`listDatabases`; `readCost` `filter.tags`
+- Test: `src/lib/server/sources/providers/azure/provider.test.ts` (append)
+
+**Self-contained against floci-az:** the emulator test PATCHes its own tag and restores it, so it does not depend on Task 9's seed.
 
 - [ ] **Step 1: Failing tests**
 
 ```ts
-describe('owner filtering', () => {
-	test('ownsResource is applied to every list', () => {
-		// pure: countNodes/regionsOf over machines with and without the tag — build two ArmVirtualMachine
-		// fixtures, one tagged { domain: 'payment-domain' }, one untagged; assert regionsOf(machines.filter(m => ownsResource(m.tags, 'domain', 'payment-domain'))) has one region.
+import { ownsResource } from '$lib/platform/ownership';
+
+describe('owner filtering (pure)', () => {
+	const vm = (
+		name: string,
+		location: string,
+		tags?: Record<string, string>
+	): ArmVirtualMachine => ({
+		id: `/subscriptions/s/resourceGroups/g/providers/Microsoft.Compute/virtualMachines/${name}`,
+		name,
+		location,
+		tags,
+		properties: { instanceView: { statuses: [{ code: 'PowerState/running' }] } }
+	});
+	test("regionsOf over the owned subset lists only the owner's regions", () => {
+		const machines = [
+			vm('a', 'eastus', { domain: 'payment-domain' }),
+			vm('b', 'westeurope'),
+			vm('c', 'westus2', { Domain: 'payment-domain' })
+		];
+		const mine = machines.filter((m) => ownsResource(m.tags, 'domain', 'payment-domain'));
+		expect(
+			regionsOf(mine)
+				.map((r) => r.id)
+				.sort()
+		).toEqual(['eastus', 'westus2']); // key case-insensitive
+		expect(countNodes(mine)).toEqual({ healthy: 2, warning: 0, down: 0 });
 	});
 });
+
+describe('no tag $filter is sent on ARM lists', () => {
+	test('an owner read lists the whole type and filters here', async () => {
+		const urls: string[] = [];
+		const server = Bun.serve({
+			port: 0,
+			fetch: (req) => {
+				urls.push(req.url);
+				return Response.json({ value: [] });
+			}
+		});
+		try {
+			const client = azureProvider.connect({
+				baseUrl: `http://localhost:${server.port}`,
+				subscriptionId: 'sub',
+				tenantId: 't',
+				clientId: 'c',
+				clientSecret: 'local-dev-only'
+			});
+			await client.listRegions!({
+				...context(),
+				binding: { kind: 'cloud', connectionId: 'az', externalId: 'payment-domain' }
+			});
+			expect(urls.length).toBeGreaterThan(0);
+			for (const u of urls) expect(new URL(u).searchParams.has('$filter')).toBe(false);
+		} finally {
+			server.stop(true);
+		}
+	});
+});
+
 describe.if(emulator)('against floci-az', () => {
+	const H = { authorization: 'Bearer local-dev-key', 'content-type': 'application/json' };
+	const VM =
+		'/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/cc-eastus/providers/Microsoft.Compute/virtualMachines/cc-eastus-node-1';
+	const patch = (tags: Record<string, string>) =>
+		fetch(`http://localhost:4577${VM}?api-version=2023-03-01`, {
+			method: 'PATCH',
+			headers: H,
+			body: JSON.stringify({ tags })
+		});
 	test("a tagged VM appears in its owner's regions and nowhere else", async () => {
-		// PATCH tags {domain:'zz-test-domain'} onto cc-eastus-node-1; call client.listRegions with
-		// ctx.binding = { kind:'cloud', connectionId:'azure-local', externalId:'zz-test-domain' } → exactly ['eastus'] with nodeCount 1;
-		// with externalId 'other' → []; finally PATCH tags {} to restore.
+		await patch({ domain: 'zz-test-domain' });
+		try {
+			const mine = await client.listRegions!({
+				...context(),
+				binding: { kind: 'cloud', connectionId: 'azure-local', externalId: 'zz-test-domain' }
+			});
+			expect(mine.map((r) => [r.id, r.nodeCount])).toEqual([['eastus', 1]]);
+			const other = await client.listRegions!({
+				...context(),
+				binding: { kind: 'cloud', connectionId: 'azure-local', externalId: 'zz-other' }
+			});
+			expect(other).toEqual([]);
+		} finally {
+			await patch({});
+		}
 	});
 });
 ```
 
-Write these fully (the emulator test uses `fetch` PATCH as the earlier spike did; `H = authorization: Bearer local-dev-key`).
+(`emulator`, `client`, `context()` already exist in this test file.)
 
 - [ ] **Step 2: Run → fails.**
 
 - [ ] **Step 3: Implement**
-  - `map.ts`: `export interface ArmResource { id; name; location; tags?: Record<string, string>; properties? }`.
-  - `index.ts` settings: `ownerTagKey: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(128)), 'domain')`.
-  - `loadMachines(owner?: string)`: `const windows = new Map<string, { at: number; rows: Promise<ArmVirtualMachine[]> }>();` keyed by `owner ?? ''`; the owner entry filters the fetched rows with `ownsResource(m.tags, settings.ownerTagKey, owner)` — never filtering the `''` entry in place.
-  - A local `const owned = <T extends ArmResource>(rows: T[], ctx: SourceContext) => ctx.binding ? rows.filter((r) => ownsResource(r.tags, settings.ownerTagKey, ctx.binding!.externalId)) : rows;` applied in `listClusters`, `readStorage`, `listDatabases` after each `collect`; `listRegions`/`readNodeCounts`/`readUtilization` use `loadMachines(ctx.binding?.externalId)`.
-  - `readCost(ctx)`: when `ctx.binding`, add `filter: { tags: { name: settings.ownerTagKey, operator: 'In', values: [ctx.binding.externalId] } }` to the query body.
-  - Docblock on the provider: the client-side check is the mechanism; server-side narrowing is the `docs/todo` ceiling (no `$filter` is sent).
+  - `map.ts`: `export interface ArmResource { id: string; name: string; location: string; tags?: Record<string, string>; properties?: Record<string, unknown>; }`
+  - Settings: `ownerTagKey: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(128)), 'domain')`.
+  - `loadMachines(owner?: string)`: replace the single memo with `const windows = new Map<string, { at: number; rows: Promise<ArmVirtualMachine[]> }>()` keyed `owner ?? ''`; the owner entry is `loadMachines().then((rows) => rows.filter((m) => ownsResource(m.tags, settings.ownerTagKey, owner)))` — derived from the estate window, never filtering it in place; the same 30s TTL per entry.
+  - `const owned = <T extends ArmResource>(rows: T[], ctx: SourceContext) => ctx.binding ? rows.filter((r) => ownsResource(r.tags, settings.ownerTagKey, ctx.binding!.externalId)) : rows;`
+  - `async listRegions(ctx) { return regionsOf(await loadMachines(ctx.binding?.externalId)); }`, `async readNodeCounts(ctx) { return countNodes(await loadMachines(ctx.binding?.externalId)); }`; `readUtilization(ctx)` uses `loadMachines(ctx.binding?.externalId)`; `listClusters`/`readStorage`/`listDatabases` apply `owned(rows, ctx)` after each `collect`. No `$filter` is added anywhere.
+  - `readCost(ctx)`: when `ctx.binding`, the body gains `filter: { tags: { name: settings.ownerTagKey, operator: 'In', values: [ctx.binding.externalId] } }`.
+  - Provider docblock: the client-side check is the mechanism; server-side narrowing via `/resources?$filter=tag…` is the `docs/todo` ceiling.
 
-- [ ] **Step 4: Run** — unit tests green; with floci-az up (`bun run db:up`), the emulator test green and the estate tests unchanged.
+- [ ] **Step 4: Run** — unit + wire tests green; with `bun run db:up` the emulator test green; estate tests unchanged.
 
 - [ ] **Step 5: Commit** — `feat: Azure answers for one domain by its tag`
 
@@ -967,23 +1119,24 @@ Write these fully (the emulator test uses `fetch` PATCH as the earlier spike did
 **Files:**
 
 - Modify: `src/lib/server/sources/providers/azure/mock/cost.ts`
-- Create: `src/lib/server/sources/providers/azure/mock/cost.test.ts`
+- Modify: `src/lib/server/sources/providers/azure/mock/cost.test.ts` (EXISTS with 5 tests — append; keep them green)
+
+**Shape rule:** real Cost Management with `grouping: [ServiceName]` returns ONE row per (day, service). After filtering by domain the mock must re-aggregate to that shape — never emit duplicate (day, service) rows. Only `mock/cost.ts` itself reads `CostEstate.rows` (verified: every other `buildEstate` in the tree is the Coralogix or Octopus mock), so the row tuple may gain an internal 5th element safely.
 
 - [ ] **Step 1: Failing tests**
 
 ```ts
 describe('cost mock, tag-aware', () => {
 	const now = new Date('2026-09-16T12:00:00Z');
+	const url =
+		'http://x/subscriptions/s/providers/Microsoft.CostManagement/query?api-version=2021-10-01';
 	const post = (body: unknown) =>
 		costMockHandler({ now })(
-			new Request(
-				'http://x/subscriptions/s/providers/Microsoft.CostManagement/query?api-version=2021-10-01',
-				{
-					method: 'POST',
-					headers: { authorization: 'Bearer local-dev-key', 'content-type': 'application/json' },
-					body: JSON.stringify(body)
-				}
-			)
+			new Request(url, {
+				method: 'POST',
+				headers: { authorization: 'Bearer local-dev-key', 'content-type': 'application/json' },
+				body: JSON.stringify(body)
+			})
 		);
 	const base = {
 		type: 'Usage',
@@ -994,36 +1147,61 @@ describe('cost mock, tag-aware', () => {
 			grouping: [{ type: 'Dimension', name: 'ServiceName' }]
 		}
 	};
-	test("unfiltered rows equal the sum of every domain's rows plus the untagged remainder", async () => {
-		/* … */
+	const withTag = (value: string) => ({
+		...base,
+		dataset: {
+			...base.dataset,
+			filter: { tags: { name: 'domain', operator: 'In', values: [value] } }
+		}
 	});
-	test("filter.tags narrows to one domain and its total is smaller than the estate's", async () => {
-		const estate = await (await post(base)).json();
-		const mine = await (
-			await post({
-				...base,
-				dataset: {
-					...base.dataset,
-					filter: { tags: { name: 'domain', operator: 'In', values: ['payment-domain'] } }
-				}
-			})
-		).json();
-		const total = (r: { properties: { rows: [number][] } }) =>
-			r.properties.rows.reduce((t, [c]) => t + c, 0);
+	type Row = [number, number, string, string];
+	const rowsOf = async (r: Response) =>
+		((await r.json()) as { properties: { rows: Row[] } }).properties.rows;
+	const total = (rows: Row[]) => rows.reduce((t, [c]) => t + c, 0);
+
+	test('unfiltered rows are one per (day, service) and exceed the sum of every domain', async () => {
+		const estate = await rowsOf(await post(base));
+		const keys = estate.map(([, d, s]) => `${d}|${s}`);
+		expect(new Set(keys).size).toBe(keys.length);
+		let sum = 0;
+		for (const d of [
+			'payment-domain',
+			'order-domain',
+			'user-domain',
+			'inventory-domain',
+			'notification-domain'
+		])
+			sum += total(await rowsOf(await post(withTag(d))));
+		expect(sum).toBeLessThan(total(estate)); // an untagged remainder exists
+		expect(sum).toBeGreaterThan(total(estate) * 0.5); // and most spend is attributed
+	});
+	test('a tag filter narrows to one domain, re-aggregated to one row per (day, service)', async () => {
+		const mine = await rowsOf(await post(withTag('payment-domain')));
 		expect(total(mine)).toBeGreaterThan(0);
-		expect(total(mine)).toBeLessThan(total(estate));
+		const keys = mine.map(([, d, s]) => `${d}|${s}`);
+		expect(new Set(keys).size).toBe(keys.length);
 	});
 	test('an unknown tag value has no rows', async () => {
-		/* … values: ['tax-domain'] → rows [] */
+		expect(await rowsOf(await post(withTag('tax-domain')))).toEqual([]);
+	});
+	test('a body that is not JSON is a 400 with an error code, not a crash', async () => {
+		const r = await costMockHandler({ now })(
+			new Request(url, {
+				method: 'POST',
+				headers: { authorization: 'Bearer local-dev-key' },
+				body: '{'
+			})
+		);
+		expect(r.status).toBe(400);
 	});
 });
 ```
 
 - [ ] **Step 2: Run → fails** (handler ignores the body / is sync).
 
-- [ ] **Step 3: Implement** — `buildEstate` gains a domain axis: for each `SERVICES` entry, split the daily rate across `boundDomains('seed')` by a seeded share plus an `''` (untagged) remainder; `CostEstate.rows` gains a 5th element `domain: string`. `costMockHandler` becomes `async (request): Promise<Response>`; parses `await request.json()`; reads `dataset.filter?.tags` (`name`, `values`); filters rows by domain; responds with the 4-column shape the real API declares (drop the domain column on output). `startCostMock` unchanged. Comment WHY: "answer the real request shape, seeded per (domain, service); the estate total is the sum over domains plus untagged — one fixture derived from the other."
+- [ ] **Step 3: Implement** — `CostEstate.rows` becomes `Array<[number, number, string, string, string]>` (5th: domain slug or `''`). `buildEstate` splits each service's daily rate across `boundDomains('seed')` plus `''` by a seeded share (`buildSeries(\`azure-cost:${service}:${domain}\`, …)`), so per-(day, service) sums reproduce today's totals. `costMockHandler`becomes`async (request: Request): Promise<Response>`; on POST: `const body = await request.json().catch(() => null); if (!body) return Response.json({ error: { code: 'BadRequest', message: 'Body is not JSON.' } }, { status: 400 });`; `const wanted = body.dataset?.filter?.tags?.values as string[] | undefined`; `rows = wanted ? estate.rows.filter((r) => wanted.includes(r[4])) : estate.rows`; then re-aggregate by `(usageDate, service)` summing cost, and emit the 4-column shape (`COLUMNS` unchanged). Docblock: "answer the real request shape; the estate total is the sum over domains plus untagged — one fixture derived from the other."
 
-- [ ] **Step 4: Run** — green; `provider.test.ts`'s cost test still passes (unfiltered shape unchanged).
+- [ ] **Step 4: Run** — `bun test src/lib/server/sources/providers/azure` → the 5 existing + 4 new green; `provider.test.ts`'s cost test unchanged.
 
 - [ ] **Step 5: Commit** — `feat: the cost mock answers a tag filter the way Cost Management does`
 
@@ -1034,21 +1212,30 @@ describe('cost mock, tag-aware', () => {
 **Files:**
 
 - Modify: `scripts/seed-azure.ts` (every `put()` body)
-- Test: covered by Task 7's emulator test plus `bun run seed:azure` idempotency
 
-- [ ] **Step 1:** Add `import { OWNER_TAG_KEY, seedOwnerOf } from '../src/lib/platform/ownership';` and a helper:
+**Dependency:** Task 7 does not need this (its emulator test tags its own VM); the Azure-mode e2e in Task 11 does. Tag by GROUP for everything in a region group; by NAME for the four PostgreSQL servers, which override their group.
+
+- [ ] **Step 1:** `import { OWNER_TAG_KEY, seedOwnerOf } from '../src/lib/platform/ownership';` and:
 
 ```ts
-/** Every resource carries its owner as a tag — the seed's half of "ownership by tag". */
-function tagged<T extends object>(body: T, name: string): T & { tags?: Record<string, string> } {
-	const owner = seedOwnerOf(name);
+/** The seed's half of "ownership by tag": every resource carries the domain that owns it. */
+function tagged<T extends object>(body: T, ownerOf: string): T & { tags?: Record<string, string> } {
+	const owner = seedOwnerOf(ownerOf);
 	return owner ? { ...body, tags: { [OWNER_TAG_KEY]: owner } } : body;
 }
 ```
 
-Wrap: the resource group body (`tagged({ location }, group)`), each VM (`tagged(vmBody(...), group)` — VMs inherit the group's owner), the AKS (`tagged({...}, \`${group}-aks\`)`), the storage account (`tagged({...}, \`ccst${location.slice(0,12)}\`)`), each PostgreSQL server (`tagged({...}, \`cc-${name}\`)`).
+Wrap every body: resource group → `tagged({ location }, group)`; each VM → `tagged(vmBody(location, state), group)`; AKS → `tagged({...}, group)`; storage account → `tagged({...}, group)` (its own truncated name is deliberately NOT in the ownership table); each PostgreSQL server → `tagged({...}, \`cc-${name}\`)`.
 
-- [ ] **Step 2:** `bun run seed:azure` against a running floci-az (`bun run db:up`); then `curl` one VM and one database and confirm `tags.domain`. Run Task 7's emulator test.
+- [ ] **Step 2:** With floci-az up: `bun run seed:azure`; then
+
+```bash
+S=/subscriptions/00000000-0000-0000-0000-000000000001; H="authorization: Bearer local-dev-key"
+curl -s -H "$H" "http://localhost:4577$S/resourceGroups/cc-southeastasia/providers/Microsoft.Storage/storageAccounts/ccstsoutheastasi?api-version=2023-01-01" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tags'))"   # → {'domain': 'notification-domain'}
+curl -s -H "$H" "http://localhost:4577$S/resourceGroups/cc-westeurope/providers/Microsoft.DBforPostgreSQL/flexibleServers/cc-orders?api-version=2023-03-01-preview" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tags'))"   # → {'domain': 'order-domain'} (overrides the group's payment-domain)
+```
+
+Then run Task 7's emulator test again (still green — it restores its own tag).
 
 - [ ] **Step 3: Commit** — `feat: the seed tags every resource with the domain that owns it`
 
@@ -1080,8 +1267,10 @@ export interface DomainInfrastructureSnapshot {
 	regions: Panel<InfraRegion[]>;
 	clusters: Panel<ClusterLoad[]>;
 	databases: Panel<DatabaseInstance[]>;
-	utilization: Panel<ResourceReading[]>;
-	cost: Panel<CostBreakdown>;
+	// VIEW types, converted in the assembler with toUsageView / toCostView exactly as
+	// infrastructure-view.ts does — UtilizationCard and CostCard take these, not the raw facts.
+	utilization: Panel<ResourceUsage[]>;
+	cost: Panel<CostBreakdownView>;
 }
 export function buildDomainInfrastructureSnapshot(
 	platform: PlatformSource,
@@ -1107,7 +1296,9 @@ test('an unbound domain: all seven no-binding, unbound true, and the strip is th
 test('a bound domain missing cloud.storage alone: storageBytes null, unbound false', …);      // routersWithout('cloud.storage')
 test('a bound domain missing cloud.nodes: summary is the gap, other panels ok', …);
 test('unknown slug → null', …);
-test('toInfraSummaryView prints 100+ at the limit and a dash for null storage', …);
+test('toInfraSummaryView prints 100+ at the limit and a dash for a null cell', …);
+// `InfraSummary` is never published — the seven API paths carry the resources, not the strip — so
+// `count`/`atLimit` are asserted on `toInfraSummaryView` only (Task 13 corrects the spec's testing row).
 ```
 
 - [ ] **Step 2: Run → fails.**
@@ -1138,9 +1329,11 @@ export async function buildDomainInfrastructureSnapshot(
 			data: await infrastructure.listDatabases(scope, LIMIT, owner)
 		})),
 		panel('cloud.utilization', async () => ({
-			data: await infrastructure.readUtilization(scope, owner)
+			data: (await infrastructure.readUtilization(scope, owner)).map(toUsageView)
 		})),
-		panel('cloud.cost', async () => ({ data: await infrastructure.readCost(scope, owner) })),
+		panel('cloud.cost', async () => ({
+			data: toCostView(await infrastructure.readCost(scope, owner))
+		})),
 		panel('cloud.storage', async () => ({ data: await infrastructure.readStorage(scope, owner) }))
 	]);
 	// The strip is composed, not read: no node count, no strip; a storage-only gap is a null cell.
@@ -1192,12 +1385,12 @@ export async function buildDomainInfrastructureSnapshot(
 
 - Modify: `src/routes/domains.remote.ts` (`getDomainInfrastructure`)
 - Create: `src/routes/domains/[slug]/infrastructure/+page.svelte`
-- Create: `src/lib/components/domains/DomainInfraSummary.svelte`, `DomainInfraRegions.svelte` (reuse `RegionHealthCard` if its props fit — read it first), `DomainInfraClusters.svelte`, `DomainInfraDatabases.svelte` (reuse `DatabasesCard`/`ComputeCard` if they take `Panel<T>`), utilisation via existing `UtilizationCard`, cost via existing `CostCard`
+- Create: `src/lib/components/domains/DomainInfraSummary.svelte` ONLY. Every infrastructure card already takes `Panel<T>` (verified): REUSE `RegionHealthCard` (`Panel<InfraRegion[]>`), `ComputeCard` (`Panel<NodeCounts>` + `Panel<ClusterLoad[]>`), `DatabasesCard` (`Panel<DatabaseInstance[]>`), `UtilizationCard` (`Panel<ResourceUsage[]>`), `CostCard` (`Panel<CostBreakdownView>`) as-is — the snapshot carries the view types they need (Task 10). Read each card's title/noun props and pass domain-appropriate copy.
 - Modify: `src/routes/domains/[slug]/[tab]/+page.ts` (`_BUILT_TABS` + `'infrastructure'`), `e2e/harness.ts` (`ROUTES` + `'/domains/payment-domain/infrastructure'`), `src/lib/server/platform/capability-gaps.test.ts` (two `SCREENS` entries: `'domain infrastructure'` slug `'payment-domain'`; `'domain infrastructure (unbound)'` slug `'tax-domain'`), `request-budget.test.ts` + `warm-budget.test.ts` (rows, MEASURED)
 
 - [ ] **Step 1:** Remote: `export const getDomainInfrastructure = query(scopedServiceSchema, async ({ slug, ...scope }) => readDomainInfrastructure(scope, slug));`
 - [ ] **Step 2:** Page, following `domains/[slug]/deployments/+page.svelte`: `getDomainHeader` for chrome; `{#if snapshot.unbound}` → one sentence `{gapSentence('no-binding', 'cloud', 'infrastructure')}` above the strip; else the six panels each with `PanelGap` fallback. Prefer the existing infrastructure cards where they already accept `Panel<T>` (`RegionHealthCard`, `ComputeCard`, `DatabasesCard`, `UtilizationCard`, `StorageCard`, `CostCard` all import `PanelGap` — read their props; wrap rather than fork).
-- [ ] **Step 3:** `_BUILT_TABS`, `ROUTES`, two sweep entries, budget rows with measured numbers (`cost()` helper; comment the numbers).
+- [ ] **Step 3:** `_BUILT_TABS`, `ROUTES`, two sweep entries, budget rows with measured numbers (`cost()` helper; comment the numbers). The unbound entry (`tax-domain`) short-circuits on `no-binding` for every dropped capability — it proves the unbound path renders, not capability gaps; say so in its comment.
 - [ ] **Step 4:** Browser: `bun run build && PORT=4907 ORIGIN=http://localhost:4907 bun ./build/index.js`; `/domains/payment-domain/infrastructure` (strip `11/12`-style counts under fixtures will be fixture numbers — record them), `/domains/tax-domain/infrastructure` (one "Not bound" sentence, no zeros), `/domains/no-such/infrastructure` (not-found). `bun test e2e/render.test.ts` green in all stacks available.
 - [ ] **Step 5: Commit** — `feat: a domain's Infrastructure tab — what it runs on, by its tag`
 
@@ -1220,7 +1413,7 @@ export async function buildDomainInfrastructureSnapshot(
 ### Task 13: Docs
 
 - `CLAUDE.md`: State (6 of 8 domain tabs; 43 paths — measured; test count — measured; e2e routes — measured); "Data sources" section: ownership by tag, `routeOne`, the connection-resolution rule, the gap-sentence single source, the server-side-narrowing ceiling; budget table rows (measured).
-- Spec: "Corrections during implementation" section (e.g. nullable `clusters`/`databases` in `InfraSummary` from Task 10).
+- Spec: "Corrections during implementation" section: nullable `clusters`/`databases` cells; the snapshot carries VIEW types for utilisation/cost; the `count`/`atLimit` testing row is asserted on `toInfraSummaryView` only (the strip is never published); `gapSentence('no-binding')` is key-agnostic; the 501 `message` wording change; `readUtilization(now, owner?, buckets)` order; the seed tags storage by group (truncated names).
 - `docs/todo/`: close `adopt-dispatcher-one.md` (delete or mark done); NEW `azure-owner-server-side-narrowing.md` (the `/resources?$filter` / Resource Graph ceiling); update `unbuilt-screen-sections.md` (domain 6 of 8); README table.
 - Commit `docs: record ownership by tag and what it cost`.
 
