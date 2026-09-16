@@ -332,7 +332,8 @@ import type { Panel } from './sources';
 
 import type { GapReason, SourceRef } from './sources';
 // Check `SourceRef`'s exact fields in src/lib/platform/sources.ts:60-70 first; the literal must satisfy the type without a cast.
-\1\n\tconnectionId: 'x',
+const source: SourceRef = {
+	connectionId: 'x',
 	name: 'x',
 	providerId: 'x',
 	kind: 'cloud',
@@ -869,7 +870,7 @@ In `sources/fixtures/cloud.ts`: `async listRegions(ctx) { return estate.listRegi
 - Modify: `src/lib/server/platform/source.ts:300-331` (`InfrastructureSource`, methods ~:304-330)
 - Modify: `src/lib/server/platform/fixture-source.ts:230-274` (`FixtureInfrastructureSource` — add the optional parameter to every method and forward it to the Task 5 functions)
 - Modify: `src/lib/server/sources/routers/infrastructure.ts` (whole file), `routers/index.ts:31`
-  \1
+- Modify: `src/lib/server/sources/routers/infrastructure.test.ts:13-26` — its existing `build()` calls `createInfrastructureRouter(deps)` with ONE argument and returns `{ registry, source }`; update it to pass `new FixtureCatalogSource()` and keep the return shape
 - Modify: `src/lib/server/sources/boot.test.ts:106` — the OTHER one-argument `createInfrastructureRouter(deps)` call; a `catalog` is already in scope at `:105` — pass the CatalogSource it holds. Grep `createInfrastructureRouter(` to confirm these two plus `routers/index.ts` are the only call sites.
 - Modify: `src/lib/server/sources/routers/dispatch-tiers.test.ts:30-52` — `Helper`, `ALLOWED`, and a second pattern
 
@@ -1249,7 +1250,9 @@ Then run Task 7's emulator test again (still green — it restores its own tag).
 
 ### Task 10: service.ts readers, the assembler, and `toInfraSummaryView`
 
-\1
+**Files:**
+
+- Modify: `src/lib/server/platform/service.ts:317-350` (seven readers gain `owner?`); add `readDomainInfrastructure`
 
 - Create: `src/lib/server/testing/routers-without.ts` — `routersWithout(dropped: readonly Capability[])` moved verbatim out of `capability-gaps.test.ts:131-160` and exported; the sweep then imports it (its behaviour must not change — run the sweep before and after the move)
 - Modify: `src/lib/platform/types.ts` (`InfraSummary`, `DomainInfrastructureSnapshot`)
@@ -1269,10 +1272,10 @@ export interface DomainInfrastructureSnapshot {
 	generatedAt: string;
 	domain: Domain;
 	unbound: boolean;
-\1
+	summary: Panel<InfraSummary>;
 	/** The nodes panel itself — `ComputeCard` takes `Panel<NodeCounts>` beside the clusters. */
 	nodes: Panel<NodeCounts>;
-\2
+	regions: Panel<InfraRegion[]>;
 	clusters: Panel<ClusterLoad[]>;
 	databases: Panel<DatabaseInstance[]>;
 	// VIEW types, converted in the assembler with toUsageView / toCostView exactly as
