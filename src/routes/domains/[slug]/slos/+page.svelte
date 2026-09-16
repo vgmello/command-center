@@ -68,7 +68,13 @@
 						{#if headline.status === 'ok'}
 							<div class="flex flex-wrap items-baseline justify-between gap-2">
 								<span class="tabular text-[26px] leading-none font-semibold">
-									{formatPercent(headline.data.compliancePct)}
+									<!--
+										One decimal, matching `domain-view.ts`'s header tile
+										(`formatPercent(vitals.sloCompliancePct, 1)`) — this card restates
+										that exact figure, and printing it to a different precision would
+										read as two measurements rather than one.
+									-->
+									{formatPercent(headline.data.compliancePct, 1)}
 								</span>
 								<span class="tabular text-[11.5px] text-muted-foreground">
 									{headline.data.windowLabel}
