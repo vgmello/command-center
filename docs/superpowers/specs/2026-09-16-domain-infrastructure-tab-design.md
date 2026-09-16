@@ -1,7 +1,7 @@
 # Domain detail: the Infrastructure tab
 
 **Date:** 2026-09-16
-**Status:** revised after fresh-agent review round 1 (3 Critical, 4 Important, 1 Minor — all addressed); round 2 before planning
+**Status:** revised after review rounds 1 and 2 (round 2: 3 not-closed, 2 new Critical, 1 Minor — all addressed); round 3 before planning
 
 ## Goal
 
@@ -53,23 +53,34 @@ they remain stated gaps on both screens.
 ### Router
 
 - No `owner`: unchanged — `fanOut` / `fanOutSingle` as today.
-- `owner` present: the router resolves the domain's `cloud` binding. **This is new wiring**:
-  `createInfrastructureRouter(deps)` has no catalog today (its own docstring says "no catalog
-  side"). It gains the same `catalog.platform` argument the platform and service routers
-  already receive from `createRouters()`, and calls `findDomain` for the bindings. Unknown slug
-  or no `cloud` binding → throw `CapabilityUnavailableError` with reason `'no-binding'`
-  (already in `GapReason`).
+- `owner` present: the router resolves the domain's **declared** `cloud` binding. This is new
+  wiring: `createInfrastructureRouter(deps)` has no catalog today ("no catalog side" is its own
+  docstring). It gains the **`CatalogSource`** — the `catalog.services` argument `createRouters()`
+  already passes to the service router (the platform `Domain` type carries no `bindings`; only
+  `CatalogDomain` does, via `CatalogSource.findDomain(slug)`). It reads
+  `record.bindings.find(b => b.kind === 'cloud')` **directly — never through `bindingFor`**, whose
+  fallback synthesises a slug-derived binding for APM identity and would make every one of the
+  25 domains look bound. Unknown slug or no declared cloud binding → throw
+  `CapabilityUnavailableError` with reason `'no-binding'` (already in `GapReason`).
 - Binding found → dispatch through a **new, cached** helper `routeOne` in `routers/shared.ts`,
-  beside `fanOut` / `fanOutSingle` / `fanOutSeries`. It wraps `dispatcher.one()` — which today
-  bypasses the cache entirely — in `deps.cache.read` keyed
-  `{ connectionId: binding.connectionId, capability, args: 'owner=<slug>' }`, honouring the
-  capability's tier exactly as `fanOutSingle` does. Without this, every tab view re-issues the
-  full upstream chain (the utilisation read alone is one Monitor call per machine) on every
-  refresh tick — the opposite of scalable. With it, a domain's answer is cached per owner and
-  can never be served to the estate or to another domain, because the owner is in the key.
-  `routeOne` is the first real caller of `dispatcher.one()`; the standing todo closes.
-- `dispatch-tiers.test.ts` gains `routeOne` as a recognised dispatch helper so the tier
-  agreement check still covers every read.
+  beside `fanOut` / `fanOutSingle` / `fanOutSeries`:
+  - **Connection resolution.** `dispatcher.one()` does `registry.connection(binding.connectionId)`,
+    so the catalog's `connectionId: ''` ("whichever connection of this kind answers") would throw
+    `'no-connection'` on every read — `one()` has never been exercised with an empty id.
+    `routeOne` resolves `''` first via `registry.supporting(capability)`: exactly one connection →
+    use it; zero → `'no-connection'`; more than one → `'no-connection'`, and the panel copy says a
+    binding must name its connection when several clouds are connected. `one()` itself is
+    unchanged.
+  - **Cache.** `one()` bypasses the cache entirely; `routeOne` wraps it in `deps.cache.read` keyed
+    `{ connectionId: <resolved id>, capability, args: scopedArgs(scope, 'owner=<slug>') }` — the
+    same `scopedArgs` every fan-out uses, so environment and time range are in the key. Without
+    the owner, a domain's answer would be served to the estate; without the scope, production's
+    numbers would be served under staging's heading — `scopedArgs`'s own comment names that
+    failure. Tier semantics as `fanOutSingle`.
+  - Without `routeOne`, every tab view re-issues the full upstream chain on every refresh tick
+    (utilisation alone is one Monitor call per machine) — the opposite of scalable.
+  - `routeOne` is the first real caller of `dispatcher.one()`; the standing todo closes.
+- `dispatch-tiers.test.ts` gains `routeOne` as a recognised dispatch helper.
 
 ### Providers honour `ctx.binding` inside their existing methods
 
@@ -138,11 +149,12 @@ Route `domains/[slug]/infrastructure`; `_BUILT_TABS` gains `'infrastructure'`; h
 
 Six `panel()`-wrapped reads, each passing `owner = slug`: `cloud.nodes` (strip), `cloud.regions`,
 `cloud.clusters`, `cloud.databases`, `cloud.utilization`, `cloud.cost`; `cloud.storage` feeds
-the strip's fourth cell. **Strip counts:** nodes from `readNodeCounts(owner)`; clusters and
-databases are the `length` of the same arrays the tables render, fetched with `limit = 100` —
-a domain owns few, and the cell prints `100+` if the array hits the limit rather than a count
-that is silently a floor. No separate `listGroups(owner)`; two reads for one number would be
-the two-renderings smell. `findDomain` is a catalog read and stays unwrapped; unknown slug → null.
+the strip's fourth cell. **Strip counts are facts, rendered above the port:** `InfraSummary = { nodes: NodeCounts,
+clusters: { count: number; atLimit: boolean }, databases: { count: number; atLimit: boolean },
+storageBytes: number }`. `count` is the `length` of the same arrays the tables render (fetched
+with `limit = 100`); `atLimit` is `length === limit`. The pure layer's `toInfraSummaryView` prints
+`100+` when `atLimit` — the API publishes `count` and `atLimit`, never the string. No separate
+`listGroups(owner)`; two reads for one number would be the two-renderings smell. `findDomain` is a catalog read and stays unwrapped; unknown slug → null.
 
 **Unbound domain:** all six panels are `unavailable` / `'no-binding'`; the page renders one
 sentence once ("Not bound to a cloud — no resources are tagged `domain=<slug>`") above the
@@ -154,9 +166,25 @@ utilization: Panel<ResourceReading[]>, cost: Panel<CostBreakdown> }`.
 
 ## Public API
 
-`GET /api/v1/domains/{slug}/infrastructure` → the summary and the six resources, measurements
-only (bytes, counts, percentages, seconds); 404 unknown slug; 501 on a gap via `requirePanel`.
-`@swagger` block, schemas via `openApiComponents()`, regenerated `components.yaml`.
+The composite `DomainInfrastructureSnapshot` stays **private** to the remote function — a
+screen composite is never published. The resources it is composed from are, mirroring the
+estate's own paths one for one:
+
+```
+GET /api/v1/domains/{slug}/infrastructure/regions
+GET /api/v1/domains/{slug}/infrastructure/nodes
+GET /api/v1/domains/{slug}/infrastructure/clusters
+GET /api/v1/domains/{slug}/infrastructure/databases
+GET /api/v1/domains/{slug}/infrastructure/utilization
+GET /api/v1/domains/{slug}/infrastructure/storage
+GET /api/v1/domains/{slug}/infrastructure/cost
+```
+
+Each reuses the estate endpoint's DTO mapper (same shape, scoped data — a caller who knows
+`/infrastructure/regions` knows `/domains/{slug}/infrastructure/regions`); 404 unknown slug;
+501 via `requirePanel` when the read is a gap, including the unbound case. `@swagger` blocks,
+schemas already exist in `openApiComponents()`; `components.yaml` regenerated. Seven paths →
+43 total.
 
 ## Testing
 
