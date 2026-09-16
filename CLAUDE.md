@@ -241,6 +241,34 @@ connected, for capabilities the new one does not declare. Invented numbers with 
 the page admitting it, which is the failure this whole section exists to prevent. Found by
 looking at a running page, not by a test.
 
+**A domain owns a cloud resource by tag, not by a second catalog.** `CatalogDomain.bindings`
+gains a `cloud` binding whose `externalId` is the tag value (`domain=<slug>`) — the router
+reads it straight off the declared catalog record, never through `bindingFor()`'s fallback,
+which synthesises a binding for APM identity and would make every domain look bound. That
+needed a dispatch `dispatcher.one()` didn't have: it has no cache and cannot resolve the
+catalog's empty `connectionId` (`registry.connection('')` throws), so `routeOne`
+(`routers/shared.ts`) resolves first — exactly one connection supporting the capability →
+use it, none → `no-connection` (no connection of the kind) or `no-capability` (the kind
+exists, nobody declares it), more than one → the new `GapReason` `'ambiguous-connection'` —
+then caches the result under `scopedArgs(scope, 'owner=<slug>')`, the same key shape every
+fan-out already uses. Domain infrastructure reads are the first callers of `dispatcher.one()`;
+the estate's own reads still fan out across every connection of a kind, by design — one
+domain has one binding, an estate has however many connections are configured. One function,
+`gapSentence`, is now the only place a gap becomes a sentence — `PanelGap.svelte` and the 501
+`message` both call it, so `'no-binding'` (key-agnostic, since `ownerTagKey` is a provider
+setting a sentence must not name) reads the same on the page and on the wire.
+
+**The Azure filter is client-side, and that has a ceiling.** floci-az ignores `$filter`
+entirely, and ARM itself documents tag `$filter` only on `/subscriptions/{id}/resources` and
+the resource-group list — not on the type-specific lists (`Microsoft.Compute/virtualMachines`
+and the rest) this provider already calls — so ownership is decided by fetching everything
+and checking `tags[ownerTagKey]` in memory. `owned()` runs after `collect(limit)` in the
+three list methods, so a domain inside a subscription larger than `limit` undercounts;
+`docs/todo/azure-owner-server-side-narrowing.md` names the fix (`/resources?$filter=…` or
+Resource Graph) and why it isn't built yet. floci-az also drops `tags` on
+`Microsoft.Storage/storageAccounts` on both `PUT` and `PATCH`, so the local Azure-mode
+strip's storage cell reads a dash rather than a number until the emulator persists them.
+
 Two consequences for new work:
 
 - **An assembler's source-backed reads are wrapped; its catalog reads are not.** The
@@ -414,18 +442,19 @@ currently measures 15/45/20 for domains/deployments/service metrics against the 
 below) — neither harness is wrong, they are simply two different cold starts, and the table
 picks one rather than silently averaging or omitting the disagreement:
 
-| Screen             | Cold | Warm |
-| ------------------ | ---: | ---: |
-| overview           |   20 |   17 |
-| domains            |   14 |   14 |
-| domain detail      |   56 |   55 |
-| domain services    |   10 |   10 |
-| domain deployments |   50 |   50 |
-| domain slos        |   14 |   10 |
-| deployments        |   48 |   12 |
-| service detail     |   30 |   28 |
-| service metrics    |   16 |   12 |
-| infrastructure     |    0 |    0 |
+| Screen                | Cold | Warm |
+| --------------------- | ---: | ---: |
+| overview              |   20 |   17 |
+| domains               |   14 |   14 |
+| domain detail         |   56 |   55 |
+| domain services       |   10 |   10 |
+| domain deployments    |   50 |   50 |
+| domain slos           |   14 |   10 |
+| deployments           |   48 |   12 |
+| service detail        |   30 |   28 |
+| service metrics       |   16 |   12 |
+| infrastructure        |    0 |    0 |
+| domain infrastructure |    5 |    5 |
 
 `domain detail` rose from 9/9 because it no longer 404s the moment the APM source has no
 vitals for the domain (Task 8b) — it renders, and most of the cost is Octopus's window: that
@@ -439,7 +468,12 @@ deployments` and `domain slos` are the two new tabs this branch built (Tasks 9 a
 `service metrics` moved from 18/12 to 16/12 between when this table was last written and
 this measurement — a change in what was measured, not a claim that `request-budget.test.ts`
 measured it wrong; the two files count different things by construction, per the note
-above.
+above. `domain infrastructure` is five requests cold and warm alike, in both harnesses, and
+all five are Coralogix: `findDomain`'s `apm.serviceHealth` fan-out, `live` tier by design.
+The tab's own seven cloud reads cost nothing to measure because they run against the
+in-process fixture cloud; `routeOne`'s cache is what keeps a real connection from repeating
+that cost on the next view, and the row exists to prove that promise rather than to describe
+today's zero.
 
 Deployments was 45 warm — the same as cold — and it was the whole reason to look. Measured
 per capability, the live log cost 6 of that and `readTrends` and `readStatusTrend` cost 45
@@ -795,7 +829,7 @@ Note that `bun test` cannot compile `.svelte` files, so component rendering is o
 
 ### Tests that run the app, not just its logic
 
-`bun test src` is the logic suite: 898 tests, a few seconds, nothing booted. `bun run
+`bun test src` is the logic suite: 955 tests, a few seconds, nothing booted. `bun run
 test:e2e` builds the app, starts `build/index.js`, and asks it questions over HTTP. The two
 answer different things, and the split is not academic — every rendering bug this repo has
 had passed `check`, `lint` and the full unit suite:
@@ -897,12 +931,12 @@ an `@` costs its full length in every session, whether or not the session touche
 
 Overview, Domains, Deployments, the Service detail view and Infrastructure built and
 verified, plus the service Metrics tab and the Domain detail view. The domain tab strip is
-5 of 8 built — overview, dependencies, services, deployments, slos — with alerts,
-infrastructure and logs each pending their own spec; `_BUILT_TABS` in
+6 of 8 built — overview, dependencies, services, deployments, slos, infrastructure — with
+alerts and logs each pending their own spec; `_BUILT_TABS` in
 `src/routes/domains/[slug]/[tab]/+page.ts` is the guard the route-level test asserts against,
-so the two cannot drift. `bun test src` (898 tests), `bun run check`, `bun run lint` and
+so the two cannot drift. `bun test src` (955 tests), `bun run check`, `bun run lint` and
 `bun run build` all pass, the e2e suites pass against every stack whose backends are up
-(`e2e/harness.ts`'s `ROUTES` covers 21 paths), and the production server boots and serves.
+(`e2e/harness.ts`'s `ROUTES` covers 22 paths), and the production server boots and serves.
 
 What exists:
 
@@ -912,15 +946,16 @@ What exists:
 - `src/lib/server/platform/` — the `PlatformSource` / `WorkspaceSource` ports, the fixture
   implementation, the resolver, and one assembler per screen (`snapshot.ts` for the
   overview, `domains-view.ts`, `deployments-view.ts`, `service-view.ts`,
-  `service-metrics-view.ts`, `domain-view.ts`, `infrastructure-view.ts`). **Replacing the fixture with real
+  `service-metrics-view.ts`, `domain-view.ts`, `infrastructure-view.ts`,
+  `domain-infrastructure-view.ts`). **Replacing the fixture with real
   telemetry is a new file plus a resolver entry**; nothing above the ports changes
 - `src/lib/server/platform/service.ts` — the in-process API both transports call
 - `src/routes/shell.remote.ts` — `getShell`, `getSystemStatus`
 - `src/routes/overview.remote.ts` — `getOverview`
 - `src/routes/domains.remote.ts` — `getDomainPage`, `getDomainsView`, `getDomainView`,
   `getDomainHeader` (the tab strip's shared header/badges read), `getDomainDependencies`,
-  `getDomainServices`, `getDomainDeployments`, `getDomainSlos` — one query per built tab,
-  by the "split queries by how often they change" rule
+  `getDomainServices`, `getDomainDeployments`, `getDomainSlos`, `getDomainInfrastructure` —
+  one query per built tab, by the "split queries by how often they change" rule
 - `src/routes/deployments.remote.ts` — `getDeploymentPage`, `getDeploymentsView`
 - `src/routes/services.remote.ts` — `getServices`, `getServiceView`, `getServiceMetrics`
   (its own query: the two tabs are never on screen together, and six series is a lot to
@@ -929,9 +964,11 @@ What exists:
   every panel reflects the same estate at the same moment. All remote
   functions are Valibot-validated against the schemas the JSON API shares, the service
   slug included: it arrives from a URL anyone can edit
-- `src/routes/api/v1/` — public JSON API, thirty-six paths: `domains` (+ `summary`,
+- `src/routes/api/v1/` — public JSON API, forty-three paths: `domains` (+ `summary`,
   `owners`, `changes`, `{slug}` and its `vitals`, `dependencies`, `services`,
-  `deployments`, `slo`), `services` (+ `{slug}` and its `health`, `dependencies`,
+  `deployments`, `slo`, and `infrastructure`'s seven — `regions`, `nodes`, `clusters`,
+  `databases`, `utilization`, `storage`, `cost` — the estate's own resources mirrored one
+  for one, narrowed to the domain), `services` (+ `{slug}` and its `health`, `dependencies`,
   `endpoints`, `metrics`, `slo`, `insights`), `deployments` (+ `summary`), `infrastructure` (+ `regions`,
   `nodes`, `clusters`, `utilization`, `storage`, `databases`, `queues`, `alerts`,
   `cost`), `activity`, `insights`, `metrics`, `incidents`, `sources`, `status`.

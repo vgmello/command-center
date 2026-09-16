@@ -311,3 +311,68 @@ schemas already exist in `openApiComponents()`; `components.yaml` regenerated. S
 
 Queues and alerts (own specs); multi-owner or hierarchical ownership; per-domain infrastructure
 history; editing tags from this UI.
+
+## Corrections during implementation
+
+- **"The tab"** — `InfraSummary.clusters` and `InfraSummary.databases` are
+  `{ count: number; atLimit: boolean } | null`, not the non-nullable shape the strip's field
+  list implied. A `cloud.clusters` or `cloud.databases` gap makes that one cell a dash without
+  collapsing the whole strip, the same rule `storageBytes` already followed.
+- **"The tab"** — `DomainInfrastructureSnapshot.utilization` and `.cost` carry the pure layer's
+  VIEW types (`Panel<ResourceUsage[]>`, `Panel<CostBreakdownView>`), converted in the assembler
+  with `toUsageView`/`toCostView` exactly as `infrastructure-view.ts` does for the estate — not
+  the raw fact types (`ResourceReading[]`, `CostBreakdown`) the field list names. `UtilizationCard`
+  and `CostCard` take view types, and reusing them meant reusing their input shape too.
+- **"Testing"** — the `toInfraSummaryView` row (`atLimit` → `'100+'`, `count`/`atLimit` on the
+  wire and never the string) is asserted only against `toInfraSummaryView` directly. `InfraSummary`
+  itself is never published as its own DTO — the strip is composed in the assembler from panels
+  that are separately tested — so there is no second assertion of the same fact against a
+  published shape.
+- **"Gap presentation — the component AND the API must say the true sentence"** — the shipped
+  `'no-binding'` sentence is key-agnostic by design: "Not bound to a cloud — no resources are
+  tagged for this domain," not "no resources carry `domain=<slug>`" as drafted here. Naming the
+  tag key in the sentence would go stale the moment `ownerTagKey` is set to anything but its
+  default.
+- **"Gap presentation"** — routing the 501 `message` through `gapSentence` changed the verb in
+  the three unchanged reasons' wording sitewide, from "No connected `<kind>` source **implements**
+  `<capability>`" to "…**provides** `<noun>`" — every gap-capable route's 501 body reads
+  differently now, not only the two reasons this spec adds.
+- **"Plumbing: one optional argument, the dispatcher that already exists"** — the fixture layer's
+  own `readUtilization` is `readUtilization(now: Date, owner?: string, buckets = 18)`, not the
+  port's `(scope, owner?)` shape; `fixture-source.ts` is what narrows the port call down to
+  `estate.readUtilization(new Date(), owner)`. The port never gained a `buckets` argument — that
+  stays a two-worlds-module concern.
+- **"Router"** — the `routeOne` test for `'ambiguous-connection'` registers its second connection
+  under a distinct, non-synthetic provider copy, not a second connection of the same fixture
+  provider. `refuseMixedFixtures`, an existing catalog guard unrelated to this spec, only fires
+  when a synthetic provider's connection coexists with another connection of the same kind — so
+  reaching the real "two connections, capability ambiguous" case this spec's more-than-one
+  branch describes needed a second non-synthetic registration, not two fixtures.
+- **"Seed and fixture coherence — one table"** — `scripts/seed-azure.ts` tags storage accounts
+  by resource group rather than by resource, using the same truncated group names the seed
+  already uses elsewhere for name-length reasons; storage was not exempt from that truncation as
+  the original table implied.
+- **"Providers honour `ctx.binding` inside their existing methods"** — floci-az persists tags on
+  `PUT` for VMs, clusters and Postgres servers, verified as this spec states, but **drops `tags`
+  on `Microsoft.Storage/storageAccounts`** on both `PUT` and `PATCH`. The local Azure-mode strip's
+  storage cell is a dash, not a number, until the emulator is fixed or a real ARM stack is used —
+  an honest gap, not a bug in `ownsResource`.
+- **"Providers honour `ctx.binding` inside their existing methods"** — `owned()` runs after
+  `collect(limit)` in the three list methods (`listClusters`, `readStorage`, `listDatabases`), so
+  a domain inside a subscription larger than `limit` is undercounted; the spec's "server-side
+  narrowing is a stated ceiling" paragraph named the missing `$filter`/Resource Graph path but not
+  this second, compounding limitation. Recorded in
+  `docs/todo/azure-owner-server-side-narrowing.md`.
+- **"Testing"** — `infrastructure-fixtures.test.ts` did not exist before this work; the router's
+  and the fixture cloud's owner-scoped tests landed in a newly created file, not appended to a
+  pre-existing one.
+- **"Testing"** — the emulator ownership test (Azure against floci-az, provider row) uses a fresh
+  client rather than the shared, memoized one. The shared `client`'s `loadMachines()` memo (30s)
+  had already been warmed by earlier tests in the same `describe.if` block before the seed's tag
+  `PATCH` landed; a fresh connection with a cold cache is what exercises the real
+  fetch-then-filter path without relying on — or fighting — the memo the spec's "Cost by tag lags
+  reality" risk already accepts as tag lag.
+- **"Testing"** — the seven new `/domains/{slug}/infrastructure/*` route tests assert 404/501 at
+  the `service.ts`/`errorResponse` layer, not through a `+server.ts` HTTP harness. No test in the
+  repo invokes a `+server.ts` handler directly (auth reads `$env`, which a bare handler call
+  cannot supply) — the same precedent the estate's own infrastructure routes already follow.
