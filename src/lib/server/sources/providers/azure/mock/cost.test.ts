@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { startCostMock } from './cost';
+import { costMockHandler, startCostMock } from './cost';
 
 /**
  * The one Azure surface floci-az does not emulate.
@@ -124,5 +124,75 @@ describe('the Cost Management mock', () => {
 		} finally {
 			mock.stop();
 		}
+	});
+});
+
+describe('cost mock, tag-aware', () => {
+	const now = new Date('2026-09-16T12:00:00Z');
+	const url =
+		'http://x/subscriptions/s/providers/Microsoft.CostManagement/query?api-version=2021-10-01';
+	const post = (body: unknown) =>
+		costMockHandler({ now })(
+			new Request(url, {
+				method: 'POST',
+				headers: { authorization: 'Bearer local-dev-key', 'content-type': 'application/json' },
+				body: JSON.stringify(body)
+			})
+		);
+	const base = {
+		type: 'Usage',
+		timeframe: 'MonthToDate',
+		dataset: {
+			granularity: 'Daily',
+			aggregation: { totalCost: { name: 'Cost', function: 'Sum' } },
+			grouping: [{ type: 'Dimension', name: 'ServiceName' }]
+		}
+	};
+	const withTag = (value: string) => ({
+		...base,
+		dataset: {
+			...base.dataset,
+			filter: { tags: { name: 'domain', operator: 'In', values: [value] } }
+		}
+	});
+	type Row = [number, number, string, string];
+	const rowsOf = async (r: Response) =>
+		((await r.json()) as { properties: { rows: Row[] } }).properties.rows;
+	const total = (rows: Row[]) => rows.reduce((t, [c]) => t + c, 0);
+
+	test('unfiltered rows are one per (day, service) and exceed the sum of every domain', async () => {
+		const estate = await rowsOf(await post(base));
+		const keys = estate.map(([, d, s]) => `${d}|${s}`);
+		expect(new Set(keys).size).toBe(keys.length);
+		let sum = 0;
+		for (const d of [
+			'payment-domain',
+			'order-domain',
+			'user-domain',
+			'inventory-domain',
+			'notification-domain'
+		])
+			sum += total(await rowsOf(await post(withTag(d))));
+		expect(sum).toBeLessThan(total(estate)); // an untagged remainder exists
+		expect(sum).toBeGreaterThan(total(estate) * 0.5); // and most spend is attributed
+	});
+	test('a tag filter narrows to one domain, re-aggregated to one row per (day, service)', async () => {
+		const mine = await rowsOf(await post(withTag('payment-domain')));
+		expect(total(mine)).toBeGreaterThan(0);
+		const keys = mine.map(([, d, s]) => `${d}|${s}`);
+		expect(new Set(keys).size).toBe(keys.length);
+	});
+	test('an unknown tag value has no rows', async () => {
+		expect(await rowsOf(await post(withTag('tax-domain')))).toEqual([]);
+	});
+	test('a body that is not JSON is a 400 with an error code, not a crash', async () => {
+		const r = await costMockHandler({ now })(
+			new Request(url, {
+				method: 'POST',
+				headers: { authorization: 'Bearer local-dev-key' },
+				body: '{'
+			})
+		);
+		expect(r.status).toBe(400);
 	});
 });
