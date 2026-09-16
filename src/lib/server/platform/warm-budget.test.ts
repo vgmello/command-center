@@ -15,7 +15,7 @@ import {
 } from '../store/testing/postgres-container';
 import { buildOverview } from './snapshot';
 import { buildDomainsSnapshot } from './domains-view';
-import { buildDomainSnapshot } from './domain-view';
+import { buildDomainSnapshot, listDomainServiceVitals } from './domain-view';
 import { buildDomainDeploymentsSnapshot, buildDomainSlosSnapshot } from './domain-tabs-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
@@ -168,6 +168,10 @@ const SCREENS: Array<{ name: string; run: (r: Routers, now: Date) => Promise<unk
 			buildDomainSnapshot(r.platform, r.service, r.deployment, scope, 'payment-domain', now)
 	},
 	{
+		name: 'domain services',
+		run: (r) => listDomainServiceVitals(r.platform, r.service, scope, 'payment-domain')
+	},
+	{
 		name: 'domain deployments',
 		run: (r, now) =>
 			buildDomainDeploymentsSnapshot(
@@ -207,6 +211,10 @@ const WARM_CEILING: Record<string, number> = {
 	domains: 18,
 	// Was 14 while the page 404'd on absent vitals; it renders now. See request-budget.
 	'domain detail': 60,
+	// Measured at 10 cold / 10 warm — `apm.domainVitals` is `live` tier by design (see
+	// `domain slos` below for the same read) and every other capability this screen touches
+	// is a catalog lookup, so there is nothing here for a warm store to shorten.
+	'domain services': 14,
 	// Was 45 warm, which is why any of this file exists — then 6 once the trends became
 	// documents, then 12 once they became accumulated series. Higher than 6 and better
 	// than it: a document served the whole answer back, while a day-bucketed series keeps

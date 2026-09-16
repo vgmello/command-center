@@ -241,6 +241,17 @@ describe('the rule is worth something', () => {
 	test('with everything declared, every screen renders', async () => {
 		for (const screen of SCREENS) {
 			expect(await outcome(screen, [])).toBe('rendered');
+
+			// `outcome()` only proves nothing threw — it discards what the assembler
+			// actually returned, so it reports 'rendered' for a `null` from an unresolved
+			// slug exactly as it would for a real page. That is the gap this file's own
+			// header names ("assert the slug resolves before trusting a green run") and
+			// does not itself close: nothing above asserted the value, only that no
+			// exception left this test's SCREENS entries silently vacuous again. Every
+			// assembler in SCREENS returns `null` only when its slug does not resolve, so
+			// asserting non-null here is what actually proves the slug is a real one.
+			const value = await screen.run(routersWithout([]));
+			expect(value).not.toBeNull();
 		}
 	});
 });

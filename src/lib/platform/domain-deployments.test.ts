@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { rollUpDeployments } from './domain-deployments';
+import { estateTrendsOf, rollUpDeployments } from './domain-deployments';
 import type { ServiceTrend } from './types';
 
 function trend(
@@ -82,5 +82,33 @@ describe('rollUpDeployments', () => {
 
 		expect(stats.total).toBe(0);
 		expect(stats.byService).toEqual([]);
+	});
+});
+
+describe('estateTrendsOf', () => {
+	test('rebuilds the mean from sums across services, never from per-service means', () => {
+		// Same mistake the rollUpDeployments test pins, one level up: two runs at 10s and
+		// two hundred at 1000s is a period mean of 990, not the 505 an average of the two
+		// per-service means would give.
+		const { meanDuration } = estateTrendsOf([
+			trend('a', [2], [0], [20]),
+			trend('b', [200], [0], [200_000])
+		]);
+
+		expect(meanDuration.points.map((one) => one.value)).toEqual([990]);
+	});
+
+	test('runs still in flight dilute the mean instead of being excluded from it', () => {
+		// Comment at domain-deployments.ts:88-91: an in-flight run has no duration yet but
+		// still counts in the denominator. Service "a" finishes 3 runs averaging 100s each;
+		// service "b" contributes 2 more runs in the same bucket that have not finished, so
+		// their durationTotal is 0. The finished-only mean would be 300/3 = 100; the actual
+		// mean divides by every run in the bucket, finished or not: 300/5 = 60.
+		const { meanDuration } = estateTrendsOf([
+			trend('a', [3], [0], [300]),
+			trend('b', [2], [0], [0])
+		]);
+
+		expect(meanDuration.points.map((one) => one.value)).toEqual([60]);
 	});
 });

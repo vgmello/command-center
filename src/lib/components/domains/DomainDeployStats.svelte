@@ -5,7 +5,7 @@
 	import { toneFor } from '../tone';
 	import { formatDuration } from '$lib/platform/deployments';
 	import type { Panel } from '$lib/platform/sources';
-	import type { DomainDeploymentStats } from '$lib/platform/types';
+	import type { Deployment, DomainDeploymentStats } from '$lib/platform/types';
 
 	/**
 	 * The four figures above a domain's deployment history.
@@ -19,13 +19,19 @@
 		stats: Panel<DomainDeploymentStats>;
 		/** What the counts cover, stated by the server — see `DomainDeploymentsSnapshot`. */
 		windowLabel: string;
-		/** When this domain last shipped, from the newest log row. `null` when it has not. */
-		lastDeployedAt: string | null;
+		/**
+		 * The domain's recent runs, newest first. A panel rather than a bare timestamp so
+		 * this tile can tell "the log answered and is empty" from "nothing is watching
+		 * deployments" — both read as `lastDeployedAt === null` upstream, and printing the
+		 * same caption for both would state the log is empty when it is really just unknown.
+		 */
+		log: Panel<Deployment[]>;
 	}
 
-	let { stats, windowLabel, lastDeployedAt }: Props = $props();
+	let { stats, windowLabel, log }: Props = $props();
 
 	const data = $derived(stats.status === 'ok' ? stats.data : null);
+	const lastDeployedAt = $derived(log.status === 'ok' ? (log.data[0]?.deployedAt ?? null) : null);
 
 	// Any failure at all is worth a tint here. A domain's blended rate is small by
 	// construction — one bad service in ten barely moves it — so a threshold would hide
@@ -101,7 +107,13 @@
 				</span>
 			</div>
 			<p class="mt-2 text-[11.5px] text-muted-foreground">
-				{lastDeployedAt ? 'Newest run in the log' : 'Nothing in the log'}
+				{#if lastDeployedAt}
+					Newest run in the log
+				{:else if log.status === 'ok'}
+					Nothing in the log
+				{:else}
+					Not reported
+				{/if}
 			</p>
 		</article>
 	</div>

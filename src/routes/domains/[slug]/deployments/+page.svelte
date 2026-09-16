@@ -75,12 +75,10 @@
 			/>
 
 			{#if snapshot}
-				{@const newest = snapshot.log.status === 'ok' ? snapshot.log.data[0] : undefined}
-
 				<DomainDeployStats
 					stats={snapshot.stats}
 					windowLabel={snapshot.windowLabel}
-					lastDeployedAt={newest?.deployedAt ?? null}
+					log={snapshot.log}
 				/>
 
 				<div class="grid gap-4 xl:grid-cols-2">
