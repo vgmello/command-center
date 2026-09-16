@@ -16,6 +16,7 @@ import {
 import { buildOverview } from './snapshot';
 import { buildDomainsSnapshot } from './domains-view';
 import { buildDomainSnapshot } from './domain-view';
+import { buildDomainDeploymentsSnapshot } from './domain-tabs-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
@@ -167,6 +168,18 @@ const SCREENS: Array<{ name: string; run: (r: Routers, now: Date) => Promise<unk
 			buildDomainSnapshot(r.platform, r.service, r.deployment, scope, 'payment-domain', now)
 	},
 	{
+		name: 'domain deployments',
+		run: (r, now) =>
+			buildDomainDeploymentsSnapshot(
+				r.platform,
+				r.service,
+				r.deployment,
+				scope,
+				'payment-domain',
+				now
+			)
+	},
+	{
 		name: 'deployments',
 		run: (r, now) => buildDeploymentsSnapshot(r.deployment, scope, 'daily', now)
 	},
@@ -194,8 +207,17 @@ const WARM_CEILING: Record<string, number> = {
 	// documents, then 12 once they became accumulated series. Higher than 6 and better
 	// than it: a document served the whole answer back, while a day-bucketed series keeps
 	// the newest day provisional and asks for one page of it, in exchange for the three
-	// grains sharing rows at all.
+	// grains sharing rows at all. Unmoved at 48 cold / 12 warm by the estate read being
+	// rewired onto the per-service rows, which is the point: it is the same window, read
+	// once, under one capability instead of two.
 	deployments: 16,
+	// Measured at 50 cold and 50 warm, and the two being equal is the honest answer rather
+	// than a regression: the tab's cost is its *log*, which is `live` tier and deliberately
+	// never persisted — a deployment feed read back off disk is a feed that has stopped
+	// reporting. Octopus cannot filter by domain, so that read walks the window. The
+	// per-service trends accumulate and are all but free warm; they are simply not what this
+	// number is made of. Same profile as `domain detail` above, for the same reason.
+	'domain deployments': 60,
 	'service detail': 33,
 	'service metrics': 16,
 	infrastructure: 5

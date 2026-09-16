@@ -11,6 +11,7 @@ import { CAPABILITY_TIER } from '../sources/tiers';
 import { buildOverview } from './snapshot';
 import { buildDomainsSnapshot } from './domains-view';
 import { buildDomainSnapshot, listDomainServiceVitals } from './domain-view';
+import { buildDomainDeploymentsSnapshot } from './domain-tabs-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
@@ -92,6 +93,18 @@ const SCREENS: Array<{
 	{
 		name: 'domain services',
 		run: (r) => listDomainServiceVitals(r.platform, r.service, scope, 'payment-domain')
+	},
+	{
+		name: 'domain deployments',
+		run: (r) =>
+			buildDomainDeploymentsSnapshot(
+				r.platform,
+				r.service,
+				r.deployment,
+				scope,
+				'payment-domain',
+				new Date()
+			)
 	},
 	{
 		name: 'service detail',

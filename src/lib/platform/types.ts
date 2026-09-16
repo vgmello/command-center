@@ -770,6 +770,32 @@ export interface DomainSnapshot {
 	issues: Panel<Incident[]>;
 }
 
+/** Everything the domain's Deployments tab renders. */
+export interface DomainDeploymentsSnapshot {
+	generatedAt: string;
+	environment: EnvironmentId;
+	timeRange: TimeRangeId;
+	domain: Domain;
+	/**
+	 * The window the figures cover, stated because "34 deploys" means nothing without it.
+	 *
+	 * It comes from the grain rather than from `scope.timeRange`: the trends look back a
+	 * fortnight whatever range the reader picked, so printing the scope's label here would
+	 * caption a fortnight's count as an hour's.
+	 */
+	windowLabel: string;
+	/**
+	 * The DORA figures, summed from this domain's services' accumulated trends.
+	 *
+	 * A panel rather than a zeroed `DomainDeploymentStats`, because a chart reading
+	 * "nothing deployed" is a different and false statement from "nothing is measuring
+	 * this".
+	 */
+	stats: Panel<DomainDeploymentStats>;
+	/** The domain's recent runs. A separate capability, so it survives a gap in the trends. */
+	log: Panel<Deployment[]>;
+}
+
 /** Everything the service metrics tab renders. */
 export interface ServiceMetricsSnapshot {
 	generatedAt: string;

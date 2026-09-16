@@ -3,6 +3,7 @@ import { scopeSchema, scopedDomainQuerySchema, scopedServiceSchema } from '$lib/
 import {
 	readDomain,
 	readDomainDependencies,
+	readDomainDeployments,
 	readDomainPage,
 	readDomainServices,
 	readDomainView,
@@ -90,4 +91,15 @@ export const getDomainDependencies = query(scopedServiceSchema, async ({ slug, .
  */
 export const getDomainServices = query(scopedServiceSchema, async ({ slug, ...scope }) =>
 	readDomainServices(scope, slug)
+);
+
+/**
+ * A domain's deployment figures, its frequency chart, its per-service split and its log.
+ *
+ * Its own query, not a slice of the overview composite: the tab redraws on the refresh
+ * tick, and nothing else on the domain — the dependency graph, the incident list — needs
+ * to be refetched when it does.
+ */
+export const getDomainDeployments = query(scopedServiceSchema, async ({ slug, ...scope }) =>
+	readDomainDeployments(scope, slug)
 );

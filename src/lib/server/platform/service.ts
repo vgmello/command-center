@@ -11,6 +11,7 @@ import type {
 	Domain,
 	DomainDependencies,
 	DomainSnapshot,
+	DomainDeploymentsSnapshot,
 	DomainVitals,
 	DomainsSnapshot,
 	FacetOption,
@@ -45,6 +46,7 @@ import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
 import { buildDomainSnapshot, listDomainServiceVitals } from './domain-view';
+import { buildDomainDeploymentsSnapshot } from './domain-tabs-view';
 import { buildInfrastructureSnapshot } from './infrastructure-view';
 import { ALL_DOMAINS, ALL_ENVIRONMENTS, ALL_SERVICES } from '$lib/platform/deployments';
 
@@ -355,6 +357,26 @@ export function readCost(scope: PlatformScope) {
  */
 export function readDomainView(scope: PlatformScope, slug: string): Promise<DomainSnapshot | null> {
 	return buildDomainSnapshot(platformSource(), serviceSource(), deploymentSource(), scope, slug);
+}
+
+/**
+ * One domain's Deployments tab.
+ *
+ * `null` for a slug that matches nothing, like every other detail read here. Screen-shaped
+ * and deliberately not published: `/api/v1` gets the resources it is composed from — the
+ * domain, its services and the deployment log — which stay stable while the tab changes.
+ */
+export function readDomainDeployments(
+	scope: PlatformScope,
+	slug: string
+): Promise<DomainDeploymentsSnapshot | null> {
+	return buildDomainDeploymentsSnapshot(
+		platformSource(),
+		serviceSource(),
+		deploymentSource(),
+		scope,
+		slug
+	);
 }
 
 /** The deployments page's aggregate. Screen-shaped, and unexposed for the same reason. */

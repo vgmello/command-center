@@ -4,10 +4,10 @@ import { _BUILT_TABS } from './+page';
 
 describe('the domain tab fallback', () => {
 	test('a section with its own route is rejected here, so it has one URL', () => {
-		// `overview` and `dependencies` were already rejected; `services` joins them the
-		// moment it has a real route. A section with two URLs is one a link can disagree
-		// about.
-		for (const built of ['overview', 'dependencies', 'services']) {
+		// `overview` and `dependencies` were already rejected; `services` and `deployments`
+		// joined them the moment they had real routes. A section with two URLs is one a link
+		// can disagree about.
+		for (const built of ['overview', 'dependencies', 'services', 'deployments']) {
 			expect(_BUILT_TABS.includes(built)).toBe(true);
 		}
 	});

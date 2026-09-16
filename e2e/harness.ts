@@ -14,6 +14,7 @@ export const ROUTES = [
 	'/domains/payment-domain',
 	'/domains/payment-domain/dependencies',
 	'/domains/payment-domain/services',
+	'/domains/payment-domain/deployments',
 	'/domains/payment-domain/slos',
 	'/services',
 	'/services/payment-api',

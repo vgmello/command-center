@@ -9,6 +9,7 @@ import { FixtureCatalogSource } from '../catalog/fixture-source';
 import { buildOverview } from './snapshot';
 import { buildDomainsSnapshot } from './domains-view';
 import { buildDomainSnapshot } from './domain-view';
+import { buildDomainDeploymentsSnapshot } from './domain-tabs-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
@@ -157,8 +158,28 @@ describe('what a screen costs upstream', () => {
 		).toBeLessThan(70);
 	});
 
+	test('domain deployments', async () => {
+		// Measured at 50 cold, and the shape of it is the domain detail page's: Octopus has
+		// no notion of a domain, so narrowing the log to one still walks the window. The
+		// per-service trends are the same window again and cost nothing extra for it.
+		expect(
+			await cost((h) =>
+				buildDomainDeploymentsSnapshot(
+					h.routers.platform,
+					h.routers.service,
+					h.routers.deployment,
+					scope,
+					'payment-domain',
+					h.now
+				)
+			)
+		).toBeLessThan(70);
+	});
+
 	test('deployments', async () => {
-		// Six capabilities computed from one window. It was 216 before they shared it.
+		// Six capabilities computed from one window. It was 216 before they shared it, and
+		// stayed at 45 when the estate trend moved onto the per-service rows — the same
+		// window, read once rather than twice.
 		expect(
 			await cost((h) => buildDeploymentsSnapshot(h.routers.deployment, scope, 'daily', h.now))
 		).toBeLessThan(80);
