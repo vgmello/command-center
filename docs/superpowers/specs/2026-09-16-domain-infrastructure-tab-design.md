@@ -1,7 +1,7 @@
 # Domain detail: the Infrastructure tab
 
 **Date:** 2026-09-16
-**Status:** revised after review rounds 1–4 (round 4 found three round-3/4 edits had silently not applied — now anchored and asserted — plus 1 Critical, 2 Important, 3 Minor; all addressed); round 5 before planning
+**Status:** revised after review rounds 1–5 (round 5: 2 Critical, 1 Important, 3 Minor — all addressed; plus the two-worlds ownership finding); round 6 before planning
 
 ## Goal
 
@@ -97,9 +97,14 @@ answering; the domain simply owns nothing tagged — and false for an ambiguous 
 sentences. This spec therefore changes three things, stated here because the tab depends on them:
 
 1. `GapReason` gains `'ambiguous-connection'` (docstring "four distinct causes" → five). `reason`
-   is already published in the 501 body (`error-response.ts:54`) but absent from
-   `components.yaml`; the 501 response schema in `openApiComponents()` documents the enum, so the
-   widening lands as a documented change to a public field, not an undocumented one.
+   is already published in every 501 body (`error-response.ts:54`) and is undocumented today —
+   **no 501 response schema exists in `openApiComponents()`** (`openapi.ts:263-273` defines only
+   `BadRequest`/`Unauthorized`/`NotFound`) and `openapi.test.ts:204-206` asserts an exact response
+   set that forbids adding one to a single route. That is the standing sitewide item
+   `docs/todo/api-501-undocumented.md`. This spec does NOT document 501 — it behaves exactly like
+   `activity`, `domains/{slug}/deployments` and `domains/{slug}/slo` — and it does not touch that
+   test. Widening `GapReason` is safe precisely because the field is already public-and-
+   undocumented; documenting the enum belongs to the todo that documents the status code.
 2. One pure function `gapSentence(reason, kind, noun): string` in `src/lib/platform/gaps.ts`
    (three arguments — the existing sentence interpolates `noun`) is the single source of every
    gap sentence. `PanelGap.svelte` calls it with `panel.reason`; `error-response.ts` calls it for
@@ -144,8 +149,7 @@ No new capabilities. `cloud.regions` answers the estate question and the domain 
   needs real work, not a clause**: today `costMockHandler` never reads the request body and
   `buildEstate` has no domain axis. It gains a (domain, service) axis seeded from the same
   ownership table as everything else, parses `filter.tags` and `grouping` from the body — which
-  makes `costMockHandler` `async (request) => Promise<Response>` (it is synchronous today; its
-  portless test callers `await`) — and answers the real contract. The estate total is the sum over domains plus an untagged
+  makes `costMockHandler` `async (request) => Promise<Response>` (it is synchronous today; it has no direct test callers yet — the new mock tests `await` it) — and answers the real contract. The estate total is the sum over domains plus an untagged
   remainder — one fixture derived from the other, per the fixture-coherence rule.
 - `metricSampleSize` applies to the _domain's_ machines. A twelve-machine domain is measured
   whole; the estate is still sampled.
@@ -158,20 +162,35 @@ fixture stack exercises the same path and the sweep can drop the binding.
 
 ### Seed and fixture coherence — one table
 
+**Two worlds, one assignment.** The fixture estate and the floci-az seed name different things:
+fixture regions are `eu-west-1`, `eu-central-1`, `us-east-1`, `us-west-2`, `ap-southeast-1`,
+clusters `prod-eu-west-1-a`…, databases `payment-db`, `order-db`, `user-db`, `analytics-db`,
+`inventory-db`, storage classes `block`/`object`/`file`; the seed's are `westeurope`…,
+`cc-westeurope-aks`, `cc-payments`…. So the shared module `src/lib/platform/ownership.ts` holds
+**one table of domain assignments keyed by role** (`region-1..5`, `db-payments`, `db-orders`,
+`db-users`, `db-inventory`, `db-analytics`) and **two name maps** derived from it — fixture names
+and seed names — so the domain each row belongs to is stated once and each world attaches its
+names. Under fixtures **six** domains are bound (payment, order, user, inventory, notification,
+analytics — `analytics-domain` exists in the 25-domain catalog and owns `analytics-db`); under the
+seed **five** (no ClickHouse there). Fixture storage classes are _types_, not resources, so the
+fixture holds a per-(domain, class) bytes table whose per-class sums equal the estate figures —
+one fixture derived from the other. The sweep's unbound case uses a slug unbound in BOTH worlds
+(`tax-domain`).
+
 `scripts/seed-azure.ts` adds a `tags` object to every `PUT` body — **verified: floci-az persists
 tags on `PUT`** (201, read back intact on a throwaway VM, then deleted), not only on `PATCH`. It
 tags every resource by a deterministic table, exported from one module
 and imported by the fixture catalog (for the bindings) and the fixture cloud (for the owner
 dimension), so the three cannot disagree:
 
-| Resource group / resource                                              | Owner                 |
-| ---------------------------------------------------------------------- | --------------------- |
-| `cc-westeurope` (11+1 VMs, AKS, storage)                               | `payment-domain`      |
-| `cc-northeurope`                                                       | `order-domain`        |
-| `cc-eastus`                                                            | `user-domain`         |
-| `cc-westus2`                                                           | `inventory-domain`    |
-| `cc-southeastasia`                                                     | `notification-domain` |
-| `cc-payments` / `cc-orders` / `cc-users` / `cc-inventory` (PostgreSQL) | the matching domain   |
+| What is tagged (every resource individually — tags live on resources, never on the group)                                                       | Owner                 |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| every resource in `cc-westeurope` (11 running + 1 degraded VM, the AKS cluster, the storage account) — except the four PostgreSQL servers below | `payment-domain`      |
+| `cc-northeurope`                                                                                                                                | `order-domain`        |
+| `cc-eastus`                                                                                                                                     | `user-domain`         |
+| `cc-westus2`                                                                                                                                    | `inventory-domain`    |
+| `cc-southeastasia`                                                                                                                              | `notification-domain` |
+| `cc-payments` / `cc-orders` / `cc-users` / `cc-inventory` (PostgreSQL)                                                                          | the matching domain   |
 
 Every other fixture domain (20 of 25) is **unbound** — deliberately, so the unbound state is
 the common one under fixtures and is exercised on every sweep.
@@ -192,29 +211,34 @@ screen, as the other tabs; `domain-tabs-view.ts` is not extended further), expos
 `readDomainInfrastructure(scope, slug)` in `service.ts` and called by the remote query.
 
 ```
-┌ nodes 12/12 · clusters 1 · databases 1 · storage 5.1 TB ──────────────┐
+┌ nodes 11/12 · clusters 1 · databases 1 · storage 5.1 TB ──────────────┐
 ├─ Regions (this domain) ─────────────────┬─ Spend (this domain, MTD) ──┤
 ├─ Clusters ──────────────────────────────┼─ Databases ─────────────────┤
 ├─ Utilisation (this domain's machines) ─────────────────────────────────┤
 └─ (no queue or alert panels on this tab — by design, not as gaps) ──────┘
 ```
 
-Six `panel()`-wrapped reads, each passing `owner = slug`: `cloud.nodes` (strip), `cloud.regions`,
-`cloud.clusters`, `cloud.databases`, `cloud.utilization`, `cloud.cost`; `cloud.storage` feeds
-the strip's fourth cell. **Strip counts are facts, rendered above the port:** `InfraSummary = { nodes: NodeCounts,
-clusters: { count: number; atLimit: boolean }, databases: { count: number; atLimit: boolean },
-storageBytes: number }`. `count` is the `length` of the same arrays the tables render (fetched
-with `limit = 100`); `atLimit` is `length === limit`. The pure layer's `toInfraSummaryView` prints
-`100+` when `atLimit` — the API publishes `count` and `atLimit`, never the string. No separate
-`listGroups(owner)`; two reads for one number would be the two-renderings smell. the assembler's `findDomain` is **`PlatformSource.findDomain`** (catalog-backed and gap-tolerant —
+**Seven** `panel()`-wrapped reads, each passing `owner = slug`: `cloud.nodes`, `cloud.regions`,
+`cloud.clusters`, `cloud.databases`, `cloud.utilization`, `cloud.cost`, and `cloud.storage`, which
+feeds only the strip's fourth cell. **The strip is composed, not read:** `summary` is
+`Panel<InfraSummary>` derived from the nodes / clusters / databases / storage panels — if the
+`cloud.nodes` panel is a gap the whole strip is that gap (there is no strip without a node count);
+if `cloud.storage` alone is a gap, `InfraSummary.storageBytes` is `null` and the cell prints a
+dash, per the `CountTile.value`-nullable precedent. **Strip counts are facts, rendered above the
+port:** `InfraSummary = { nodes: NodeCounts, clusters: { count: number; atLimit: boolean },
+databases: { count: number; atLimit: boolean }, storageBytes: number | null }`. `count` is the
+`length` of the same arrays the tables render (fetched with `limit = 100`); `atLimit` is
+`length === limit`. The pure layer's `toInfraSummaryView` prints `100+` when `atLimit` — the API
+publishes `count` and `atLimit`, never the string. No separate `listGroups(owner)`; two reads for
+one number would be the two-renderings smell. the assembler's `findDomain` is **`PlatformSource.findDomain`** (catalog-backed and gap-tolerant —
 `routers/platform.ts:26-38` swallows the APM gap), a catalog read that stays unwrapped; unknown
 slug → null. The **binding** lookup is the router's, via `CatalogSource` — the assembler only
 passes `owner = slug`.
 
 **Gap rendering rule, stated for the planner:** binding is per domain, so `'no-binding'` is
-all-or-nothing across the six — but a capability gap is not (a provider may declare regions and
-nodes yet lack `cloud.utilization`, as this codebase's own history records). Therefore: **if all
-six panels are `unavailable` with reason `'no-binding'`, the page renders one sentence once**
+all-or-nothing across all seven reads — but a capability gap is not (a provider may declare regions and
+nodes yet lack `cloud.utilization`, as this codebase's own history records). Therefore: **if all seven reads are `unavailable` with reason `'no-binding'` (`collapseUnbound` checks all
+seven), the page renders one sentence once**
 above the strip instead of six identical cards; **any other combination falls through to ordinary
 per-panel `PanelGap`** — a bound domain missing one capability shows five panels and one stated
 gap, exactly like the estate screen. Never zeros.
@@ -249,19 +273,19 @@ schemas already exist in `openApiComponents()`; `components.yaml` regenerated. S
 
 ## Testing
 
-| Layer    | What                                                                                                                                                                                                                                                                                 |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Unit     | tag filter keeps exactly the tagged resources; `$filter` string is on the wire; owner reaches the cost query as the real filter shape                                                                                                                                                |
-| Unit     | router: `owner` with no DECLARED cloud binding throws `'no-binding'` (a domain with only the `bindingFor` fallback must NOT count as bound); with a binding dispatches via `routeOne`; a second read inside TTL hits no upstream; two owners → two keys; two environments → two keys |
-| Unit     | `routeOne` connection resolution: `''` with one cloud connection resolves; none of the kind → `'no-connection'`; kind present but none declaring → `'no-capability'`; two → `'ambiguous-connection'`                                                                                 |
-| Unit     | `ownsResource`: key case-insensitive, value case-sensitive, missing tag → false                                                                                                                                                                                                      |
-| Unit     | `toInfraSummaryView`: `atLimit` → `100+`; the DTO carries `count` + `atLimit` and no string                                                                                                                                                                                          |
-| Unit     | `gapSentence`: `'no-binding'` and `'ambiguous-connection'` have their own sentences, the other three unchanged; `error-response`'s 501 message equals `gapSentence(...)` for the same reason                                                                                         |
-| Unit     | `collapseUnbound`: six × `'no-binding'` → true; five ok + one `'no-capability'` → false                                                                                                                                                                                              |
-| Sweep    | new `SCREENS` entry (`'payment-domain'`, bound) + a second, unbound case asserting six stated gaps and no throw                                                                                                                                                                      |
-| Budget   | rows for the bound tab, cold and warm, measured                                                                                                                                                                                                                                      |
-| e2e      | `/domains/payment-domain/infrastructure` in `ROUTES` — renders under fixtures, `sources.example.json`, AND `sources.local.json`, where floci-az's stored tags are read for real                                                                                                      |
-| Provider | Azure against floci-az: a tagged VM appears in the owner's regions and nowhere else                                                                                                                                                                                                  |
+| Layer    | What                                                                                                                                                                                                                                                                                                                                         |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit     | `ownsResource` keeps exactly the tagged resources across all four Azure lists; NO tag `$filter` is sent on ARM list requests (the client-side check is the mechanism — a test asserting the wire carries one would assert behaviour the design does not have); the owner reaches the Cost Management body as `filter.tags` in the real shape |
+| Unit     | router: `owner` with no DECLARED cloud binding throws `'no-binding'` (a domain with only the `bindingFor` fallback must NOT count as bound); with a binding dispatches via `routeOne`; a second read inside TTL hits no upstream; two owners → two keys; two environments → two keys                                                         |
+| Unit     | `routeOne` connection resolution: `''` with one cloud connection resolves; none of the kind → `'no-connection'`; kind present but none declaring → `'no-capability'`; two → `'ambiguous-connection'`                                                                                                                                         |
+| Unit     | `ownsResource`: key case-insensitive, value case-sensitive, missing tag → false                                                                                                                                                                                                                                                              |
+| Unit     | `toInfraSummaryView`: `atLimit` → `100+`; the DTO carries `count` + `atLimit` and no string                                                                                                                                                                                                                                                  |
+| Unit     | `gapSentence`: `'no-binding'` and `'ambiguous-connection'` have their own sentences, the other three unchanged; `error-response`'s 501 message equals `gapSentence(...)` for the same reason                                                                                                                                                 |
+| Unit     | `collapseUnbound`: six × `'no-binding'` → true; five ok + one `'no-capability'` → false                                                                                                                                                                                                                                                      |
+| Sweep    | new `SCREENS` entry (`'payment-domain'`, bound) + a second, unbound case asserting six stated gaps and no throw                                                                                                                                                                                                                              |
+| Budget   | rows for the bound tab, cold and warm, measured                                                                                                                                                                                                                                                                                              |
+| e2e      | `/domains/payment-domain/infrastructure` in `ROUTES` — renders under fixtures, `sources.example.json`, AND `sources.local.json`, where floci-az's stored tags are read for real                                                                                                                                                              |
+| Provider | Azure against floci-az: a tagged VM appears in the owner's regions and nowhere else                                                                                                                                                                                                                                                          |
 
 ## Risks
 
