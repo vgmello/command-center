@@ -43,9 +43,9 @@
 | `src/lib/server/catalog/fixture-source.ts`                                                                                                                                                                             | domains' `bindings` from `ownership.ts`                                                                                   | 3    |
 | `src/lib/server/sources/routers/shared.ts`                                                                                                                                                                             | **new** `routeOne`                                                                                                        | 4    |
 | `src/lib/server/sources/routers/dispatch-tiers.test.ts`                                                                                                                                                                | `routeOne` in `Helper` + regex + `ALLOWED`                                                                                | 4    |
-| `src/lib/server/platform/source.ts`                                                                                                                                                                                    | `owner?` on seven `InfrastructureSource` methods (+ queues/alerts)                                                        | 5    |
-| `src/lib/server/sources/routers/infrastructure.ts`, `index.ts`                                                                                                                                                         | `CatalogSource` dep, owner path                                                                                           | 5    |
-| `src/lib/server/platform/infrastructure-fixtures.ts`, `sources/fixtures/cloud.ts`                                                                                                                                      | owner filtering via ownership table; per-(domain, class) storage                                                          | 6    |
+| `src/lib/server/platform/source.ts`                                                                                                                                                                                    | `owner?` on seven `InfrastructureSource` methods (+ queues/alerts)                                                        | 6    |
+| `src/lib/server/sources/routers/infrastructure.ts`, `index.ts`, `boot.test.ts`, `infrastructure.test.ts`                                                                                                               | `CatalogSource` dep, owner path; both one-arg `createInfrastructureRouter(deps)` call sites updated                       | 6    |
+| `src/lib/server/platform/infrastructure-fixtures.ts`, `sources/fixtures/cloud.ts`                                                                                                                                      | owner filtering via ownership table; per-(domain, class) storage                                                          | 5    |
 | `src/lib/server/sources/providers/azure/{map,client,index}.ts`                                                                                                                                                         | `ArmResource.tags`, `ownerTagKey`, owner-keyed memo, `ownsResource` filter, cost `filter.tags`                            | 7    |
 | `src/lib/server/sources/providers/azure/mock/cost.ts`                                                                                                                                                                  | domain axis, async body-parsing handler                                                                                   | 8    |
 | `scripts/seed-azure.ts`                                                                                                                                                                                                | `tags` on every PUT body                                                                                                  | 9    |
@@ -332,9 +332,7 @@ import type { Panel } from './sources';
 
 import type { GapReason, SourceRef } from './sources';
 // Check `SourceRef`'s exact fields in src/lib/platform/sources.ts:60-70 first; the literal must satisfy the type without a cast.
-const source: SourceRef = {
-	id: 'x',
-	connectionId: 'x',
+\1\n\tconnectionId: 'x',
 	name: 'x',
 	providerId: 'x',
 	kind: 'cloud',
@@ -716,7 +714,7 @@ function resolveConnection(
 
 Add imports: `SourceBinding` from `../provider`, `kindOf` from `$lib/platform/sources`, `CapabilityUnavailableError` from `../errors` (check what is already imported).
 
-- [ ] **Step 4: `dispatch-tiers.test.ts`** — `type Helper = 'fanOut' | 'fanOutSingle' | 'fanOutSeries' | 'routeOne';` add `'routeOne'` to `live` and `reference` in `ALLOWED`; extend the regex alternation to `(fanOutSeries|fanOutSingle|fanOut|routeOne)`. Run `bun test src/lib/server/sources/routers/dispatch-tiers.test.ts` — must still pass (no router uses `routeOne` yet; Task 5 adds it).
+- [ ] **Step 4: `dispatch-tiers.test.ts`** — `type Helper = 'fanOut' | 'fanOutSingle' | 'fanOutSeries' | 'routeOne';` and add `'routeOne'` to `live` and `reference` in `ALLOWED`. Do NOT add `routeOne` to the existing regex alternation: routers never call `routeOne(deps, 'cap'` with a literal — they call `scoped(deps, catalog, 'cap', …)`, which Task 6 teaches the test to read. Run the file — must still pass (no router uses the owner path yet).
 
 - [ ] **Step 5: Run** — `bun test src/lib/server/sources` → green; `check`, `lint` green.
 
@@ -800,6 +798,8 @@ import { FIXTURE_STORAGE_BYTES, fixtureOwnerOf } from '$lib/platform/ownership';
 
 /** Region rows carry `[id, name, lat, lon, nodeCount, score]` — the seeds at ~:53-57, hoisted to module scope. */
 const REGION_ROWS = /* the existing tuple array */;
+/** Storage class seeds `[id, label, bytes]` — the array at ~:187-189, hoisted the same way. */
+const STORAGE_SEEDS = /* the existing tuple array */;
 
 export function listRegions(owner?: string): InfraRegion[] {
 	const all = /* existing mapping of REGION_ROWS → InfraRegion */;
@@ -844,7 +844,11 @@ export function readUtilization(now: Date, owner?: string, buckets = 18): Resour
 }
 
 export function readCost(now: Date, owner?: string): CostBreakdown {
-	/* existing categories; when owner is set, scale each category by total(readNodeCounts(owner)) / 48 — derived, so the owners sum to the estate */
+	/* existing categories; when owner is set, scale EACH category's `amount` AND every point of its
+	   `daily[]` by share = total(readNodeCounts(owner)) / 48, then recompute `total` = Σ amounts and
+	   `forecast` = (total / daysElapsed) · daysInMonth from the SCALED values — the columns and the
+	   headline must describe the same spend. `changePct` / `forecastChangePct` stay as they are
+	   ("not derivable", as the estate says). Derived, so the owners sum to the estate. */
 }
 ```
 
@@ -865,10 +869,11 @@ In `sources/fixtures/cloud.ts`: `async listRegions(ctx) { return estate.listRegi
 - Modify: `src/lib/server/platform/source.ts:300-331` (`InfrastructureSource`, methods ~:304-330)
 - Modify: `src/lib/server/platform/fixture-source.ts:230-274` (`FixtureInfrastructureSource` — add the optional parameter to every method and forward it to the Task 5 functions)
 - Modify: `src/lib/server/sources/routers/infrastructure.ts` (whole file), `routers/index.ts:31`
-- Modify: `src/lib/server/sources/routers/infrastructure.test.ts:13-26` — its existing `build()` calls `createInfrastructureRouter(deps)` with ONE argument and returns `{ registry, source }`; update it to pass `new FixtureCatalogSource()` and keep the return shape
+  \1
+- Modify: `src/lib/server/sources/boot.test.ts:106` — the OTHER one-argument `createInfrastructureRouter(deps)` call; a `catalog` is already in scope at `:105` — pass the CatalogSource it holds. Grep `createInfrastructureRouter(` to confirm these two plus `routers/index.ts` are the only call sites.
 - Modify: `src/lib/server/sources/routers/dispatch-tiers.test.ts:30-52` — `Helper`, `ALLOWED`, and a second pattern
 
-**Red window, stated:** after Step 3 `bun run check` is red until Step 4 updates `FixtureInfrastructureSource`, the router, and `infrastructure.test.ts` — all inside this task. Do not commit between them.
+**Red window, stated:** after Step 3 `bun run check` is red until Step 4 updates `FixtureInfrastructureSource`, the router, `infrastructure.test.ts` AND `boot.test.ts` — all inside this task. Do not commit between them.
 
 **Interfaces — Produces:** every `InfrastructureSource` method takes a trailing `owner?: string`; `createInfrastructureRouter(deps: RouterDeps, catalog: CatalogSource)`.
 
@@ -1065,7 +1070,8 @@ describe('no tag $filter is sent on ARM lists', () => {
 	});
 });
 
-describe.if(emulator)('against floci-az', () => {
+// APPEND inside the EXISTING `describe.if(emulator)('against floci-az', …)` block (~:274), where
+// `client` is declared — do not open a second block. Its `const`s and `test` go in that block:
 	const H = { authorization: 'Bearer local-dev-key', 'content-type': 'application/json' };
 	const VM =
 		'/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/cc-eastus/providers/Microsoft.Compute/virtualMachines/cc-eastus-node-1';
@@ -1095,7 +1101,7 @@ describe.if(emulator)('against floci-az', () => {
 });
 ```
 
-(`emulator`, `client`, `context()` already exist in this test file.)
+(`emulator`, `client`, `context()` already exist in this test file; the final `});` in the snippet closes that existing block.)
 
 - [ ] **Step 2: Run → fails.**
 
@@ -1263,8 +1269,10 @@ export interface DomainInfrastructureSnapshot {
 	generatedAt: string;
 	domain: Domain;
 	unbound: boolean;
-	summary: Panel<InfraSummary>;
-	regions: Panel<InfraRegion[]>;
+\1
+	/** The nodes panel itself — `ComputeCard` takes `Panel<NodeCounts>` beside the clusters. */
+	nodes: Panel<NodeCounts>;
+\2
 	clusters: Panel<ClusterLoad[]>;
 	databases: Panel<DatabaseInstance[]>;
 	// VIEW types, converted in the assembler with toUsageView / toCostView exactly as
@@ -1291,12 +1299,116 @@ export const DOMAIN_INFRA_LIMIT = 100;
 - [ ] **Step 1: Failing tests** (build routers the way `capability-gaps.test.ts` does; `routersWithout`)
 
 ```ts
-test('a bound domain gets seven panels, the strip is composed, and unbound is false', …);
-test('an unbound domain: all seven no-binding, unbound true, and the strip is the nodes gap', …);  // 'tax-domain'
-test('a bound domain missing cloud.storage alone: storageBytes null, unbound false', …);      // routersWithout('cloud.storage')
-test('a bound domain missing cloud.nodes: summary is the gap, other panels ok', …);
-test('unknown slug → null', …);
-test('toInfraSummaryView prints 100+ at the limit and a dash for a null cell', …);
+import { describe, expect, test } from 'bun:test';
+import { buildDomainInfrastructureSnapshot } from './domain-infrastructure-view';
+import { toInfraSummaryView } from '$lib/platform/infrastructure';
+// Build routers exactly as capability-gaps.test.ts does — SourceRegistry + createDispatcher + SourceCache +
+// createRouters over FIXTURE_PROVIDERS — and reuse its `routersWithout(capabilities)` for the gap cases.
+
+const scope = { environment: 'production' as const, timeRange: '1h' as const };
+const now = new Date('2026-09-16T12:00:00Z');
+const ok = <T>(p: { status: string; data?: T }): T => {
+	if (p.status !== 'ok') throw new Error(p.status);
+	return p.data as T;
+};
+
+describe('the domain infrastructure tab', () => {
+	test('a bound domain gets its own panels, a composed strip, and unbound false', async () => {
+		const r = routersWithout([]);
+		const snap = (await buildDomainInfrastructureSnapshot(
+			r.platform,
+			r.infrastructure,
+			scope,
+			'payment-domain',
+			now
+		))!;
+		expect(snap.unbound).toBe(false);
+		expect(ok(snap.regions).map((x) => x.id)).toEqual(['eu-west-1']);
+		expect(
+			ok(snap.clusters)
+				.map((x) => x.id)
+				.sort()
+		).toEqual(['prod-eu-west-1-a', 'prod-eu-west-1-b']);
+		const summary = ok(snap.summary);
+		expect(summary.nodes).toEqual({ healthy: 11, warning: 1, down: 0 }); // floor(12·96/100) = 11
+		expect(summary.clusters).toEqual({ count: 2, atLimit: false });
+		expect(summary.databases).toEqual({ count: 1, atLimit: false }); // payment-db
+		expect(summary.storageBytes).toBeGreaterThan(0);
+	});
+	test('an unbound domain: every panel no-binding, unbound true, and the strip is the nodes gap', async () => {
+		const r = routersWithout([]);
+		const snap = (await buildDomainInfrastructureSnapshot(
+			r.platform,
+			r.infrastructure,
+			scope,
+			'tax-domain',
+			now
+		))!;
+		expect(snap.unbound).toBe(true);
+		for (const p of [
+			snap.summary,
+			snap.nodes,
+			snap.regions,
+			snap.clusters,
+			snap.databases,
+			snap.utilization,
+			snap.cost
+		]) {
+			expect(p.status).toBe('unavailable');
+			expect((p as { reason?: string }).reason).toBe('no-binding');
+		}
+	});
+	test('a bound domain missing cloud.storage alone: storageBytes null, unbound false', async () => {
+		const r = routersWithout(['cloud.storage']);
+		const snap = (await buildDomainInfrastructureSnapshot(
+			r.platform,
+			r.infrastructure,
+			scope,
+			'payment-domain',
+			now
+		))!;
+		expect(snap.unbound).toBe(false);
+		expect(ok(snap.summary).storageBytes).toBeNull();
+		expect(ok(snap.summary).clusters).toEqual({ count: 2, atLimit: false });
+	});
+	test('a bound domain missing cloud.nodes: the strip is that gap, the other panels are ok', async () => {
+		const r = routersWithout(['cloud.nodes']);
+		const snap = (await buildDomainInfrastructureSnapshot(
+			r.platform,
+			r.infrastructure,
+			scope,
+			'payment-domain',
+			now
+		))!;
+		expect(snap.unbound).toBe(false);
+		expect(snap.summary.status).toBe('unavailable');
+		expect((snap.summary as { reason?: string }).reason).toBe('no-capability');
+		expect(snap.regions.status).toBe('ok');
+	});
+	test('unknown slug → null', async () => {
+		const r = routersWithout([]);
+		expect(
+			await buildDomainInfrastructureSnapshot(
+				r.platform,
+				r.infrastructure,
+				scope,
+				'no-such-domain',
+				now
+			)
+		).toBeNull();
+	});
+	test('toInfraSummaryView prints 100+ at the limit and a dash for a null cell', () => {
+		const view = toInfraSummaryView({
+			nodes: { healthy: 1, warning: 0, down: 0 },
+			clusters: { count: 100, atLimit: true },
+			databases: null,
+			storageBytes: null
+		});
+		expect(view.clustersLabel).toBe('100+');
+		expect(view.databasesLabel).toBe('—');
+		expect(view.storageLabel).toBe('—');
+	});
+});
 // `InfraSummary` is never published — the seven API paths carry the resources, not the strip — so
 // `count`/`atLimit` are asserted on `toInfraSummaryView` only (Task 13 corrects the spec's testing row).
 ```
@@ -1360,6 +1472,7 @@ export async function buildDomainInfrastructureSnapshot(
 		domain,
 		unbound: collapseUnbound([nodes, regions, clusters, databases, utilization, cost, storage]),
 		summary,
+		nodes,
 		regions,
 		clusters,
 		databases,
@@ -1389,7 +1502,7 @@ export async function buildDomainInfrastructureSnapshot(
 - Modify: `src/routes/domains/[slug]/[tab]/+page.ts` (`_BUILT_TABS` + `'infrastructure'`), `e2e/harness.ts` (`ROUTES` + `'/domains/payment-domain/infrastructure'`), `src/lib/server/platform/capability-gaps.test.ts` (two `SCREENS` entries: `'domain infrastructure'` slug `'payment-domain'`; `'domain infrastructure (unbound)'` slug `'tax-domain'`), `request-budget.test.ts` + `warm-budget.test.ts` (rows, MEASURED)
 
 - [ ] **Step 1:** Remote: `export const getDomainInfrastructure = query(scopedServiceSchema, async ({ slug, ...scope }) => readDomainInfrastructure(scope, slug));`
-- [ ] **Step 2:** Page, following `domains/[slug]/deployments/+page.svelte`: `getDomainHeader` for chrome; `{#if snapshot.unbound}` → one sentence `{gapSentence('no-binding', 'cloud', 'infrastructure')}` above the strip; else the six panels each with `PanelGap` fallback. Prefer the existing infrastructure cards where they already accept `Panel<T>` (`RegionHealthCard`, `ComputeCard`, `DatabasesCard`, `UtilizationCard`, `StorageCard`, `CostCard` all import `PanelGap` — read their props; wrap rather than fork).
+- [ ] **Step 2:** Page, following `domains/[slug]/deployments/+page.svelte`: `getDomainHeader` for chrome; `{#if snapshot.unbound}` → one sentence `{gapSentence('no-binding', 'cloud', 'infrastructure')}` above the strip; else the six panels each with `PanelGap` fallback. Use the five cards named in Step 1 — `RegionHealthCard`, `ComputeCard` (`nodes` + `clusters` panels, both on the snapshot), `DatabasesCard`, `UtilizationCard`, `CostCard`. NOT `StorageCard`: storage is a strip cell only; this tab has no storage panel.
 - [ ] **Step 3:** `_BUILT_TABS`, `ROUTES`, two sweep entries, budget rows with measured numbers (`cost()` helper; comment the numbers). The unbound entry (`tax-domain`) short-circuits on `no-binding` for every dropped capability — it proves the unbound path renders, not capability gaps; say so in its comment.
 - [ ] **Step 4:** Browser: `bun run build && PORT=4907 ORIGIN=http://localhost:4907 bun ./build/index.js`; `/domains/payment-domain/infrastructure` (strip `11/12`-style counts under fixtures will be fixture numbers — record them), `/domains/tax-domain/infrastructure` (one "Not bound" sentence, no zeros), `/domains/no-such/infrastructure` (not-found). `bun test e2e/render.test.ts` green in all stacks available.
 - [ ] **Step 5: Commit** — `feat: a domain's Infrastructure tab — what it runs on, by its tag`
