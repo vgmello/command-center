@@ -12,7 +12,14 @@ import type { PageLoad } from './$types';
  * (`load`, `prerender`, …) plus anything starting with `_`; a bare `BUILT_TABS` builds
  * fine under `bun test` but fails the production build with "Invalid export".
  */
-export const _BUILT_TABS = ['overview', 'dependencies', 'services', 'deployments', 'slos'];
+export const _BUILT_TABS = [
+	'overview',
+	'dependencies',
+	'services',
+	'deployments',
+	'slos',
+	'infrastructure'
+];
 
 /**
  * Reject a section that is not one of ours, before render.

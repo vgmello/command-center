@@ -5,6 +5,7 @@ import { buildOverview } from './snapshot';
 import { buildDomainsSnapshot } from './domains-view';
 import { buildDomainSnapshot, listDomainServiceVitals } from './domain-view';
 import { buildDomainDeploymentsSnapshot, buildDomainSlosSnapshot } from './domain-tabs-view';
+import { buildDomainInfrastructureSnapshot } from './domain-infrastructure-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
@@ -102,6 +103,30 @@ const SCREENS: Array<{
 	{
 		name: 'domain slos',
 		run: (r) => buildDomainSlosSnapshot(r.platform, r.service, scope, 'payment-domain', new Date())
+	},
+	{
+		name: 'domain infrastructure',
+		run: (r) =>
+			buildDomainInfrastructureSnapshot(
+				r.platform,
+				r.infrastructure,
+				scope,
+				'payment-domain',
+				new Date()
+			)
+	},
+	{
+		// Unbound: every read short-circuits on `no-binding` before any capability is consulted,
+		// so this proves the unbound path renders under every drop — not that gaps are handled.
+		name: 'domain infrastructure (unbound)',
+		run: (r) =>
+			buildDomainInfrastructureSnapshot(
+				r.platform,
+				r.infrastructure,
+				scope,
+				'tax-domain',
+				new Date()
+			)
 	},
 	{
 		name: 'service detail',

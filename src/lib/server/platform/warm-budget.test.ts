@@ -17,6 +17,7 @@ import { buildOverview } from './snapshot';
 import { buildDomainsSnapshot } from './domains-view';
 import { buildDomainSnapshot, listDomainServiceVitals } from './domain-view';
 import { buildDomainDeploymentsSnapshot, buildDomainSlosSnapshot } from './domain-tabs-view';
+import { buildDomainInfrastructureSnapshot } from './domain-infrastructure-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
@@ -188,6 +189,11 @@ const SCREENS: Array<{ name: string; run: (r: Routers, now: Date) => Promise<unk
 		run: (r, now) => buildDomainSlosSnapshot(r.platform, r.service, scope, 'payment-domain', now)
 	},
 	{
+		name: 'domain infrastructure',
+		run: (r, now) =>
+			buildDomainInfrastructureSnapshot(r.platform, r.infrastructure, scope, 'payment-domain', now)
+	},
+	{
 		name: 'deployments',
 		run: (r, now) => buildDeploymentsSnapshot(r.deployment, scope, 'daily', now)
 	},
@@ -235,6 +241,12 @@ const WARM_CEILING: Record<string, number> = {
 	// `live` tier by design (a compliance figure read back off disk is already stale), so
 	// it is re-fetched in full both times and is most of what this number is made of.
 	'domain slos': 14,
+	// Measured at 5 cold and 5 warm — the seven cloud reads cost nothing either time (the
+	// fixture cloud provider is in-process, same as `infrastructure` below); the whole of
+	// it is `findDomain`'s `apm.serviceHealth` fanout, which is `live` tier by design and
+	// therefore re-fetched in full both times, the same reason `domain slos` above never
+	// drops below its own `apm.domainVitals` read.
+	'domain infrastructure': 15,
 	'service detail': 33,
 	'service metrics': 16,
 	infrastructure: 5

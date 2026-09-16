@@ -10,6 +10,7 @@ import { buildOverview } from './snapshot';
 import { buildDomainsSnapshot } from './domains-view';
 import { buildDomainSnapshot } from './domain-view';
 import { buildDomainDeploymentsSnapshot, buildDomainSlosSnapshot } from './domain-tabs-view';
+import { buildDomainInfrastructureSnapshot } from './domain-infrastructure-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
@@ -193,6 +194,24 @@ describe('what a screen costs upstream', () => {
 				)
 			)
 		).toBeLessThan(30);
+	});
+
+	test('domain infrastructure', async () => {
+		// Measured at 5, all Coralogix — the seven cloud reads cost nothing (the fixture
+		// cloud provider is in-process, same as the estate's own infrastructure test
+		// above); the whole of this is `findDomain`'s `apm.serviceHealth` fanout, which
+		// every domain screen pays to roll a domain's status up from its services.
+		expect(
+			await cost((h) =>
+				buildDomainInfrastructureSnapshot(
+					h.routers.platform,
+					h.routers.infrastructure,
+					scope,
+					'payment-domain',
+					h.now
+				)
+			)
+		).toBeLessThan(15);
 	});
 
 	test('deployments', async () => {

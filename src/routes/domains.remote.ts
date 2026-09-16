@@ -4,6 +4,7 @@ import {
 	readDomain,
 	readDomainDependencies,
 	readDomainDeployments,
+	readDomainInfrastructure,
 	readDomainPage,
 	readDomainServices,
 	readDomainSlos,
@@ -113,4 +114,16 @@ export const getDomainDeployments = query(scopedServiceSchema, async ({ slug, ..
  */
 export const getDomainSlos = query(scopedServiceSchema, async ({ slug, ...scope }) =>
 	readDomainSlos(scope, slug)
+);
+
+/**
+ * A domain's Infrastructure tab: the summary strip, its regions, compute, databases,
+ * utilisation and cost — the same seven cloud reads the estate page makes, narrowed to
+ * this domain's tagged resources.
+ *
+ * Its own query, not a slice of the overview composite: this tab redraws on the refresh
+ * tick, and nothing else on the domain needs to be refetched when it does.
+ */
+export const getDomainInfrastructure = query(scopedServiceSchema, async ({ slug, ...scope }) =>
+	readDomainInfrastructure(scope, slug)
 );

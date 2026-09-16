@@ -93,6 +93,17 @@ describeRender('what a reader actually sees', () => {
 		const wires = await view.evaluate("document.querySelectorAll('path[id^=dep-wire-]').length");
 		expect(wires as number).toBeGreaterThan(0);
 	}, 40_000);
+
+	test('an unbound domain’s infrastructure tab says so, and draws nothing else', async () => {
+		// tax-domain declares no cloud binding, so `unbound` collapses all seven panels
+		// into one sentence — no strip, no cards, no zeros.
+		await view.navigate(`${app.baseUrl}/domains/tax-domain/infrastructure`);
+		const text = await settle(view, (one) => one.includes('Not bound'));
+
+		expect(text.includes('Not bound')).toBe(true);
+		expect(text.includes('Infrastructure Health')).toBe(false);
+		expect(text.includes('Database Overview')).toBe(false);
+	}, 40_000);
 });
 
 const sourcesReady = available && (await mocksRunning());
