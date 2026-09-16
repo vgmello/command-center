@@ -40,7 +40,7 @@ import type {
 } from '$lib/platform/types';
 import type { DomainQuery, PlatformScope } from '$lib/platform/query';
 import type { DeploymentQuery } from '$lib/platform/deployments';
-import { serviceTrendsOf } from '$lib/platform/deployment-aggregates';
+import { serviceTrendsOf, trendsOf } from '$lib/platform/deployment-aggregates';
 import type {
 	DeploymentSource,
 	InfrastructureSource,
@@ -53,7 +53,6 @@ import {
 	findDomain,
 	readDomainDependencies,
 	readDomainVitals,
-	buildDeploymentTrends,
 	buildStatusTrend,
 	listDeployingDomains,
 	listDeploymentInsights,
@@ -194,11 +193,17 @@ export class FixtureDeploymentSource implements DeploymentSource {
 		return buildStatusTrend(new Date());
 	}
 
+	// Bucketed off the log, not synthesised around today's count — the same rows
+	// `readServiceTrends` below splits per service, so the estate figure and the sum of
+	// its services are the same number. See the fixture deployment provider, which had
+	// the identical divergence.
 	async readTrends(
 		_scope: PlatformScope,
 		grain: TrendGrain
 	): Promise<{ frequency: TimeSeries; meanDuration: TimeSeries }> {
-		return buildDeploymentTrends(new Date(), grain);
+		const now = new Date();
+		const from = new Date(now.getTime() - TREND_DAYS[grain] * 86_400_000);
+		return trendsOf(listDeployments(now), grain, from, now);
 	}
 
 	async readServiceTrends(_scope: PlatformScope, grain: TrendGrain): Promise<ServiceTrend[]> {

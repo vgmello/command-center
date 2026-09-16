@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { serviceTrendsOf } from '$lib/platform/deployment-aggregates';
+import { serviceTrendsOf, trendsOf } from '$lib/platform/deployment-aggregates';
 import type { TrendGrain } from '$lib/platform/types';
 import * as log from '../../platform/fixtures';
 import { queryDeploymentsInMemory } from '../../platform/in-memory-query';
@@ -16,6 +16,11 @@ import type { LinkView, SourceBinding } from '../provider';
  * `deployment-series-shape.ts`'s copy of this value.
  */
 const TREND_DAYS: Record<TrendGrain, number> = { daily: 14, weekly: 84, monthly: 365 };
+
+/** The start of the window a grain looks back over. */
+function windowStart(now: Date, grain: TrendGrain): Date {
+	return new Date(now.getTime() - TREND_DAYS[grain] * 86_400_000);
+}
 
 export const fixtureDeploymentProvider = defineProvider<DeploymentProvider>({
 	id: 'fixture-deployment',
@@ -50,13 +55,17 @@ export const fixtureDeploymentProvider = defineProvider<DeploymentProvider>({
 		async readStatusTrend() {
 			return log.buildStatusTrend(new Date());
 		},
+		// Both trends come off the same rows, on purpose. `readTrends` used to synthesise a
+		// seeded curve around today's count while `readServiceTrends` bucketed the log, so
+		// the estate said it had shipped 186 times and its services said 32 — two stories
+		// about one quantity, which is the thing a fixture must never do.
 		async readTrends(_ctx, grain) {
-			return log.buildDeploymentTrends(new Date(), grain);
+			const now = new Date();
+			return trendsOf(log.listDeployments(now), grain, windowStart(now, grain), now);
 		},
 		async readServiceTrends(_ctx, grain) {
 			const now = new Date();
-			const from = new Date(now.getTime() - TREND_DAYS[grain] * 86_400_000);
-			return serviceTrendsOf(log.listDeployments(now), grain, from, now);
+			return serviceTrendsOf(log.listDeployments(now), grain, windowStart(now, grain), now);
 		},
 		async listInsights() {
 			return log.listDeploymentInsights(new Date());

@@ -123,6 +123,33 @@ describe('the deployment router', () => {
 		expect((await deployment.readDomainBreakdown(scope)).total).toBeGreaterThan(0);
 	});
 
+	test('the estate figure is the sum of the services, including legacy rows', async () => {
+		// The property the estate read was rewired for. It used to be its own accumulation —
+		// a second window fetch, stored against the single entity `''`, describing exactly
+		// the runs the per-service rows describe — and under the fixtures the two disagreed
+		// outright: 186 synthesised runs against 32 real ones.
+		//
+		// Now `readTrends` sums every entity `readServiceTrends` rebuilt, so the deployments
+		// page and a domain's Deployments tab cannot tell different stories about one set of
+		// runs. A provider that can only collapse still stores its estate answer under `''`,
+		// and that row is summed the same way — the two are never written for one period, so
+		// nothing double-counts.
+		const { deployment } = build();
+		const [estate, perService] = await Promise.all([
+			deployment.readTrends(scope, 'daily'),
+			deployment.readServiceTrends(scope, 'daily')
+		]);
+
+		const estateRuns = estate.frequency.points.reduce((sum, one) => sum + one.value, 0);
+		const splitRuns = perService.reduce(
+			(sum, row) => sum + row.runs.points.reduce((inner, one) => inner + one.value, 0),
+			0
+		);
+
+		expect(estateRuns).toBe(splitRuns);
+		expect(estateRuns).toBeGreaterThan(0);
+	});
+
 	test('a filtered query still reaches the source and narrows', async () => {
 		const { deployment } = build();
 		const page = await deployment.queryDeployments(scope, {

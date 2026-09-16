@@ -1,5 +1,6 @@
 import type { DeploymentSource } from '../../platform/source';
 import type { DeploymentProvider } from '../contracts';
+import { estateTrendsOf } from '$lib/platform/domain-deployments';
 import { fanOut, fanOutSeries, fanOutSingle, type RouterDeps } from './shared';
 import {
 	TREND_DAYS,
@@ -47,8 +48,31 @@ export function createDeploymentRouter(deps: RouterDeps): DeploymentSource {
 				TREND_DAYS.daily * 86_400
 			),
 
-		readTrends: (scope, grain) =>
-			fanOutSeries(
+		/**
+		 * The estate's trends — summed from the per-service rows, wherever they exist.
+		 *
+		 * They used to be their own accumulation: a separate window fetch, stored under
+		 * `deployment.trends` against the one entity `''`, describing exactly the runs the
+		 * per-service rows already describe. Two accumulations of one set of facts is two
+		 * things that can disagree, and under the fixtures they did — the estate trend was
+		 * a seeded curve around today's count while the per-service rows were the log.
+		 *
+		 * So the estate figure is now the sum over every entity, which is what
+		 * `estateTrendsOf` does to what `readServiceTrends` rebuilt. `estate ==
+		 * sum(services)` is true by construction rather than by coincidence, and the two
+		 * reads share one set of stored samples instead of paying for a window each.
+		 *
+		 * The fallback below is not dead code. A provider is entitled to collapse — to
+		 * report what the estate did without saying which service did it — and one that
+		 * declares `deployment.trends` alone still draws the deployments page from its own
+		 * estate answer, stored against `''` as before.
+		 */
+		readTrends: async (scope, grain) => {
+			if (deps.registry.supporting('deployment.serviceTrends').length > 0) {
+				return estateTrendsOf(await source.readServiceTrends(scope, grain));
+			}
+
+			return fanOutSeries(
 				deps,
 				'deployment.trends',
 				scope,
@@ -58,7 +82,8 @@ export function createDeploymentRouter(deps: RouterDeps): DeploymentSource {
 				trendsShape(grain),
 				(client, ctx) => (client as DeploymentProvider).readTrends!(ctx, grain),
 				TREND_DAYS[grain] * 86_400
-			),
+			);
+		},
 
 		readServiceTrends: (scope, grain) =>
 			fanOutSeries(

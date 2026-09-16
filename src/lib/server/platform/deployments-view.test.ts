@@ -116,11 +116,20 @@ describe('buildDeploymentsSnapshot', () => {
 		);
 	});
 
-	test('the newest frequency bucket matches the day the tiles report', async () => {
+	test('the frequency chart accounts for every run in the window, and invents none', async () => {
+		// This used to assert that the newest bucket equalled the summary's total, which was
+		// a fixture-only coincidence: the stand-in synthesised a seven-bucket curve around
+		// today's count and then *pinned* the last point to it. Octopus summarises thirty
+		// days and buckets the chart by day, so the two were never the same number for any
+		// real source — the assertion held only where nothing was measured.
+		//
+		// What holds everywhere is that the chart is the log: every run in the window falls
+		// in exactly one bucket, so the series sums to the rows and no bucket is invented.
 		const snapshot = await buildDeploymentsSnapshot(source, scope);
-		const last = ok(snapshot.frequency).points.at(-1);
+		const charted = ok(snapshot.frequency).points.reduce((sum, point) => sum + point.value, 0);
+		const logged = await source.listDeployments(scope, 500);
 
-		expect(last?.value).toBe(ok(snapshot.summary).total);
+		expect(charted).toBe(logged.length);
 	});
 
 	test('honours the recent limit rather than trusting the source to slice', async () => {

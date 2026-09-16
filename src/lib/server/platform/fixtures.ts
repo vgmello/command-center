@@ -22,8 +22,7 @@ import type {
 	RateObservation,
 	TimeRangeId,
 	TimeRangeOption,
-	TimeSeries,
-	TrendGrain
+	TimeSeries
 } from '$lib/platform/types';
 import { healthChangeDirection, statusFromScore } from '$lib/platform/health';
 import { buildSeries, hashSeed, seededRandom } from './series';
@@ -868,75 +867,6 @@ export function buildStatusTrend(now: Date, buckets = 16): TimeSeries[] {
 function clockLabel(now: Date, minutesBack: number): string {
 	const at = new Date(now.getTime() - minutesBack * 60_000);
 	return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
-}
-
-/** "May 14" for a whole day back. */
-function dayLabel(now: Date, daysBack: number): string {
-	const at = new Date(now.getTime() - daysBack * 86_400_000);
-	return at.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
-}
-
-const GRAIN_DAYS: Record<TrendGrain, number> = { daily: 1, weekly: 7, monthly: 30 };
-
-/**
- * Deployment count and mean duration bucketed at the requested grain.
- *
- * The newest bucket is pinned to today's actual totals so the charts and the tiles
- * above them cannot print different numbers for the same day.
- */
-export function buildDeploymentTrends(
-	now: Date,
-	grain: TrendGrain,
-	buckets = 7
-): { frequency: TimeSeries; meanDuration: TimeSeries } {
-	const log = listDeploymentLog(now);
-	const today = log.length;
-	const finished = log.filter((one) => one.durationSeconds !== null);
-	const meanToday = Math.round(
-		finished.reduce((sum, one) => sum + (one.durationSeconds ?? 0), 0) / (finished.length || 1)
-	);
-
-	const counts = buildSeries(`deploy:frequency:${grain}`, today, {
-		points: buckets,
-		volatility: 0.18,
-		floor: 1
-	}).values;
-	const durations = buildSeries(`deploy:duration:${grain}`, meanToday, {
-		points: buckets,
-		volatility: 0.12,
-		drift: -0.2,
-		floor: 30
-	}).values;
-
-	const step = GRAIN_DAYS[grain];
-	const labels = Array.from({ length: buckets }, (_, index) =>
-		dayLabel(now, (buckets - 1 - index) * step)
-	);
-
-	const frequency = toTrend('frequency', 'Deployments', labels, counts.map(Math.round));
-	const meanDuration = toTrend('mean-duration', 'Mean time', labels, durations.map(Math.round));
-
-	// Pin the last bucket so the chart agrees with the tiles above it.
-	frequency.points[frequency.points.length - 1].value = today;
-	meanDuration.points[meanDuration.points.length - 1].value = meanToday;
-
-	return { frequency: rebound(frequency), meanDuration: rebound(meanDuration) };
-}
-
-function toTrend(id: string, label: string, labels: string[], values: number[]): TimeSeries {
-	return {
-		id,
-		label,
-		points: labels.map((point, index) => ({ label: point, value: values[index] ?? 0 })),
-		min: 0,
-		max: 0
-	};
-}
-
-/** Recompute bounds after a point was pinned, so the chart still scales to fit. */
-function rebound(series: TimeSeries): TimeSeries {
-	const values = series.points.map((point) => point.value);
-	return { ...series, min: Math.min(...values), max: Math.max(...values) };
 }
 
 /**
