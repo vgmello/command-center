@@ -372,14 +372,17 @@ export const sloBudgetSchema = v.object({
 /**
  * One service's slice of a domain's deployment figures.
  *
- * Only `total` and `failures` travel — not the row's own change failure rate or its
- * sparkline — so a caller re-derives the rate itself rather than trusting a number this
- * API precomputed for a chart it cannot see.
+ * `total` and `failures` travel bare, not a precomputed change failure rate, so a caller
+ * re-derives the rate itself rather than trusting a number this API computed for a chart
+ * it cannot see. `frequency` is a measurement, not a rendering — runs per bucket, the same
+ * kind of fact the domain-level `frequency` above already publishes — so it travels too,
+ * with the same bounds stripped by the same `toSeriesDto` that field uses.
  */
 const domainDeployShareSchema = v.object({
 	service: v.string(),
 	total: v.pipe(v.number(), v.integer(), v.minValue(0)),
-	failures: v.pipe(v.number(), v.integer(), v.minValue(0))
+	failures: v.pipe(v.number(), v.integer(), v.minValue(0)),
+	frequency: seriesSchema
 });
 
 /**
@@ -912,13 +915,14 @@ export function toSloBudgetDto(slo: SloBudget): SloBudgetDto {
 }
 
 /**
- * A domain's DORA figures, without the per-service sparklines or a precomputed rate on
- * each row.
+ * A domain's DORA figures, without a precomputed rate on each row.
  *
- * `byService` carries only `total`/`failures` — see `domainDeployShareSchema` — so a
+ * `byService` carries `total`/`failures` bare — see `domainDeployShareSchema` — so a
  * caller re-derives `changeFailureRatePct` for a row instead of trusting a figure this
  * API computed for a table it cannot see. The domain-level rate is kept as-is: it is
- * this endpoint's own headline figure, not a rendering of something else.
+ * this endpoint's own headline figure, not a rendering of something else. Both the
+ * domain-level and the per-row `frequency` travel as points only, the sparkline bounds
+ * stripped by the same `toSeriesDto` every series in this file goes through.
  */
 export function toDomainDeploymentStatsDto(stats: DomainDeploymentStats): DomainDeploymentStatsDto {
 	return {
@@ -930,7 +934,8 @@ export function toDomainDeploymentStatsDto(stats: DomainDeploymentStats): Domain
 		byService: stats.byService.map((share) => ({
 			service: share.service,
 			total: share.total,
-			failures: share.failures
+			failures: share.failures,
+			frequency: toSeriesDto(share.frequency)
 		}))
 	};
 }

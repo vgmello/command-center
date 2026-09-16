@@ -457,23 +457,36 @@ describe('domain deployment stats', () => {
 		}
 	});
 
-	test('a row does not carry a precomputed rate or its own sparkline', async () => {
+	test('a row does not carry a precomputed rate', async () => {
 		const stats = await buildStats();
 		const dto = toDomainDeploymentStatsDto(stats);
 		const row = dto.byService[0] as unknown as Record<string, unknown>;
 
 		expect(stats.byService[0].changeFailureRatePct).toBeDefined();
 		expect(row.changeFailureRatePct).toBeUndefined();
-		expect(row.frequency).toBeUndefined();
 	});
 
-	test('no sparkline bounds travel', async () => {
+	test('a row does carry its own frequency — a measurement, not a rendering', async () => {
+		const stats = await buildStats();
+		const dto = toDomainDeploymentStatsDto(stats);
+		const row = dto.byService[0];
+
+		expect(row.frequency.points.length).toBeGreaterThan(0);
+		expect(row.frequency.points[0]).toEqual({
+			label: stats.byService[0].frequency.points[0].label,
+			value: stats.byService[0].frequency.points[0].value
+		});
+	});
+
+	test('no sparkline bounds travel, at the domain level or per row', async () => {
 		// Presentation. `min`/`max` are how our chart scales an axis.
 		const stats = await buildStats();
 		const dto = toDomainDeploymentStatsDto(stats);
 
 		expect(stats.frequency.min).toBeDefined();
+		expect(stats.byService[0].frequency.min).toBeDefined();
 		expect('frequency' in dto && 'min' in (dto.frequency as object)).toBe(false);
+		expect('min' in (dto.byService[0].frequency as object)).toBe(false);
 	});
 });
 

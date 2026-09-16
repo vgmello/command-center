@@ -677,6 +677,8 @@ components:
               failures:
                 minimum: 0
                 type: integer
+              frequency:
+                $ref: '#/components/schemas/Series'
               service:
                 type: string
               total:
@@ -686,6 +688,7 @@ components:
               - service
               - total
               - failures
+              - frequency
             type: object
           type: array
         changeFailureRatePct:
