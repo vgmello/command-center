@@ -4,6 +4,7 @@ import type {
 	CostBreakdown,
 	CostBreakdownView,
 	DomainAccent,
+	InfraSummary,
 	ResourceReading,
 	ResourceUsage,
 	StorageClass,
@@ -215,5 +216,38 @@ export function toCostView(cost: CostBreakdown): CostBreakdownView {
 			accent: accentFor(one.id),
 			percentage: shareOf(one.amount, cost.total, 1)
 		}))
+	};
+}
+
+/**
+ * The domain infrastructure strip's four labels.
+ *
+ * `nodesLabel` is the total node count — the split (healthy/warning/down) is
+ * `ComputeCard`'s job, not the strip's. `clustersLabel` and `databasesLabel` print a
+ * dash for a gapped cell (never `0`, which would claim a count nobody measured) and
+ * `'100+'` at `DOMAIN_INFRA_LIMIT`, since a fetch capped at the limit cannot tell 100
+ * from more.
+ */
+export function toInfraSummaryView(s: InfraSummary): {
+	nodesLabel: string;
+	clustersLabel: string;
+	databasesLabel: string;
+	storageLabel: string;
+} {
+	return {
+		nodesLabel: String(s.nodes.healthy + s.nodes.warning + s.nodes.down),
+		clustersLabel:
+			s.clusters === null
+				? '—'
+				: s.clusters.atLimit
+					? `${s.clusters.count}+`
+					: String(s.clusters.count),
+		databasesLabel:
+			s.databases === null
+				? '—'
+				: s.databases.atLimit
+					? `${s.databases.count}+`
+					: String(s.databases.count),
+		storageLabel: s.storageBytes === null ? '—' : formatBytes(s.storageBytes)
 	};
 }

@@ -825,6 +825,40 @@ export interface DomainSlosSnapshot {
 	services: Panel<ServiceSloRow[]>;
 }
 
+/**
+ * Everything the domain's Infrastructure tab renders.
+ *
+ * A domain-scoped mirror of `InfrastructureSnapshot`, narrowed to the resources this
+ * domain owns rather than the whole estate — the same seven reads, each taking the
+ * domain's slug as `owner` instead of reading unfiltered.
+ */
+export interface DomainInfrastructureSnapshot {
+	generatedAt: string;
+	domain: Domain;
+	/**
+	 * Whether every one of the seven panels below is the same `'no-binding'` gap.
+	 *
+	 * Binding is per domain, so this is all-or-nothing: a domain with no declared cloud
+	 * binding gets seven identical "not bound" panels, which is one fact repeated seven
+	 * times rather than seven separate ones — `collapseUnbound` is what decides it.
+	 */
+	unbound: boolean;
+	/**
+	 * The summary strip, composed from the panels below rather than a source-backed read
+	 * of its own — there is no eighth capability behind it.
+	 */
+	summary: Panel<InfraSummary>;
+	/** The nodes panel itself — `ComputeCard` takes `Panel<NodeCounts>` beside the clusters. */
+	nodes: Panel<NodeCounts>;
+	regions: Panel<InfraRegion[]>;
+	clusters: Panel<ClusterLoad[]>;
+	databases: Panel<DatabaseInstance[]>;
+	// VIEW types, converted in the assembler with toUsageView / toCostView exactly as
+	// infrastructure-view.ts does — UtilizationCard and CostCard take these, not the raw facts.
+	utilization: Panel<ResourceUsage[]>;
+	cost: Panel<CostBreakdownView>;
+}
+
 /** Everything the service metrics tab renders. */
 export interface ServiceMetricsSnapshot {
 	generatedAt: string;
@@ -1034,6 +1068,20 @@ export interface CostBreakdownView extends Omit<CostBreakdown, 'categories'> {
 	categories: CostCategoryView[];
 	totalFormatted: string;
 	forecastFormatted: string;
+}
+
+/**
+ * The domain infrastructure tab's summary strip, composed from its own seven panels.
+ *
+ * `clusters` and `databases` are nullable rather than zeroed: a gap in `cloud.clusters`
+ * or `cloud.databases` alone must not print a false "0" beside a working nodes count, so
+ * the cell that gapped is `null` and prints a dash, never a zero (see `CountTile.value`).
+ */
+export interface InfraSummary {
+	nodes: NodeCounts;
+	clusters: { count: number; atLimit: boolean } | null;
+	databases: { count: number; atLimit: boolean } | null;
+	storageBytes: number | null;
 }
 
 /** Everything the infrastructure overview tab renders. */

@@ -12,6 +12,7 @@ import type {
 	DomainDependencies,
 	DomainSnapshot,
 	DomainDeploymentsSnapshot,
+	DomainInfrastructureSnapshot,
 	DomainSlosSnapshot,
 	DomainVitals,
 	DomainsSnapshot,
@@ -49,6 +50,7 @@ import { buildServiceMetricsSnapshot } from './service-metrics-view';
 import { buildDomainSnapshot, listDomainServiceVitals } from './domain-view';
 import { buildDomainDeploymentsSnapshot, buildDomainSlosSnapshot } from './domain-tabs-view';
 import { buildInfrastructureSnapshot } from './infrastructure-view';
+import { buildDomainInfrastructureSnapshot } from './domain-infrastructure-view';
 import { ALL_DOMAINS, ALL_ENVIRONMENTS, ALL_SERVICES } from '$lib/platform/deployments';
 
 /**
@@ -314,28 +316,28 @@ export async function readServiceInsights(
 	return source.listMetricInsights(scope, slug);
 }
 
-export function readRegions(scope: PlatformScope) {
-	return infrastructureSource().listRegions(scope);
+export function readRegions(scope: PlatformScope, owner?: string) {
+	return infrastructureSource().listRegions(scope, owner);
 }
 
-export function readNodeCounts(scope: PlatformScope) {
-	return infrastructureSource().readNodeCounts(scope);
+export function readNodeCounts(scope: PlatformScope, owner?: string) {
+	return infrastructureSource().readNodeCounts(scope, owner);
 }
 
-export function readClusters(scope: PlatformScope, limit: number) {
-	return infrastructureSource().listClusters(scope, limit);
+export function readClusters(scope: PlatformScope, limit: number, owner?: string) {
+	return infrastructureSource().listClusters(scope, limit, owner);
 }
 
-export function readUtilization(scope: PlatformScope) {
-	return infrastructureSource().readUtilization(scope);
+export function readUtilization(scope: PlatformScope, owner?: string) {
+	return infrastructureSource().readUtilization(scope, owner);
 }
 
-export function readStorage(scope: PlatformScope) {
-	return infrastructureSource().readStorage(scope);
+export function readStorage(scope: PlatformScope, owner?: string) {
+	return infrastructureSource().readStorage(scope, owner);
 }
 
-export function readDatabases(scope: PlatformScope, limit: number) {
-	return infrastructureSource().listDatabases(scope, limit);
+export function readDatabases(scope: PlatformScope, limit: number, owner?: string) {
+	return infrastructureSource().listDatabases(scope, limit, owner);
 }
 
 export function readQueues(scope: PlatformScope, limit: number) {
@@ -346,8 +348,8 @@ export function readInfraAlerts(scope: PlatformScope, limit: number) {
 	return infrastructureSource().listAlerts(scope, limit);
 }
 
-export function readCost(scope: PlatformScope) {
-	return infrastructureSource().readCost(scope);
+export function readCost(scope: PlatformScope, owner?: string) {
+	return infrastructureSource().readCost(scope, owner);
 }
 
 /**
@@ -358,6 +360,20 @@ export function readCost(scope: PlatformScope) {
  */
 export function readDomainView(scope: PlatformScope, slug: string): Promise<DomainSnapshot | null> {
 	return buildDomainSnapshot(platformSource(), serviceSource(), deploymentSource(), scope, slug);
+}
+
+/**
+ * One domain's Infrastructure tab.
+ *
+ * `null` for a slug that matches nothing, like every other detail read here. Screen-shaped
+ * and deliberately not published, for the same reason `readDomainView` is not: `/api/v1`
+ * gets the resources it is composed from, which stay stable while the tab changes.
+ */
+export function readDomainInfrastructure(
+	scope: PlatformScope,
+	slug: string
+): Promise<DomainInfrastructureSnapshot | null> {
+	return buildDomainInfrastructureSnapshot(platformSource(), infrastructureSource(), scope, slug);
 }
 
 /**
