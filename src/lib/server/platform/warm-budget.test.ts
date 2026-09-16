@@ -222,7 +222,7 @@ const WARM_CEILING: Record<string, number> = {
 	// per-service trends accumulate and are all but free warm; they are simply not what this
 	// number is made of. Same profile as `domain detail` above, for the same reason.
 	'domain deployments': 60,
-	// Measured at 19 cold / 10 warm. `apm.slo` is `reference` tier and persists — the two
+	// Measured at 14 cold / 10 warm. `apm.slo` is `reference` tier and persists — the two
 	// services `payment-domain` runs cost almost nothing warm — but `apm.domainVitals` is
 	// `live` tier by design (a compliance figure read back off disk is already stale), so
 	// it is re-fetched in full both times and is most of what this number is made of.

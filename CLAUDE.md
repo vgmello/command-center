@@ -787,7 +787,7 @@ Note that `bun test` cannot compile `.svelte` files, so component rendering is o
 
 ### Tests that run the app, not just its logic
 
-`bun test src` is the logic suite: 844 tests, a few seconds, nothing booted. `bun run
+`bun test src` is the logic suite: 898 tests, a few seconds, nothing booted. `bun run
 test:e2e` builds the app, starts `build/index.js`, and asks it questions over HTTP. The two
 answer different things, and the split is not academic — every rendering bug this repo has
 had passed `check`, `lint` and the full unit suite:
