@@ -16,7 +16,7 @@ import {
 import { buildOverview } from './snapshot';
 import { buildDomainsSnapshot } from './domains-view';
 import { buildDomainSnapshot } from './domain-view';
-import { buildDomainDeploymentsSnapshot } from './domain-tabs-view';
+import { buildDomainDeploymentsSnapshot, buildDomainSlosSnapshot } from './domain-tabs-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
@@ -180,6 +180,10 @@ const SCREENS: Array<{ name: string; run: (r: Routers, now: Date) => Promise<unk
 			)
 	},
 	{
+		name: 'domain slos',
+		run: (r, now) => buildDomainSlosSnapshot(r.platform, r.service, scope, 'payment-domain', now)
+	},
+	{
 		name: 'deployments',
 		run: (r, now) => buildDeploymentsSnapshot(r.deployment, scope, 'daily', now)
 	},
@@ -218,6 +222,11 @@ const WARM_CEILING: Record<string, number> = {
 	// per-service trends accumulate and are all but free warm; they are simply not what this
 	// number is made of. Same profile as `domain detail` above, for the same reason.
 	'domain deployments': 60,
+	// Measured at 19 cold / 10 warm. `apm.slo` is `reference` tier and persists — the two
+	// services `payment-domain` runs cost almost nothing warm — but `apm.domainVitals` is
+	// `live` tier by design (a compliance figure read back off disk is already stale), so
+	// it is re-fetched in full both times and is most of what this number is made of.
+	'domain slos': 14,
 	'service detail': 33,
 	'service metrics': 16,
 	infrastructure: 5

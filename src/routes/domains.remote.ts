@@ -6,6 +6,7 @@ import {
 	readDomainDeployments,
 	readDomainPage,
 	readDomainServices,
+	readDomainSlos,
 	readDomainView,
 	readDomainsView
 } from '$lib/server/platform/service';
@@ -102,4 +103,14 @@ export const getDomainServices = query(scopedServiceSchema, async ({ slug, ...sc
  */
 export const getDomainDeployments = query(scopedServiceSchema, async ({ slug, ...scope }) =>
 	readDomainDeployments(scope, slug)
+);
+
+/**
+ * A domain's SLO compliance and the per-service budget behind it.
+ *
+ * Its own query, not a slice of the overview composite: this tab redraws on the refresh
+ * tick, and nothing else on the domain needs to be refetched when it does.
+ */
+export const getDomainSlos = query(scopedServiceSchema, async ({ slug, ...scope }) =>
+	readDomainSlos(scope, slug)
 );

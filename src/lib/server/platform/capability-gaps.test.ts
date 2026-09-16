@@ -11,7 +11,7 @@ import { CAPABILITY_TIER } from '../sources/tiers';
 import { buildOverview } from './snapshot';
 import { buildDomainsSnapshot } from './domains-view';
 import { buildDomainSnapshot, listDomainServiceVitals } from './domain-view';
-import { buildDomainDeploymentsSnapshot } from './domain-tabs-view';
+import { buildDomainDeploymentsSnapshot, buildDomainSlosSnapshot } from './domain-tabs-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
@@ -105,6 +105,10 @@ const SCREENS: Array<{
 				'payment-domain',
 				new Date()
 			)
+	},
+	{
+		name: 'domain slos',
+		run: (r) => buildDomainSlosSnapshot(r.platform, r.service, scope, 'payment-domain', new Date())
 	},
 	{
 		name: 'service detail',

@@ -9,7 +9,7 @@ import { FixtureCatalogSource } from '../catalog/fixture-source';
 import { buildOverview } from './snapshot';
 import { buildDomainsSnapshot } from './domains-view';
 import { buildDomainSnapshot } from './domain-view';
-import { buildDomainDeploymentsSnapshot } from './domain-tabs-view';
+import { buildDomainDeploymentsSnapshot, buildDomainSlosSnapshot } from './domain-tabs-view';
 import { buildDeploymentsSnapshot } from './deployments-view';
 import { buildServiceSnapshot } from './service-view';
 import { buildServiceMetricsSnapshot } from './service-metrics-view';
@@ -174,6 +174,25 @@ describe('what a screen costs upstream', () => {
 				)
 			)
 		).toBeLessThan(70);
+	});
+
+	test('domain slos', async () => {
+		// Measured at 14. `readSloBudget` is per service and `payment-domain` runs two, so
+		// most of this is the domain vitals read (`apm.domainVitals`, `live` tier — never
+		// persisted) rather than the budgets: two services at roughly two requests each
+		// (an instant availability query and a 30-day range) is only a handful of the
+		// total.
+		expect(
+			await cost((h) =>
+				buildDomainSlosSnapshot(
+					h.routers.platform,
+					h.routers.service,
+					scope,
+					'payment-domain',
+					h.now
+				)
+			)
+		).toBeLessThan(30);
 	});
 
 	test('deployments', async () => {

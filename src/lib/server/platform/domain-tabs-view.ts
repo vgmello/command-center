@@ -1,9 +1,17 @@
-import type { DomainDeploymentsSnapshot, TrendGrain } from '$lib/platform/types';
+import type {
+	DomainDeploymentsSnapshot,
+	DomainSlosSnapshot,
+	ServiceSloRow,
+	TrendGrain
+} from '$lib/platform/types';
+import type { Panel } from '$lib/platform/sources';
 import type { PlatformScope } from '$lib/platform/query';
 import type { DeploymentSource, PlatformSource, ServiceSource } from './source';
 import { ALL_ENVIRONMENTS, ALL_SERVICES } from '$lib/platform/deployments';
 import { rollUpDeployments } from '$lib/platform/domain-deployments';
 import { panel } from '../sources/panel';
+import { CapabilityUnavailableError } from '../sources/errors';
+import { listDomainServiceVitals } from './domain-view';
 
 /**
  * Assembles the domain tabs that are not the overview.
@@ -101,4 +109,98 @@ export async function buildDomainDeploymentsSnapshot(
 		stats,
 		log
 	};
+}
+
+/**
+ * A domain's SLO compliance, and the per-service budget behind each of its services.
+ *
+ * Returns `null` when there is no such domain, for the same reason the deployments tab
+ * does — a typo in a URL is not an outage.
+ *
+ * The headline and the table are read as two separate panels, deliberately: `headline`
+ * is `DomainVitals.sloCompliancePct`/`sloWindowLabel`, taken whole and never recomputed
+ * from the rows below it, because the domain header prints those same two fields from
+ * the same read and a tab that derived its own figure would make a reader switching
+ * tabs watch the number move for no reason.
+ */
+export async function buildDomainSlosSnapshot(
+	platform: PlatformSource,
+	services: ServiceSource,
+	scope: PlatformScope,
+	slug: string,
+	now: Date = new Date()
+): Promise<DomainSlosSnapshot | null> {
+	const domain = await platform.findDomain(scope, slug);
+	if (!domain) return null;
+
+	const headline = await panel('apm.domainVitals', async () => {
+		const vitals = await platform.readDomainVitals(scope, slug);
+
+		// A known domain's vitals come back `null` only for a domain the fixture source
+		// does not know — already excluded above by `findDomain`. Treated the same as a
+		// capability gap: this panel's shape has no slot for "connected, nothing to
+		// report" the way `DomainSnapshot.stats` does, because a compliance percentage
+		// and a window label are not optional the way a whole tile is.
+		if (!vitals) throw new CapabilityUnavailableError('apm.domainVitals', 'no-capability');
+
+		return { data: { compliancePct: vitals.sloCompliancePct, windowLabel: vitals.sloWindowLabel } };
+	});
+
+	return {
+		generatedAt: now.toISOString(),
+		domain,
+		headline,
+		services: await buildSloRows(platform, services, scope, domain.slug, headline)
+	};
+}
+
+/**
+ * The per-service rows behind the SLOs tab's table.
+ *
+ * Reuses `listDomainServiceVitals` (Task 8) rather than re-deriving the domain's owned
+ * services here, so this tab's row set is exactly the Services tab's — not a second,
+ * independently computed list that could disagree with it about which services this
+ * domain runs.
+ *
+ * That reuse has a cost worth stating: `listDomainServiceVitals` needs `DomainVitals` to
+ * deal the catalog's services out against the split the domain reports, so when the
+ * domain's vitals are a gap it cannot say which services to read budgets for either.
+ * A `[]` there would read as "this domain runs no services", which is a different and
+ * false statement from "nothing told us which services it runs" — so that case is
+ * carried through as the identical gap `headline` already captured (same capability,
+ * same scope, same slug — the only reason `listDomainServiceVitals` came back empty),
+ * rather than answering `apm.slo` for a read that never happened.
+ */
+async function buildSloRows(
+	platform: PlatformSource,
+	services: ServiceSource,
+	scope: PlatformScope,
+	slug: string,
+	headline: Panel<{ compliancePct: number; windowLabel: string }>
+): Promise<Panel<ServiceSloRow[]>> {
+	const owned = await listDomainServiceVitals(platform, services, scope, slug);
+
+	if (owned === null) {
+		// `headline` already carries the exact cause: same capability, same read. Falling
+		// back to a generic reason only guards a case the fixture source cannot produce
+		// (vitals absent for a domain that is not a gap and not unknown).
+		return headline.status === 'ok'
+			? {
+					status: 'unavailable',
+					capability: 'apm.domainVitals',
+					kind: 'apm',
+					reason: 'no-capability'
+				}
+			: headline;
+	}
+
+	return panel('apm.slo', async () => ({
+		data: await Promise.all(
+			owned.map(async (one) => ({
+				slug: one.slug,
+				name: one.name,
+				budget: await services.readSloBudget(scope, one.slug)
+			}))
+		)
+	}));
 }

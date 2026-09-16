@@ -796,6 +796,35 @@ export interface DomainDeploymentsSnapshot {
 	log: Panel<Deployment[]>;
 }
 
+/** One service's objective as the domain's SLO tab lists it. */
+export interface ServiceSloRow {
+	slug: string;
+	name: string;
+	budget: SloBudget;
+}
+
+/** Everything the domain's SLOs tab renders. */
+export interface DomainSlosSnapshot {
+	generatedAt: string;
+	domain: Domain;
+	/**
+	 * The domain's stated compliance, taken from `DomainVitals` and never recomputed.
+	 *
+	 * A tab that derived its own figure from the services would make a reader switching
+	 * tabs watch the number move for no reason — the domain header prints these same two
+	 * fields, from the same read.
+	 */
+	headline: Panel<{ compliancePct: number; windowLabel: string }>;
+	/**
+	 * One row per service this domain runs.
+	 *
+	 * A gap here is attributed to whichever read actually failed: `apm.domainVitals` when
+	 * the domain's owned-service split cannot be determined (see `domain-tabs-view.ts`),
+	 * `apm.slo` when the split is known but the budgets behind it are not.
+	 */
+	services: Panel<ServiceSloRow[]>;
+}
+
 /** Everything the service metrics tab renders. */
 export interface ServiceMetricsSnapshot {
 	generatedAt: string;

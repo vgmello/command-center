@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { buildDomainDeploymentsSnapshot, DOMAIN_DEPLOYMENT_PAGE } from './domain-tabs-view';
+import {
+	buildDomainDeploymentsSnapshot,
+	buildDomainSlosSnapshot,
+	DOMAIN_DEPLOYMENT_PAGE
+} from './domain-tabs-view';
 import { SourceRegistry } from '../sources/registry';
 import { createDispatcher } from '../sources/dispatch';
 import { SourceCache } from '../sources/cache';
@@ -125,5 +129,56 @@ describe('the domain deployments tab', () => {
 
 		expect(rows.length).toBeLessThanOrEqual(DOMAIN_DEPLOYMENT_PAGE);
 		expect(rows.every((row) => row.domainId === 'payment-domain')).toBe(true);
+	});
+});
+
+/** `buildDomainSlosSnapshot` takes no `DeploymentSource`, so its own tiny builder. */
+function buildSlos(dropped: readonly Capability[] = [], slug = 'payment-domain') {
+	const r = routers(dropped);
+	return buildDomainSlosSnapshot(r.platform, r.service, scope, slug, now);
+}
+
+describe('the domain SLOs tab', () => {
+	test('the headline is the header’s figure, not one derived from the services', async () => {
+		// A reader switching between tabs must not watch compliance move.
+		const [snapshot, vitals] = await Promise.all([
+			buildSlos(),
+			routers().platform.readDomainVitals(scope, 'payment-domain')
+		]);
+
+		expect(ok(snapshot!.headline).compliancePct).toBe(vitals!.sloCompliancePct);
+		expect(ok(snapshot!.headline).windowLabel).toBe(vitals!.sloWindowLabel);
+	});
+
+	test('one row per service the domain runs', async () => {
+		const snapshot = await buildSlos();
+		const domain = await routers().platform.findDomain(scope, 'payment-domain');
+
+		expect(ok(snapshot!.services).length).toBe(domain!.serviceCount);
+	});
+
+	test('no SLO source leaves the table a gap while the headline stands', async () => {
+		const snapshot = await buildSlos(['apm.slo']);
+
+		expect(snapshot!.services.status).not.toBe('ok');
+		expect(snapshot!.headline.status).toBe('ok');
+	});
+
+	test('no vitals leaves both the headline and the table a gap', async () => {
+		// Not a mirror of the test above: `apm.slo` and `apm.domainVitals` are not
+		// symmetric here. The table's rows are dealt out against the split
+		// `apm.domainVitals` reports (`listDomainServiceVitals`, Task 8), so without it
+		// there is no list of "this domain's services" to read budgets for either — a
+		// `[]` would say "this domain runs no services", which is false. Losing
+		// `apm.domainVitals` costs both panels; losing `apm.slo` alone costs only the one
+		// that reads it.
+		const snapshot = await buildSlos(['apm.domainVitals']);
+
+		expect(snapshot!.headline.status).not.toBe('ok');
+		expect(snapshot!.services.status).not.toBe('ok');
+	});
+
+	test('an unknown domain is null', async () => {
+		expect(await buildSlos([], 'nope')).toBeNull();
 	});
 });
