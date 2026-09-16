@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { parseCatalog } from './file-source';
 import { identityFor } from '$lib/platform/catalog';
 import { FixtureCatalogSource } from './fixture-source';
+import { boundDomains } from '$lib/platform/ownership';
 
 const VALID = `
 version: 1
@@ -303,5 +304,27 @@ describe('the generated example', () => {
 		expect((await catalog.listServices()).length).toBeLessThan(
 			(await catalog.listDomains()).length
 		);
+	});
+});
+
+describe('cloud bindings from the ownership table', () => {
+	const catalog = new FixtureCatalogSource();
+	test('a bound domain declares exactly one cloud binding whose externalId is its slug', async () => {
+		const d = await catalog.findDomain('payment-domain');
+		expect(d?.bindings.filter((b) => b.kind === 'cloud')).toEqual([
+			{ kind: 'cloud', connectionId: '', externalId: 'payment-domain' }
+		]);
+	});
+	test("the six bound domains are exactly the ownership table's", async () => {
+		const all = await catalog.listDomains();
+		const bound = all
+			.filter((d) => d.bindings.some((b) => b.kind === 'cloud'))
+			.map((d) => d.slug)
+			.sort();
+		expect(bound).toEqual(boundDomains('fixture').sort());
+	});
+	test('tax-domain declares no cloud binding', async () => {
+		const d = await catalog.findDomain('tax-domain');
+		expect(d?.bindings.some((b) => b.kind === 'cloud')).toBe(false);
 	});
 });

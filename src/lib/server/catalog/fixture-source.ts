@@ -1,6 +1,7 @@
 import type { CatalogDomain, CatalogService } from '$lib/platform/catalog';
 import { listDomains } from '../platform/fixtures';
 import { listServices } from '../platform/service-fixtures';
+import { boundDomains } from '$lib/platform/ownership';
 import type { CatalogSource } from './source';
 
 /**
@@ -29,10 +30,12 @@ export class FixtureCatalogSource implements CatalogSource {
 			accent: domain.accent,
 			criticality: domain.criticality,
 			owner: domain.owner,
-			// The fixture declares none: with a single connection per kind the router can
-			// find the source without being told, and a binding invented here would be a
-			// claim about an estate this file does not know.
-			bindings: []
+			// A cloud binding for every domain the ownership table assigns resources to, and
+			// none for the rest: "unbound" has to be the common case under fixtures or the
+			// stated-gap path is never exercised. The externalId is the tag VALUE.
+			bindings: boundDomains('fixture').includes(domain.slug)
+				? [{ kind: 'cloud', connectionId: '', externalId: domain.slug }]
+				: []
 		}));
 	}
 
