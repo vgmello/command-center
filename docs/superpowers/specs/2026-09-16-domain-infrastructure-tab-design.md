@@ -1,7 +1,7 @@
 # Domain detail: the Infrastructure tab
 
 **Date:** 2026-09-16
-**Status:** approved by standing rule (autonomous flow); fresh-agent review before planning
+**Status:** revised after fresh-agent review round 1 (3 Critical, 4 Important, 1 Minor — all addressed); round 2 before planning
 
 ## Goal
 
@@ -53,16 +53,23 @@ they remain stated gaps on both screens.
 ### Router
 
 - No `owner`: unchanged — `fanOut` / `fanOutSingle` as today.
-- `owner` present: look up the domain's `cloud` binding in the catalog.
-  - **No binding:** throw `CapabilityUnavailableError` with reason `'no-binding'` (already in
-    `GapReason`). `panel()` renders it; `PanelGap` gains the one sentence for it.
-  - **Binding:** dispatch through `dispatcher.one()` with
-    `binding = { kind: 'cloud', connectionId, externalId: slug }`. This is the first real
-    caller of `one()`; the standing `adopt-dispatcher-one` todo closes with it.
-- **The cache key carries the owner.** The existing `args` string becomes `owner=<slug>`, so a
-  domain-scoped answer is never served to the estate screen or to another domain. The fan-out
-  key fix (`fanOutKey`) exists because a literal key once served a departed source's numbers;
-  this is the same rule applied to a new axis.
+- `owner` present: the router resolves the domain's `cloud` binding. **This is new wiring**:
+  `createInfrastructureRouter(deps)` has no catalog today (its own docstring says "no catalog
+  side"). It gains the same `catalog.platform` argument the platform and service routers
+  already receive from `createRouters()`, and calls `findDomain` for the bindings. Unknown slug
+  or no `cloud` binding → throw `CapabilityUnavailableError` with reason `'no-binding'`
+  (already in `GapReason`).
+- Binding found → dispatch through a **new, cached** helper `routeOne` in `routers/shared.ts`,
+  beside `fanOut` / `fanOutSingle` / `fanOutSeries`. It wraps `dispatcher.one()` — which today
+  bypasses the cache entirely — in `deps.cache.read` keyed
+  `{ connectionId: binding.connectionId, capability, args: 'owner=<slug>' }`, honouring the
+  capability's tier exactly as `fanOutSingle` does. Without this, every tab view re-issues the
+  full upstream chain (the utilisation read alone is one Monitor call per machine) on every
+  refresh tick — the opposite of scalable. With it, a domain's answer is cached per owner and
+  can never be served to the estate or to another domain, because the owner is in the key.
+  `routeOne` is the first real caller of `dispatcher.one()`; the standing todo closes.
+- `dispatch-tiers.test.ts` gains `routeOne` as a recognised dispatch helper so the tier
+  agreement check still covers every read.
 
 ### Providers honour `ctx.binding` inside their existing methods
 
@@ -76,13 +83,21 @@ No new capabilities. `cloud.regions` answers the estate question and the domain 
   domain's machines. floci-az stores tags but ignores `$filter` (verified: 49 VMs returned
   regardless), so
 - the client-side check runs after every fetch too. On real ARM it is a no-op; on the emulator
-  it is what makes the answer correct. There is no untestable branch.
-- `loadMachines()`'s memoised window is keyed by owner as well, or bypassed for owner reads —
-  whichever the plan measures as cheaper; the estate window must not be filtered in place.
+  it is what makes the answer correct. There is no untestable branch. The comparison matches
+  ARM's own rule — tag **key** case-insensitive, tag **value** case-sensitive — and says so in
+  one helper `ownsResource(tags, key, value)` that both the filter and its test use.
+- `loadMachines()`'s 30s memo becomes a small `Map` keyed by owner (`''` = estate). Decided
+  here, not at planning: the tab's three machine-backed reads (regions, nodes, utilisation)
+  share one owner window, so bypassing the memo would triple the fetch, while keying adds one
+  entry per domain actually viewed inside 30s — bounded by readers, not by the estate. The
+  estate entry is never filtered in place.
 - **Spend:** the Cost Management query gains the real contract's tag filter
-  `filter: { tags: { name: ownerTagKey, operator: 'In', values: [slug] } }`. The cost mock
-  grows tag-aware filtering the way the Monitor mock was built: answer the real request shape,
-  seeded per (domain, service), never a convenient invention.
+  `filter: { tags: { name: ownerTagKey, operator: 'In', values: [slug] } }`. **The cost mock
+  needs real work, not a clause**: today `costMockHandler` never reads the request body and
+  `buildEstate` has no domain axis. It gains a (domain, service) axis seeded from the same
+  ownership table as everything else, parses `filter.tags` and `grouping` from the body, and
+  answers the real contract. The estate total is the sum over domains plus an untagged
+  remainder — one fixture derived from the other, per the fixture-coherence rule.
 - `metricSampleSize` applies to the _domain's_ machines. A twelve-machine domain is measured
   whole; the estate is still sampled.
 
@@ -123,7 +138,11 @@ Route `domains/[slug]/infrastructure`; `_BUILT_TABS` gains `'infrastructure'`; h
 
 Six `panel()`-wrapped reads, each passing `owner = slug`: `cloud.nodes` (strip), `cloud.regions`,
 `cloud.clusters`, `cloud.databases`, `cloud.utilization`, `cloud.cost`; `cloud.storage` feeds
-the strip's fourth cell. `findDomain` is a catalog read and stays unwrapped; unknown slug → null.
+the strip's fourth cell. **Strip counts:** nodes from `readNodeCounts(owner)`; clusters and
+databases are the `length` of the same arrays the tables render, fetched with `limit = 100` —
+a domain owns few, and the cell prints `100+` if the array hits the limit rather than a count
+that is silently a floor. No separate `listGroups(owner)`; two reads for one number would be
+the two-renderings smell. `findDomain` is a catalog read and stays unwrapped; unknown slug → null.
 
 **Unbound domain:** all six panels are `unavailable` / `'no-binding'`; the page renders one
 sentence once ("Not bound to a cloud — no resources are tagged `domain=<slug>`") above the
@@ -152,8 +171,9 @@ only (bytes, counts, percentages, seconds); 404 unknown slug; 501 on a gap via `
 
 ## Risks
 
-- **Two axes on one cache.** Owner in the args string is the whole defence; a router that
-  forgets it serves one domain's spend to another. The unit test above exists for that.
+- **Uncached by accident.** `dispatcher.one()` has no cache; `routeOne` is the whole defence
+  against a tab that re-fetches the world every tick. The router test asserts a second read
+  within TTL issues no upstream call, and that two owners produce two keys.
 - **Cost by tag lags reality.** Cost Management attributes tag-filtered spend with a delay and
   untagged spend is invisible to it; the panel says "tagged spend" not "spend".
 - **floci-az does not filter.** Correctness under the emulator rests on the client-side check;
