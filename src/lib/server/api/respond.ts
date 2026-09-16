@@ -3,13 +3,14 @@ import { requireApiToken } from './auth';
 import { errorResponse } from './error-response';
 
 /**
- * The sentinel and the mapping that reads it, re-exported.
+ * The sentinels and the mapping that reads them, re-exported.
  *
- * Every endpoint already imports `NotFoundError` from here, and from a caller's point of
- * view the two belong together — the split exists only so the mapping can be tested
+ * Every endpoint already imports `NotFoundError` (and, where a snapshot carries a
+ * `Panel`, `requirePanel`) from here, and from a caller's point of view they belong
+ * together with `apiResponse` — the split exists only so the mapping can be tested
  * without `$env`, which the token check drags in.
  */
-export { NotFoundError, errorResponse } from './error-response';
+export { NotFoundError, errorResponse, requirePanel } from './error-response';
 
 /**
  * The shape every v1 endpoint shares: authenticate, parse, respond.

@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import * as v from 'valibot';
+import type { Panel } from '$lib/platform/sources';
 import { CapabilityUnavailableError, SourceFailedError } from '../sources/errors';
 
 /**
@@ -88,4 +89,34 @@ export function errorResponse(cause: unknown): Response | null {
 	}
 
 	return null;
+}
+
+/**
+ * Unwraps a resolved panel, or throws the sentinel that produced its gap.
+ *
+ * A screen-shaped snapshot already resolved its gaps into a `Panel` — `unavailable` or
+ * `failed` rather than a thrown error, so one bad panel degrades one part of a page
+ * instead of the whole render. A public endpoint has no page to degrade: the caller
+ * asked for a fact, and a frozen contract must not answer with zeros or a null field
+ * standing in for "we don't know" — the exact failure `NotFoundError` above exists to
+ * avoid for a missing resource. So this reconstructs the same error `panel()` (in
+ * `../sources/panel.ts`) caught, and `errorResponse` maps it to the 501 or 502 it
+ * already knows how to produce for a source-backed read that never went through a
+ * panel at all — one mapping, whichever route the gap came from.
+ *
+ * Lives beside `errorResponse` rather than in `respond.ts`, for the same reason
+ * `NotFoundError` does: so both can be tested without `$env`, which `apiResponse`'s
+ * token check drags in.
+ */
+export function requirePanel<T>(panel: Panel<T>): T {
+	if (panel.status === 'ok') return panel.data;
+
+	if (panel.status === 'unavailable') {
+		throw new CapabilityUnavailableError(panel.capability, panel.reason);
+	}
+
+	// 'failed': the connection exists and implements the capability, but the call
+	// itself did not answer. `sourceCause` never travels past `panel()` either, so
+	// there is nothing to pass here that `errorResponse` would use.
+	throw new SourceFailedError(panel.capability, panel.source, undefined);
 }

@@ -3,8 +3,10 @@ import {
 	toActivitySummaryDto,
 	toCostDto,
 	toDomainDependenciesDto,
+	toDomainDeploymentStatsDto,
 	toDomainVitalsDto,
 	toResourceUsageDto,
+	toServiceSloRowDto,
 	toServiceVitalsDto,
 	toSloBudgetDto,
 	toStorageDto,
@@ -31,8 +33,10 @@ import {
 	FixturePlatformSource,
 	FixtureServiceSource
 } from '$lib/server/platform/fixture-source';
+import { rollUpDeployments } from '$lib/platform/domain-deployments';
 import { ALL_OWNERS } from '$lib/platform/query';
 import type { PlatformScope } from '$lib/platform/query';
+import type { ServiceSloRow } from '$lib/platform/types';
 
 const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
 const source = new FixturePlatformSource();
@@ -412,6 +416,78 @@ describe('v1 domain detail shapes', () => {
 				`${field}: undefined`
 			);
 		}
+	});
+});
+
+describe('domain deployment stats', () => {
+	const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
+
+	/** A real `DomainDeploymentStats`, rolled up the same way the tab does. */
+	async function buildStats() {
+		const rows = await deployments.readServiceTrends(scope, 'daily');
+		return rollUpDeployments(
+			rows,
+			rows.map((row) => row.service)
+		);
+	}
+
+	test('publishes counts and seconds, never a rendered string', async () => {
+		const stats = await buildStats();
+		const dto = toDomainDeploymentStatsDto(stats);
+
+		expect(typeof dto.meanDurationSeconds).toBe('number');
+		expect(typeof dto.total).toBe('number');
+		expect(typeof dto.failures).toBe('number');
+		// "4m 12s" is how our UI draws it and means nothing to another client. Cast
+		// because every field of this DTO is already numeric or nested — there is no
+		// string in the union for `typeof one === 'string'` to narrow to, which is
+		// exactly the property under test.
+		const values = Object.values(dto as unknown as Record<string, unknown>);
+		expect(values.every((one) => typeof one !== 'string' || !one.includes('m '))).toBe(true);
+	});
+
+	test('the per-service rows carry both counts, so a caller can re-derive the rate', async () => {
+		const stats = await buildStats();
+		const dto = toDomainDeploymentStatsDto(stats);
+
+		expect(dto.byService.length).toBeGreaterThan(0);
+		for (const row of dto.byService) {
+			expect(typeof row.total).toBe('number');
+			expect(typeof row.failures).toBe('number');
+		}
+	});
+
+	test('a row does not carry a precomputed rate or its own sparkline', async () => {
+		const stats = await buildStats();
+		const dto = toDomainDeploymentStatsDto(stats);
+		const row = dto.byService[0] as unknown as Record<string, unknown>;
+
+		expect(stats.byService[0].changeFailureRatePct).toBeDefined();
+		expect(row.changeFailureRatePct).toBeUndefined();
+		expect(row.frequency).toBeUndefined();
+	});
+
+	test('no sparkline bounds travel', async () => {
+		// Presentation. `min`/`max` are how our chart scales an axis.
+		const stats = await buildStats();
+		const dto = toDomainDeploymentStatsDto(stats);
+
+		expect(stats.frequency.min).toBeDefined();
+		expect('frequency' in dto && 'min' in (dto.frequency as object)).toBe(false);
+	});
+});
+
+describe('domain SLO rows', () => {
+	const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
+
+	test('publishes minutes, not "21m", and drops the burn window label', async () => {
+		const budget = await catalogSource.readSloBudget(scope, 'payment-api');
+		const row: ServiceSloRow = { slug: 'payment-api', name: 'Payment API', budget };
+		const dto = toServiceSloRowDto(row);
+
+		expect(typeof dto.budget.remainingMinutes).toBe('number');
+		expect('remainingLabel' in dto.budget).toBe(false);
+		expect('burnWindowLabel' in dto.budget).toBe(false);
 	});
 });
 

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { errorResponse, NotFoundError } from './error-response';
+import type { Panel } from '$lib/platform/sources';
+import { errorResponse, NotFoundError, requirePanel } from './error-response';
 import { CapabilityUnavailableError, SourceFailedError } from '../sources/errors';
 
 describe('a capability nobody implements', () => {
@@ -75,6 +76,55 @@ describe('a source that did not answer', () => {
 		)!;
 
 		expect(await response.text()).not.toContain('secret-looking-value');
+	});
+});
+
+describe('unwrapping a panel for the public API', () => {
+	test('a resolved panel gives back its data', () => {
+		const panel: Panel<number> = { status: 'ok', data: 42 };
+
+		expect(requirePanel(panel)).toBe(42);
+	});
+
+	test('an unavailable panel becomes a CapabilityUnavailableError, which maps to 501', () => {
+		const panel: Panel<number> = {
+			status: 'unavailable',
+			capability: 'apm.domainVitals',
+			kind: 'apm',
+			reason: 'no-capability'
+		};
+
+		expect(() => requirePanel(panel)).toThrow(CapabilityUnavailableError);
+
+		try {
+			requirePanel(panel);
+		} catch (cause) {
+			expect(errorResponse(cause)!.status).toBe(501);
+		}
+	});
+
+	test('a failed panel becomes a SourceFailedError, which maps to 502', () => {
+		const panel: Panel<number> = {
+			status: 'failed',
+			capability: 'deployment.serviceTrends',
+			kind: 'deployment',
+			source: {
+				connectionId: 'cx',
+				providerId: 'octopus',
+				kind: 'deployment',
+				name: 'Octopus',
+				icon: 'rocket',
+				link: null
+			}
+		};
+
+		expect(() => requirePanel(panel)).toThrow(SourceFailedError);
+
+		try {
+			requirePanel(panel);
+		} catch (cause) {
+			expect(errorResponse(cause)!.status).toBe(502);
+		}
 	});
 });
 

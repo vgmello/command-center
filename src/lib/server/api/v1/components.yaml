@@ -669,6 +669,48 @@ components:
         - criticalPath
         - self
       type: object
+    DomainDeploymentStats:
+      properties:
+        byService:
+          items:
+            properties:
+              failures:
+                minimum: 0
+                type: integer
+              service:
+                type: string
+              total:
+                minimum: 0
+                type: integer
+            required:
+              - service
+              - total
+              - failures
+            type: object
+          type: array
+        changeFailureRatePct:
+          maximum: 100
+          minimum: 0
+          type: number
+        failures:
+          minimum: 0
+          type: integer
+        frequency:
+          $ref: '#/components/schemas/Series'
+        meanDurationSeconds:
+          minimum: 0
+          type: number
+        total:
+          minimum: 0
+          type: integer
+      required:
+        - total
+        - failures
+        - changeFailureRatePct
+        - meanDurationSeconds
+        - frequency
+        - byService
+      type: object
     DomainPage:
       properties:
         data:
@@ -1242,6 +1284,19 @@ components:
         - saturation
         - byEndpoint
         - byInstance
+      type: object
+    ServiceSloRow:
+      properties:
+        budget:
+          $ref: '#/components/schemas/SloBudget'
+        name:
+          type: string
+        slug:
+          type: string
+      required:
+        - slug
+        - name
+        - budget
       type: object
     ServiceVitals:
       properties:

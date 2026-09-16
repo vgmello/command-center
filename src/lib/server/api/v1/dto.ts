@@ -5,6 +5,7 @@ import type {
 	CostBreakdown,
 	DatabaseInstance,
 	DomainDependencies,
+	DomainDeploymentStats,
 	DomainVitals,
 	InfraAlert,
 	InfraRegion,
@@ -32,6 +33,7 @@ import type {
 	Service,
 	ServiceDependencies,
 	ServiceEndpoint,
+	ServiceSloRow,
 	SystemStatus
 } from '$lib/platform/types';
 
@@ -365,6 +367,41 @@ export const sloBudgetSchema = v.object({
 	/** Minutes of the objective's allowance still unspent. */
 	remainingMinutes: v.pipe(v.number(), v.minValue(0)),
 	burnPct: v.pipe(v.number(), v.minValue(0))
+});
+
+/**
+ * One service's slice of a domain's deployment figures.
+ *
+ * Only `total` and `failures` travel — not the row's own change failure rate or its
+ * sparkline — so a caller re-derives the rate itself rather than trusting a number this
+ * API precomputed for a chart it cannot see.
+ */
+const domainDeployShareSchema = v.object({
+	service: v.string(),
+	total: v.pipe(v.number(), v.integer(), v.minValue(0)),
+	failures: v.pipe(v.number(), v.integer(), v.minValue(0))
+});
+
+/**
+ * A domain's deployment figures, summed from the services it owns.
+ *
+ * `frequency` keeps its points, without the `min`/`max` bounds our chart uses to scale
+ * — the same trim `seriesSchema` applies everywhere else a series travels.
+ */
+export const domainDeploymentStatsSchema = v.object({
+	total: v.pipe(v.number(), v.integer(), v.minValue(0)),
+	failures: v.pipe(v.number(), v.integer(), v.minValue(0)),
+	changeFailureRatePct: v.pipe(v.number(), v.minValue(0), v.maxValue(100)),
+	meanDurationSeconds: v.pipe(v.number(), v.minValue(0)),
+	frequency: seriesSchema,
+	byService: v.array(domainDeployShareSchema)
+});
+
+/** One service's SLO budget, as the domain's SLOs tab lists it. */
+export const serviceSloRowSchema = v.object({
+	slug: v.string(),
+	name: v.string(),
+	budget: sloBudgetSchema
 });
 
 export const metricInsightSchema = v.object({
@@ -763,6 +800,9 @@ export type DomainDependenciesDto = v.InferOutput<typeof domainDependenciesSchem
 export type ServiceVitalsDto = v.InferOutput<typeof serviceVitalsSchema>;
 export type ServiceMetricsDto = v.InferOutput<typeof serviceMetricsSchema>;
 export type SloBudgetDto = v.InferOutput<typeof sloBudgetSchema>;
+export type DomainDeployShareDto = v.InferOutput<typeof domainDeployShareSchema>;
+export type DomainDeploymentStatsDto = v.InferOutput<typeof domainDeploymentStatsSchema>;
+export type ServiceSloRowDto = v.InferOutput<typeof serviceSloRowSchema>;
 export type MetricInsightDto = v.InferOutput<typeof metricInsightSchema>;
 export type RegionDto = v.InferOutput<typeof regionSchema>;
 export type NodeCountsDto = v.InferOutput<typeof nodeCountsSchema>;
@@ -868,6 +908,39 @@ export function toSloBudgetDto(slo: SloBudget): SloBudgetDto {
 		// The same number the panel's label is built from, not a second derivation of it.
 		remainingMinutes: slo.remainingMinutes,
 		burnPct: slo.burnPct
+	};
+}
+
+/**
+ * A domain's DORA figures, without the per-service sparklines or a precomputed rate on
+ * each row.
+ *
+ * `byService` carries only `total`/`failures` — see `domainDeployShareSchema` — so a
+ * caller re-derives `changeFailureRatePct` for a row instead of trusting a figure this
+ * API computed for a table it cannot see. The domain-level rate is kept as-is: it is
+ * this endpoint's own headline figure, not a rendering of something else.
+ */
+export function toDomainDeploymentStatsDto(stats: DomainDeploymentStats): DomainDeploymentStatsDto {
+	return {
+		total: stats.total,
+		failures: stats.failures,
+		changeFailureRatePct: stats.changeFailureRatePct,
+		meanDurationSeconds: stats.meanDurationSeconds,
+		frequency: toSeriesDto(stats.frequency),
+		byService: stats.byService.map((share) => ({
+			service: share.service,
+			total: share.total,
+			failures: share.failures
+		}))
+	};
+}
+
+/** One row of the domain's SLOs tab: identity plus the same budget `toSloBudgetDto` sends. */
+export function toServiceSloRowDto(row: ServiceSloRow): ServiceSloRowDto {
+	return {
+		slug: row.slug,
+		name: row.name,
+		budget: toSloBudgetDto(row.budget)
 	};
 }
 
