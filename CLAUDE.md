@@ -407,14 +407,19 @@ second page view, served by an instance with an empty memory tier over a warm Po
 Fresh routers on purpose, because reusing them would measure the memory tier, which
 answers in zero requests and is lost on every restart.
 
-The measured answer:
+The measured answer, quoted from `warm-budget.test.ts`'s cold column rather than
+`request-budget.test.ts`'s: the two files build their mock estates the same way but are not
+the same harness, and their cold counts do not always agree (`request-budget.test.ts`
+currently measures 15/45/20 for domains/deployments/service metrics against the 14/48/16
+below) — neither harness is wrong, they are simply two different cold starts, and the table
+picks one rather than silently averaging or omitting the disagreement:
 
 | Screen             | Cold | Warm |
 | ------------------ | ---: | ---: |
 | overview           |   20 |   17 |
 | domains            |   14 |   14 |
 | domain detail      |   56 |   55 |
-| domain services    |   15 |   15 |
+| domain services    |   10 |   10 |
 | domain deployments |   50 |   50 |
 | domain slos        |   14 |   10 |
 | deployments        |   48 |   12 |
@@ -428,10 +433,13 @@ API has no server-side domain filter, so narrowing to one domain still walks the
 (45 of the 56 cold; Coralogix accounts for the other 11). `domain services` is the
 services-tab read (`listDomainServiceVitals`) that the overview's `buildDomainSnapshot`
 also folds in — cheaper on its own because it skips the dependency graph and the deployment
-log the overview also draws. `domain deployments` and `domain slos` are the two new tabs
-this branch built (Tasks 9 and 10). `service metrics` moved from 18/12 to 16/12 between when
-this table was last written and this measurement — a drift the table itself had gone stale
-on, not a change made here.
+log the overview also draws, and warm equals cold because nothing it reads is cached:
+`apm.domainVitals` is `live` tier by design and the rest is a catalog lookup. `domain
+deployments` and `domain slos` are the two new tabs this branch built (Tasks 9 and 10).
+`service metrics` moved from 18/12 to 16/12 between when this table was last written and
+this measurement — a change in what was measured, not a claim that `request-budget.test.ts`
+measured it wrong; the two files count different things by construction, per the note
+above.
 
 Deployments was 45 warm — the same as cold — and it was the whole reason to look. Measured
 per capability, the live log cost 6 of that and `readTrends` and `readStatusTrend` cost 45

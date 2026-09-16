@@ -22,7 +22,11 @@
 - **The API publishes measurements, not renderings.** Minutes not `"21m"`, seconds not `"4m 12s"`, counts not percentages.
 - **Entity is the service's catalog slug**; a deployment whose service is not in the catalog accumulates under the exact string `(unattributed)`.
 - **One accumulation per connection, once the migration is complete.** The end state is that a connection declaring `deployment.serviceTrends` does not also declare `deployment.trends` — two accumulations of the same runs put two answers to one question in the store. Tasks 5 through 9 are the transition and both are declared across them: Task 5 adds the new capability while the deployments screen still reads the old one, and Task 9 Step 6 moves that screen onto a sum over entities. **Do not retire `deployment.trends` before Task 9 Step 6 passes its before-and-after budget measurement.**
-- **The estate read sums every entity, `''` included.** The two are never written for the same period, so nothing double-counts.
+- **~~The estate read sums every entity, `''` included.~~ SUPERSEDED — see the Task 9 finding
+  note directly below.** ~~The two are never written for the same period, so nothing
+  double-counts.~~ `source_series` is partitioned by capability, so a `''` row and a
+  per-service row for the same period are never read together and cannot be summed inside
+  one accumulation.
 - **Note (Task 9 finding):** the "one accumulation per connection" constraint above is satisfied by _dispatch_, not by forbidding a connection from declaring both capabilities — only one of the two `readTrends` paths executes per read, decided by whether any connection in the registry supports `deployment.serviceTrends`. See `docs/superpowers/specs/2026-09-15-domain-tabs-design.md`'s "Corrections during implementation" section and `CLAUDE.md`'s "What the store buys, and what it cannot".
 - **Series geometry for `deployment.serviceTrends` is identical to `deployment.trends`:** `bucketSeconds: 86400`, `settlingSeconds: 86400`, year horizon.
 - **The SLO tab headline is `DomainVitals.sloCompliancePct`, never recomputed.**
@@ -1870,7 +1874,7 @@ Record the three new routes, the two new API paths (bringing the count from thir
 
 - [ ] **Step 3: Add the accumulation note to CLAUDE.md**
 
-Under "What the store buys, and what it cannot", record the per-service accumulation: why a domain is a sum of its services rather than a wider `readTrends`, that `failure_count` is stored because a rate cannot be re-aggregated from rates, and that the estate read sums every entity including the legacy `''`.
+Under "What the store buys, and what it cannot", record the per-service accumulation: why a domain is a sum of its services rather than a wider `readTrends`, that `failure_count` is stored because a rate cannot be re-aggregated from rates, and ~~that the estate read sums every entity including the legacy `''`~~ — SUPERSEDED by the Task 9 finding, see the note at this plan's Global Constraints above and `docs/superpowers/specs/2026-09-15-domain-tabs-design.md`'s "Corrections during implementation" section for what the estate read does instead.
 
 Add the measured budget figures for the three new screens to the table.
 
