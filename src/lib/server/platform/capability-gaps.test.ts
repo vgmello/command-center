@@ -30,15 +30,44 @@ import type { PlatformScope } from '$lib/platform/query';
  *
  * This is the sweep that replaces waiting. It drops one capability at a time from the
  * fixture providers, and again a whole kind at a time, and runs every screen against the
- * result. The rule it enforces:
+ * result. The rule it enforces, and the only one it enforces:
  *
- *   A screen falls over only when the source kind it is *dedicated to* cannot answer.
+ *   No screen falls over. Full stop.
  *
- * The infrastructure page is a view of a cloud account and the deployments page is a view
- * of a CI/CD system; with those absent there is no page left to draw, and failing is the
- * honest outcome. Every other screen composes several kinds, so a gap in one must cost the
- * reader that panel and nothing else. A missing queue metric taking down the dashboard is
- * the specific bug this pins shut.
+ * That is stronger than it first sounds, and it used to say less. The infrastructure and
+ * deployments screens were once excused when their *dedicated* source kind — cloud,
+ * deployment — was absent entirely, on the theory that a view of a cloud account with no
+ * cloud account has nothing to draw. That theory was true of the data and false of the
+ * page: the chrome, the headings and a stated gap are worth more than an error boundary,
+ * and once every read on those two screens was wrapped they render without the exemption.
+ * Worse, "dedicated" was read too broadly the first time it was written — it excused those
+ * two screens not just when their kind was wholly absent but whenever *any single*
+ * capability of that kind was missing, which is a different and much weaker claim. An
+ * ARM-only Azure adapter that serves regions, nodes and spend but leaves utilisation to a
+ * separate Monitor API found that gap immediately: the infrastructure page died on one
+ * missing `cloud.utilization`, which the old exemption waved through as "expected" for a
+ * screen dedicated to `cloud`. There is no exemption of either kind now, single-capability
+ * or whole-kind: every screen renders under every drop this sweep tries.
+ *
+ * Read this test's assertions literally, not its title. `no screen falls over, not even
+ * its own` runs every entry in `SCREENS` against every dropped capability — including
+ * capabilities that screen never reads — which is deliberate: a screen must survive a gap
+ * in a part of the platform it does not use, not just a gap in the part it does.
+ *
+ * A slug that resolves to nothing is not a gap it caught.
+ *
+ * Three of the seven original entries passed a slug the fixture catalog does not
+ * contain — `'payments'` for the domain, `'payments-api'` for both service screens. Their
+ * assemblers call `findDomain`/`findService` first and return `null` for an unknown slug,
+ * before touching any source, so these three exercised the not-found path on every run and
+ * passed regardless of which capability was dropped. The sweep still asserted "no screen
+ * falls over" and was still correct about every other entry — the assertion was never
+ * wrong, only vacuous for three of its seven cases, which is a harder thing to notice than
+ * a red test. Correcting the slugs (`'payment-domain'`, `'payment-api'`) turned up five
+ * real failures in the domain assembler and, once those were fixed, four more in both
+ * service assemblers, none of which any previous run of this file had ever exercised. The
+ * lesson for the next screen this file grows a case for: assert the slug resolves before
+ * trusting a green run to mean the assembler was tested, not just called.
  */
 
 const scope: PlatformScope = { environment: 'production', timeRange: '1h' };
@@ -58,7 +87,7 @@ const SCREENS: Array<{
 	{
 		name: 'domain detail',
 		run: (r) =>
-			buildDomainSnapshot(r.platform, r.service, r.deployment, scope, 'payments', new Date())
+			buildDomainSnapshot(r.platform, r.service, r.deployment, scope, 'payment-domain', new Date())
 	},
 	{
 		name: 'domain services',
@@ -66,11 +95,11 @@ const SCREENS: Array<{
 	},
 	{
 		name: 'service detail',
-		run: (r) => buildServiceSnapshot(r.service, r.deployment, scope, 'payments-api', new Date())
+		run: (r) => buildServiceSnapshot(r.service, r.deployment, scope, 'payment-api', new Date())
 	},
 	{
 		name: 'service metrics',
-		run: (r) => buildServiceMetricsSnapshot(r.service, scope, 'payments-api', new Date())
+		run: (r) => buildServiceMetricsSnapshot(r.service, scope, 'payment-api', new Date())
 	},
 	{
 		name: 'deployments',

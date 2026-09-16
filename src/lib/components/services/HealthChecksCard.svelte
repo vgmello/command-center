@@ -1,17 +1,21 @@
 <script lang="ts">
 	import Icon from '../Icon.svelte';
+	import PanelGap from '../PanelGap.svelte';
 	import SectionCard from '../SectionCard.svelte';
 	import Sparkline from '../Sparkline.svelte';
 	import { statusTone } from '../tone';
 	import { STATUS_LABELS } from '$lib/platform/health';
 	import { formatHealthCheck } from '$lib/platform/health';
 	import type { HealthCheck } from '$lib/platform/types';
+	import type { Panel } from '$lib/platform/sources';
 
 	interface Props {
-		checks: HealthCheck[];
+		checks: Panel<HealthCheck[]>;
 	}
 
 	let { checks }: Props = $props();
+
+	const rows = $derived(checks.status === 'ok' ? checks.data : []);
 </script>
 
 <SectionCard title="Service Health">
@@ -19,6 +23,7 @@
 		<Icon name="shield" size={15} />
 	{/snippet}
 
+	<PanelGap panel={checks} noun="health checks" class="px-4 pb-2" />
 	<table class="w-full">
 		<thead>
 			<tr class="text-[11px] text-muted-foreground">
@@ -29,7 +34,7 @@
 			</tr>
 		</thead>
 		<tbody>
-			{#each checks as check (check.id)}
+			{#each rows as check (check.id)}
 				{@const tone = statusTone(check.status)}
 				<tr class="border-t border-border/60">
 					<td class="px-4 py-[7px]">

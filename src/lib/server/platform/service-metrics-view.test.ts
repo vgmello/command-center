@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import type { MetricInsight } from '$lib/platform/types';
+import type {
+	LatencyHeatmap,
+	MetricInsight,
+	ServiceEndpoint,
+	SloBudget,
+	TimeSeries
+} from '$lib/platform/types';
 import { METRIC_ENDPOINT_LIMIT, buildServiceMetricsSnapshot } from './service-metrics-view';
 import { FixtureServiceSource } from './fixture-source';
 import type { PlatformScope } from '$lib/platform/query';
@@ -9,6 +15,17 @@ const source = new FixtureServiceSource();
 
 const build = (slug: string) => buildServiceMetricsSnapshot(source, scope, slug);
 
+/**
+ * Unwraps a panel that the fixture source always answers.
+ *
+ * Asserting `status === 'ok'` first is what would catch a fixture read silently
+ * becoming a gap — the same shape `insightsOf` below uses for the insights panel.
+ */
+function dataOf<T>(panel: { status: string }): T {
+	expect(panel.status).toBe('ok');
+	return (panel as { status: 'ok'; data: T }).data;
+}
+
 describe('buildServiceMetricsSnapshot', () => {
 	test('an unknown slug is null, so the route can answer 404', async () => {
 		expect(await build('no-such-service')).toBeNull();
@@ -16,14 +33,15 @@ describe('buildServiceMetricsSnapshot', () => {
 
 	test('every chart covers the same buckets, so two panels cannot show different minutes', async () => {
 		const snapshot = (await build('payment-api'))!;
-		const expected = snapshot.requestRate.points.map((point) => point.label);
+		const requestRate = dataOf<TimeSeries>(snapshot.requestRate);
+		const expected = requestRate.points.map((point) => point.label);
 
 		for (const series of [
-			snapshot.p95Latency,
-			snapshot.errorRate,
-			...snapshot.saturation,
-			...snapshot.byEndpoint,
-			...snapshot.byInstance
+			dataOf<TimeSeries>(snapshot.p95Latency),
+			dataOf<TimeSeries>(snapshot.errorRate),
+			...dataOf<TimeSeries[]>(snapshot.saturation),
+			...dataOf<TimeSeries[]>(snapshot.byEndpoint),
+			...dataOf<TimeSeries[]>(snapshot.byInstance)
 		]) {
 			expect(series.points.map((point) => point.label)).toEqual(expected);
 		}
@@ -31,11 +49,12 @@ describe('buildServiceMetricsSnapshot', () => {
 
 	test('the tiles read off the series plotted beneath them', async () => {
 		const snapshot = (await build('payment-api'))!;
+		const requestRate = dataOf<TimeSeries>(snapshot.requestRate);
 		const tile = snapshot.stats.find((stat) => stat.id === 'request-rate');
 
 		expect(tile?.kind).toBe('trend');
 		if (tile?.kind !== 'trend') throw new Error('unreachable');
-		expect(tile.series.values.at(-1)).toBe(snapshot.requestRate.points.at(-1)!.value);
+		expect(tile.series.values.at(-1)).toBe(requestRate.points.at(-1)!.value);
 	});
 
 	test('and those readings match the ones the overview tab shows', async () => {
@@ -58,21 +77,25 @@ describe('buildServiceMetricsSnapshot', () => {
 
 	test('the instance chart has one line per instance the service reports', async () => {
 		const snapshot = (await build('payment-api'))!;
+		const byInstance = dataOf<TimeSeries[]>(snapshot.byInstance);
 
-		expect(snapshot.byInstance).toHaveLength(snapshot.service.instancesTotal);
-		expect(new Set(snapshot.byInstance.map((one) => one.id)).size).toBe(snapshot.byInstance.length);
+		expect(byInstance).toHaveLength(snapshot.service.instancesTotal);
+		expect(new Set(byInstance.map((one) => one.id)).size).toBe(byInstance.length);
 	});
 
 	test('the endpoint bands are one per endpoint in the table', async () => {
 		const snapshot = (await build('payment-api'))!;
+		const byEndpoint = dataOf<TimeSeries[]>(snapshot.byEndpoint);
+		const endpoints = dataOf<ServiceEndpoint[]>(snapshot.endpoints);
 
-		expect(snapshot.byEndpoint).toHaveLength(snapshot.endpoints.length);
-		expect(snapshot.endpoints.length).toBeLessThanOrEqual(METRIC_ENDPOINT_LIMIT);
+		expect(byEndpoint).toHaveLength(endpoints.length);
+		expect(endpoints.length).toBeLessThanOrEqual(METRIC_ENDPOINT_LIMIT);
 	});
 
 	test('the request shares account for the traffic, near enough to read', async () => {
 		const snapshot = (await build('payment-api'))!;
-		const shares = snapshot.endpoints.reduce((sum, one) => sum + one.requestSharePct, 0);
+		const endpoints = dataOf<ServiceEndpoint[]>(snapshot.endpoints);
+		const shares = endpoints.reduce((sum, one) => sum + one.requestSharePct, 0);
 
 		expect(shares).toBeGreaterThan(60);
 		expect(shares).toBeLessThanOrEqual(100);
@@ -80,10 +103,9 @@ describe('buildServiceMetricsSnapshot', () => {
 
 	test('traffic and latency rank differently, which is why both shares exist', async () => {
 		const snapshot = (await build('payment-api'))!;
-		const slowest = [...snapshot.endpoints].sort((a, b) => b.p95LatencyMs - a.p95LatencyMs);
-		const busiest = [...snapshot.endpoints].sort(
-			(a, b) => b.requestsPerSecond - a.requestsPerSecond
-		);
+		const endpoints = dataOf<ServiceEndpoint[]>(snapshot.endpoints);
+		const slowest = [...endpoints].sort((a, b) => b.p95LatencyMs - a.p95LatencyMs);
+		const busiest = [...endpoints].sort((a, b) => b.requestsPerSecond - a.requestsPerSecond);
 
 		// The health check is the fastest endpoint and among the least called; if these
 		// two orders were identical, one share would be enough.
@@ -99,7 +121,7 @@ describe('buildServiceMetricsSnapshot', () => {
 describe('the error budget', () => {
 	test('the allowance is derived from the target, not stated beside it', async () => {
 		const snapshot = (await build('payment-api'))!;
-		const { slo } = snapshot;
+		const slo = dataOf<SloBudget>(snapshot.slo);
 
 		/*
 		 * The arithmetic, not a format: a 99.90% target over 30 days allows 43.2 minutes
@@ -115,31 +137,35 @@ describe('the error budget', () => {
 
 	test('a service under its target has burned the budget, not gone negative', async () => {
 		const snapshot = (await build('notification-worker'))!;
+		const slo = dataOf<SloBudget>(snapshot.slo);
 
-		expect(snapshot.slo.achievedPct).toBeLessThan(snapshot.slo.targetPct);
-		expect(snapshot.slo.remainingPct).toBe(0);
-		expect(snapshot.slo.remainingLabel).toBe('0m');
+		expect(slo.achievedPct).toBeLessThan(slo.targetPct);
+		expect(slo.remainingPct).toBe(0);
+		expect(slo.remainingLabel).toBe('0m');
 	});
 });
 
 describe('the latency heatmap', () => {
 	test('every cell lands in a band the legend describes', async () => {
 		const snapshot = (await build('payment-api'))!;
+		const heatmap = dataOf<LatencyHeatmap>(snapshot.heatmap);
 
-		for (const cell of snapshot.heatmap.cells) {
+		for (const cell of heatmap.cells) {
 			expect(cell.band).toBeGreaterThanOrEqual(0);
-			expect(cell.band).toBeLessThan(snapshot.heatmap.bands.length);
+			expect(cell.band).toBeLessThan(heatmap.bands.length);
 		}
 	});
 
 	test('the grid is complete, so no cell renders empty', async () => {
-		const { heatmap } = (await build('payment-api'))!;
+		const snapshot = (await build('payment-api'))!;
+		const heatmap = dataOf<LatencyHeatmap>(snapshot.heatmap);
 
 		expect(heatmap.cells).toHaveLength(heatmap.columnLabels.length * heatmap.rowLabels.length);
 	});
 
 	test('the distribution is not a straight line, or every row reads the same', async () => {
-		const { heatmap } = (await build('payment-api'))!;
+		const snapshot = (await build('payment-api'))!;
+		const heatmap = dataOf<LatencyHeatmap>(snapshot.heatmap);
 		const bandsIn = (row: number) =>
 			new Set(heatmap.cells.filter((cell) => cell.row === row).map((cell) => cell.band));
 
@@ -151,7 +177,8 @@ describe('the latency heatmap', () => {
 	});
 
 	test('the slow tail is at the top, which is the direction a reader scans', async () => {
-		const { heatmap } = (await build('payment-api'))!;
+		const snapshot = (await build('payment-api'))!;
+		const heatmap = dataOf<LatencyHeatmap>(snapshot.heatmap);
 		const bandOf = (row: number) =>
 			heatmap.cells.filter((cell) => cell.row === row).reduce((sum, cell) => sum + cell.band, 0);
 

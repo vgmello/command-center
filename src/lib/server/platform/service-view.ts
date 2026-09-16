@@ -1,4 +1,4 @@
-import type { ServiceSnapshot } from '$lib/platform/types';
+import type { ServiceSnapshot, ServiceStat } from '$lib/platform/types';
 import type { PlatformScope } from '$lib/platform/query';
 import type { DeploymentSource, ServiceSource } from './source';
 import { ALL_DOMAINS, ALL_ENVIRONMENTS } from '$lib/platform/deployments';
@@ -35,39 +35,69 @@ export async function buildServiceSnapshot(
 	const service = await services.findService(scope, slug);
 	if (!service) return null;
 
-	const [stats, checks, dependencies, requestRate, endpoints, deploymentPage] = await Promise.all([
-		services.readStats(scope, slug),
-		services.listHealthChecks(scope, slug),
-		// A service map is a different API from metrics; a source may not have one.
-		panel('apm.dependencies', async () => ({
-			data: await services.readDependencies(scope, slug)
-		})),
-		services.readRequestRate(scope, slug),
-		services.listEndpoints(scope, slug, SERVICE_ENDPOINT_LIMIT),
-		deployments.queryDeployments(scope, {
-			search: '',
-			state: 'all',
-			domain: ALL_DOMAINS,
-			// An exact match, not a search: this panel is one service's history, and a
-			// substring would hand it every service whose name contains this one.
-			service: service.name,
-			environment: ALL_ENVIRONMENTS,
-			window: 'any',
-			page: 1,
-			pageSize: SERVICE_DEPLOYMENT_LIMIT
-		})
-	]);
+	// Every source-backed read wrapped, not just dependencies. That one was wrapped first
+	// because a service map is a different API from metrics and a source may not have
+	// one; the rest were left bare, which is the same latent bug the deployments and
+	// infrastructure screens already had — one declined capability must cost this page a
+	// panel, not the whole page.
+	const [statsPanel, checks, dependencies, requestRate, endpoints, deploymentsPanel] =
+		await Promise.all([
+			panel('apm.serviceStats', async () => ({ data: await services.readStats(scope, slug) })),
+			panel('apm.healthChecks', async () => ({
+				data: await services.listHealthChecks(scope, slug)
+			})),
+			panel('apm.dependencies', async () => ({
+				data: await services.readDependencies(scope, slug)
+			})),
+			panel('apm.requestRate', async () => ({
+				data: await services.readRequestRate(scope, slug)
+			})),
+			panel('apm.endpoints', async () => ({
+				data: await services.listEndpoints(scope, slug, SERVICE_ENDPOINT_LIMIT)
+			})),
+			panel('deployment.log', async () => ({
+				data: (
+					await deployments.queryDeployments(scope, {
+						search: '',
+						state: 'all',
+						domain: ALL_DOMAINS,
+						// An exact match, not a search: this panel is one service's history, and
+						// a substring would hand it every service whose name contains this one.
+						service: service.name,
+						environment: ALL_ENVIRONMENTS,
+						window: 'any',
+						page: 1,
+						pageSize: SERVICE_DEPLOYMENT_LIMIT
+					})
+				).deployments
+			}))
+		]);
 
 	return {
 		generatedAt: now.toISOString(),
 		environment: scope.environment,
 		timeRange: scope.timeRange,
 		service,
-		stats,
+		stats: statsPanel.status === 'ok' ? statsPanel.data : unreportedServiceStats(),
 		checks,
 		dependencies,
-		deployments: deploymentPage.deployments,
+		deployments: deploymentsPanel,
 		requestRate,
 		endpoints
 	};
+}
+
+/** What the stat strip says when nothing measures this service. */
+function unreportedServiceStats(): ServiceStat[] {
+	return [
+		{
+			kind: 'note',
+			id: 'unreported',
+			label: 'Service Health',
+			formatted: 'Not reported',
+			caption: 'No connected APM source measures this service.',
+			tone: null,
+			icon: 'circle-help'
+		}
+	];
 }

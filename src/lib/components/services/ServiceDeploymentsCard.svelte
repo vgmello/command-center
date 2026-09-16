@@ -1,13 +1,16 @@
 <script lang="ts">
+	import PanelGap from '../PanelGap.svelte';
 	import RelativeTime from '../RelativeTime.svelte';
 	import SectionCard from '../SectionCard.svelte';
 	import StatusBadge from '../StatusBadge.svelte';
 	import { DEPLOYMENT_LABELS, deploymentTone } from '../tone';
 	import { DEPLOYMENT_TRIGGER_LABELS } from '$lib/platform/deployments';
 	import type { Deployment, EnvironmentOption } from '$lib/platform/types';
+	import type { Panel } from '$lib/platform/sources';
 
 	interface Props {
-		deployments: Deployment[];
+		/** A panel: this history is the deployment log, which not every screen can reach. */
+		deployments: Panel<Deployment[]>;
 		environments: EnvironmentOption[];
 		/**
 		 * Names the service each row deployed.
@@ -21,12 +24,14 @@
 
 	let { deployments, environments, showService = false }: Props = $props();
 
+	const rows = $derived(deployments.status === 'ok' ? deployments.data : []);
 	const environmentLabel = $derived(
 		(id: Deployment['environment']) => environments.find((one) => one.id === id)?.label ?? id
 	);
 </script>
 
 <SectionCard title="Recent Deployments" href="/deployments">
+	<PanelGap panel={deployments} noun="deployments" class="px-4 pb-2" />
 	<table class="w-full">
 		<thead>
 			<tr class="text-[11px] text-muted-foreground">
@@ -38,7 +43,7 @@
 			</tr>
 		</thead>
 		<tbody>
-			{#each deployments as deployment (deployment.id)}
+			{#each rows as deployment (deployment.id)}
 				{@const tone = deploymentTone(deployment.status)}
 				<tr class="border-t border-border/60">
 					{#if showService}
@@ -66,14 +71,16 @@
 					</td>
 				</tr>
 			{:else}
-				<tr>
-					<td
-						colspan={showService ? 6 : 5}
-						class="px-4 py-10 text-center text-[12.5px] text-muted-foreground"
-					>
-						No deployments recorded for this service.
-					</td>
-				</tr>
+				{#if deployments.status === 'ok'}
+					<tr>
+						<td
+							colspan={showService ? 6 : 5}
+							class="px-4 py-10 text-center text-[12.5px] text-muted-foreground"
+						>
+							No deployments recorded.
+						</td>
+					</tr>
+				{/if}
 			{/each}
 		</tbody>
 	</table>

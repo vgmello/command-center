@@ -759,11 +759,15 @@ export interface DomainSnapshot {
 	environment: EnvironmentId;
 	timeRange: TimeRangeId;
 	domain: Domain;
+	// Built via `unreportedStats()` when vitals are a gap, so this stays raw — the
+	// fallback already states "not reported" rather than a number nobody measured.
 	stats: ServiceStat[];
-	services: ServiceVitals[];
+	// The rows must add up to the split `apm.domainVitals` reports, so a missing vitals
+	// reading is a gap here too, not an empty table.
+	services: Panel<ServiceVitals[]>;
 	dependencies: DomainDependencies;
-	deployments: Deployment[];
-	issues: Incident[];
+	deployments: Panel<Deployment[]>;
+	issues: Panel<Incident[]>;
 }
 
 /** Everything the service metrics tab renders. */
@@ -772,19 +776,24 @@ export interface ServiceMetricsSnapshot {
 	environment: EnvironmentId;
 	timeRange: TimeRangeId;
 	service: Service;
+	// Built via `unreportedMetricStats()` when the series or the SLO is a gap, so this
+	// stays raw — the fallback already states "not reported" rather than zeroes.
 	stats: ServiceStat[];
-	requestRate: TimeSeries;
-	p95Latency: TimeSeries;
-	errorRate: TimeSeries;
+	// The six series below come from one `apm.metricSeries` read, split into named
+	// fields the way `deployments-view.ts` splits `frequency`/`meanDuration` off one
+	// `deployment.trends` panel — so all six share one gap rather than six copies of it.
+	requestRate: Panel<TimeSeries>;
+	p95Latency: Panel<TimeSeries>;
+	errorRate: Panel<TimeSeries>;
 	/** CPU and memory on one axis, because both are percentages of the same thing. */
-	saturation: TimeSeries[];
+	saturation: Panel<TimeSeries[]>;
 	/** Request rate split by endpoint, stacked so the top edge is the total. */
-	byEndpoint: TimeSeries[];
+	byEndpoint: Panel<TimeSeries[]>;
 	/** P95 per instance, to show whether one of them is the problem. */
-	byInstance: TimeSeries[];
-	endpoints: ServiceEndpoint[];
-	slo: SloBudget;
-	heatmap: LatencyHeatmap;
+	byInstance: Panel<TimeSeries[]>;
+	endpoints: Panel<ServiceEndpoint[]>;
+	slo: Panel<SloBudget>;
+	heatmap: Panel<LatencyHeatmap>;
 	/**
 	 * Flagged movements, or an account of why there are none.
 	 *
@@ -801,8 +810,10 @@ export interface ServiceSnapshot {
 	environment: EnvironmentId;
 	timeRange: TimeRangeId;
 	service: Service;
+	// Built via `unreportedServiceStats()` when `apm.serviceStats` is a gap, so this
+	// stays raw — the fallback already states "not reported" rather than zeroes.
 	stats: ServiceStat[];
-	checks: HealthCheck[];
+	checks: Panel<HealthCheck[]>;
 	/**
 	 * The service's immediate neighbourhood, or an account of why it is unknown.
 	 *
@@ -811,9 +822,9 @@ export interface ServiceSnapshot {
 	 * talks to nothing", which is a much stronger claim than "we cannot see".
 	 */
 	dependencies: Panel<ServiceDependencies>;
-	deployments: Deployment[];
-	requestRate: TimeSeries;
-	endpoints: ServiceEndpoint[];
+	deployments: Panel<Deployment[]>;
+	requestRate: Panel<TimeSeries>;
+	endpoints: Panel<ServiceEndpoint[]>;
 }
 
 /** A hosting region, with where it is so a map can place it. */

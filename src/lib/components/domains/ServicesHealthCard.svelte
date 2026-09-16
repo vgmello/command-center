@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from '../Icon.svelte';
+	import PanelGap from '../PanelGap.svelte';
 	import SectionCard from '../SectionCard.svelte';
 	import Sparkline from '../Sparkline.svelte';
 	import { accentTile, statusTone } from '../tone';
@@ -7,20 +8,24 @@
 	import { formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
 	import { SERVICE_ROWS_COLLAPSED, describeHiddenServices } from '$lib/platform/domains';
 	import type { ServiceVitals } from '$lib/platform/types';
+	import type { Panel } from '$lib/platform/sources';
 
 	interface Props {
-		services: ServiceVitals[];
+		/** A panel because the rows must add up to a split `apm.domainVitals` reports. */
+		services: Panel<ServiceVitals[]>;
 	}
 
 	let { services }: Props = $props();
 
 	let expanded = $state(false);
 
-	const shown = $derived(expanded ? services : services.slice(0, SERVICE_ROWS_COLLAPSED));
-	const hiddenLabel = $derived(describeHiddenServices(services.length, SERVICE_ROWS_COLLAPSED));
+	const rows = $derived(services.status === 'ok' ? services.data : []);
+	const shown = $derived(expanded ? rows : rows.slice(0, SERVICE_ROWS_COLLAPSED));
+	const hiddenLabel = $derived(describeHiddenServices(rows.length, SERVICE_ROWS_COLLAPSED));
 </script>
 
 <SectionCard title="Services Health" href="/services" viewAllLabel="View all services">
+	<PanelGap panel={services} noun="service health" class="px-4 pb-2" />
 	<div class="overflow-x-auto px-4 pb-2">
 		<table class="w-full">
 			<thead>

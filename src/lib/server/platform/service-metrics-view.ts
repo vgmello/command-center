@@ -1,10 +1,14 @@
 import type { ServiceMetricsSnapshot, ServiceStat, TimeSeries } from '$lib/platform/types';
+import type { Panel } from '$lib/platform/sources';
 import type { PlatformScope } from '$lib/platform/query';
 import { panel } from '../sources/panel';
 import type { ServiceSource } from './source';
 import { formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
 import { describeInstanceHealth } from '$lib/platform/services';
 import { toSeries } from './snapshot';
+
+/** The shape of one `readMetricSeries` answer, named so `pick()` can be typed against it. */
+type MetricSeriesResult = Awaited<ReturnType<ServiceSource['readMetricSeries']>>;
 
 /**
  * Assembles one service's metrics tab.
@@ -143,39 +147,86 @@ export async function buildServiceMetricsSnapshot(
 	const service = await services.findService(scope, slug);
 	if (!service) return null;
 
-	const [series, slo, heatmap, insights, endpoints] = await Promise.all([
-		services.readMetricSeries(scope, slug),
-		services.readSloBudget(scope, slug),
-		services.readLatencyHeatmap(scope, slug),
-		// Coralogix reports what happened, not what it means, so this is the one read
-		// here a source may legitimately decline. Wrapped so the page states the gap.
+	// Every source-backed read wrapped, not just insights. That one was wrapped first
+	// because Coralogix reports what happened rather than what it means, which made it
+	// the obvious gap; the rest were left bare, which is the same latent bug the
+	// deployments and infrastructure screens already had — one declined capability must
+	// cost this page a panel, not the whole page.
+	const [seriesPanel, sloPanel, heatmapPanel, insights, endpointsPanel] = await Promise.all([
+		panel('apm.metricSeries', async () => ({ data: await services.readMetricSeries(scope, slug) })),
+		panel('apm.slo', async () => ({ data: await services.readSloBudget(scope, slug) })),
+		panel('apm.latencyHeatmap', async () => ({
+			data: await services.readLatencyHeatmap(scope, slug)
+		})),
 		panel('apm.insights', async () => ({ data: await services.listMetricInsights(scope, slug) })),
-		services.listEndpoints(scope, slug, METRIC_ENDPOINT_LIMIT)
+		panel('apm.endpoints', async () => ({
+			data: await services.listEndpoints(scope, slug, METRIC_ENDPOINT_LIMIT)
+		}))
 	]);
+
+	// Six named fields off one read, not six reads — `frequency`/`meanDuration` in
+	// `deployments-view.ts` split a single panel the same way. Each sub-field's
+	// `unavailable`/`failed` shape carries no `data`, so it is already exactly the right
+	// `Panel<T>` for whichever field is asking.
+	const pick = <K extends keyof MetricSeriesResult>(key: K) =>
+		seriesPanel.status === 'ok'
+			? ({ ...seriesPanel, data: seriesPanel.data[key] } as Panel<MetricSeriesResult[K]>)
+			: seriesPanel;
+
+	const series = seriesPanel.status === 'ok' ? seriesPanel.data : null;
+	const slo = sloPanel.status === 'ok' ? sloPanel.data : null;
 
 	return {
 		generatedAt: now.toISOString(),
 		environment: scope.environment,
 		timeRange: scope.timeRange,
 		service,
-		stats: buildMetricStats(
-			series.requestRate,
-			series.p95Latency,
-			series.errorRate,
-			slo.achievedPct,
-			slo.targetPct,
-			service.instancesHealthy,
-			service.instancesTotal
-		),
-		requestRate: series.requestRate,
-		p95Latency: series.p95Latency,
-		errorRate: series.errorRate,
-		saturation: series.saturation,
-		byEndpoint: series.byEndpoint,
-		byInstance: series.byInstance,
-		endpoints,
-		slo,
-		heatmap,
+		stats:
+			series && slo
+				? buildMetricStats(
+						series.requestRate,
+						series.p95Latency,
+						series.errorRate,
+						slo.achievedPct,
+						slo.targetPct,
+						service.instancesHealthy,
+						service.instancesTotal
+					)
+				: unreportedMetricStats(service.instancesHealthy, service.instancesTotal),
+		requestRate: pick('requestRate'),
+		p95Latency: pick('p95Latency'),
+		errorRate: pick('errorRate'),
+		saturation: pick('saturation'),
+		byEndpoint: pick('byEndpoint'),
+		byInstance: pick('byInstance'),
+		endpoints: endpointsPanel,
+		slo: sloPanel,
+		heatmap: heatmapPanel,
 		insights
 	};
+}
+
+/** What the stat strip says when no source measures this service's metrics. */
+function unreportedMetricStats(instancesHealthy: number, instancesTotal: number): ServiceStat[] {
+	return [
+		{
+			kind: 'note',
+			id: 'unreported',
+			label: 'Metrics',
+			formatted: 'Not reported',
+			caption: 'No connected APM source measures this service.',
+			tone: null,
+			icon: 'circle-help'
+		},
+		{
+			kind: 'ratio',
+			id: 'instances',
+			label: 'Active Instances',
+			value: instancesHealthy,
+			total: instancesTotal,
+			caption: describeInstanceHealth(instancesHealthy, instancesTotal),
+			tone: instancesHealthy === instancesTotal ? 'healthy' : 'degraded',
+			icon: 'boxes'
+		}
+	];
 }

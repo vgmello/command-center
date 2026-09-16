@@ -2,15 +2,18 @@ import type {
 	DomainSnapshot,
 	DomainVitals,
 	Domain,
+	Incident,
 	ServiceStat,
 	ServiceVitals
 } from '$lib/platform/types';
+import type { Panel } from '$lib/platform/sources';
 import type { PlatformScope } from '$lib/platform/query';
 import type { DeploymentSource, PlatformSource, ServiceSource } from './source';
 import { ALL_ENVIRONMENTS, ALL_SERVICES } from '$lib/platform/deployments';
 import { formatCompact, formatLatency, formatPercent } from '$lib/platform/format';
 import { STATUS_LABELS } from '$lib/platform/health';
 import { toSeries } from './snapshot';
+import { panel } from '../sources/panel';
 import { CapabilityUnavailableError, SourceFailedError } from '../sources/errors';
 
 /**
@@ -207,29 +210,50 @@ export async function buildDomainSnapshot(
 	 * prints a health score for. With a real APM source connected that is every domain it
 	 * does not happen to measure, which was all 25 of them the first time this ran against
 	 * one: the catalog is this app's record of what exists, and a telemetry source does not
-	 * get a vote on it.
+	 * get a vote on it. Wrapped in `panel()` now rather than left to throw, for the same
+	 * reason every other source-backed read on this page is wrapped: one capability a
+	 * provider declines must cost this page one panel, not the whole page.
 	 */
-	const vitals = await source.readDomainVitals(scope, slug);
+	const vitalsPanel = await panel('apm.domainVitals', async () => ({
+		data: await source.readDomainVitals(scope, slug)
+	}));
+	const vitals = vitalsPanel.status === 'ok' ? vitalsPanel.data : null;
 
-	const [serviceRows, dependencies, deploymentPage, incidents] = await Promise.all([
+	const [servicesPanel, dependencies, deploymentsPanel, incidentsPanel] = await Promise.all([
 		// Sequenced after the vitals, not concurrent with them: the rows must add up to
-		// the split the domain reports, so they have to be asked for in those terms. With
-		// no split to add up to there is nothing to ask for.
+		// the split the domain reports, so they have to be asked for in those terms.
+		//
+		// Two different reasons there might be no split to ask for, and they read as
+		// different panels: a real capability gap (`vitalsPanel` is `unavailable`/
+		// `failed`, whose shape carries no `data` and so is already exactly a
+		// `Panel<ServiceVitals[]>`) versus a connected source that simply has nothing on
+		// this domain (`vitalsPanel` is `ok` with `data: null` — an ordinary answer, not a
+		// gap, so `services` states the honest empty split rather than "unavailable").
 		vitals
-			? services.listServiceVitals(scope, domain.id, vitals, domain.serviceCount)
-			: Promise.resolve([]),
+			? services
+					.listServiceVitals(scope, domain.id, vitals, domain.serviceCount)
+					.then((data): Panel<ServiceVitals[]> => ({ status: 'ok', data }))
+			: Promise.resolve(
+					vitalsPanel.status === 'ok'
+						? ({ status: 'ok', data: [] } satisfies Panel<ServiceVitals[]>)
+						: vitalsPanel
+				),
 		source.readDomainDependencies(scope, slug),
-		deployments.queryDeployments(scope, {
-			search: '',
-			state: 'all',
-			domain: domain.id,
-			service: ALL_SERVICES,
-			environment: ALL_ENVIRONMENTS,
-			window: 'any',
-			page: 1,
-			pageSize: DOMAIN_DEPLOYMENT_LIMIT
-		}),
-		source.listIncidents(scope, 20)
+		panel('deployment.log', async () => ({
+			data: (
+				await deployments.queryDeployments(scope, {
+					search: '',
+					state: 'all',
+					domain: domain.id,
+					service: ALL_SERVICES,
+					environment: ALL_ENVIRONMENTS,
+					window: 'any',
+					page: 1,
+					pageSize: DOMAIN_DEPLOYMENT_LIMIT
+				})
+			).deployments
+		})),
+		panel('apm.incidents', async () => ({ data: await source.listIncidents(scope, 20) }))
 	]);
 
 	return {
@@ -237,14 +261,27 @@ export async function buildDomainSnapshot(
 		environment: scope.environment,
 		timeRange: scope.timeRange,
 		domain,
-		stats: buildDomainStats(domain, vitals),
-		services: serviceRows,
+		stats: vitals ? buildDomainStats(domain, vitals) : unreportedStats(domain),
+		services: servicesPanel,
 		dependencies,
-		deployments: deploymentPage.deployments,
+		deployments: deploymentsPanel,
 		// Incidents are read across the platform and narrowed here, because the source
 		// answers "the worst incidents" and this page wants "the worst of this domain's".
-		issues: incidents
-			.filter((incident) => incident.domainId === domain.id)
+		issues: narrowIssues(incidentsPanel, domain.id)
+	};
+}
+
+/**
+ * The platform's worst incidents, narrowed to this domain's and capped — with the gap,
+ * when there is one, carried through untouched rather than read as "none open".
+ */
+function narrowIssues(incidents: Panel<Incident[]>, domainId: string): Panel<Incident[]> {
+	if (incidents.status !== 'ok') return incidents;
+
+	return {
+		...incidents,
+		data: incidents.data
+			.filter((incident) => incident.domainId === domainId)
 			.slice(0, DOMAIN_ISSUE_LIMIT)
 	};
 }

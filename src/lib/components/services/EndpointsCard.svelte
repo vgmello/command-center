@@ -1,17 +1,22 @@
 <script lang="ts">
+	import PanelGap from '../PanelGap.svelte';
 	import SectionCard from '../SectionCard.svelte';
 	import { statusTone } from '../tone';
 	import { formatLatency } from '$lib/platform/format';
 	import type { ServiceEndpoint } from '$lib/platform/types';
+	import type { Panel } from '$lib/platform/sources';
 
 	interface Props {
-		endpoints: ServiceEndpoint[];
+		endpoints: Panel<ServiceEndpoint[]>;
 	}
 
 	let { endpoints }: Props = $props();
+
+	const rows = $derived(endpoints.status === 'ok' ? endpoints.data : []);
 </script>
 
 <SectionCard title="Top Endpoints">
+	<PanelGap panel={endpoints} noun="endpoints" class="px-4 pb-4" />
 	<div class="px-4 pb-4">
 		<div class="flex items-center justify-between pb-1.5 text-[11px] text-muted-foreground">
 			<span>Endpoint</span>
@@ -19,7 +24,7 @@
 		</div>
 
 		<ul>
-			{#each endpoints as endpoint (endpoint.id)}
+			{#each rows as endpoint (endpoint.id)}
 				{@const tone = statusTone(endpoint.status)}
 				{@const latency = formatLatency(endpoint.p95LatencyMs)}
 				<li class="flex items-center gap-3 border-t border-border/60 py-2">

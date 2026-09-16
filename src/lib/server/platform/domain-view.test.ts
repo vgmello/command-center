@@ -15,6 +15,17 @@ const deployments = new FixtureDeploymentSource();
 
 const build = (slug: string) => buildDomainSnapshot(platform, services, deployments, scope, slug);
 
+/**
+ * Unwraps a panel that the fixture source always answers.
+ *
+ * Asserting `status === 'ok'` first is what would catch a fixture read silently
+ * becoming a gap, rather than a test quietly exercising an empty array either way.
+ */
+function dataOf<T>(panel: { status: string }): T {
+	expect(panel.status).toBe('ok');
+	return (panel as { status: 'ok'; data: T }).data;
+}
+
 describe('buildDomainSnapshot', () => {
 	test('an unknown slug is null, so the route can answer 404', async () => {
 		expect(await build('no-such-domain')).toBeNull();
@@ -70,8 +81,9 @@ describe('buildDomainSnapshot', () => {
 
 		// The catalog's own facts survive: the health ring and the incident count.
 		expect(snapshot.stats.find((stat) => stat.id === 'health')).toBeDefined();
-		// And no rows are invented for a split nothing reported.
-		expect(snapshot.services).toEqual([]);
+		// And no rows are invented for a split nothing reported. `ok` with an empty split,
+		// not `unavailable` — the source answered, it just has nothing on this domain.
+		expect(snapshot.services).toEqual({ status: 'ok', data: [] });
 	});
 
 	test('carries the scope it was assembled for', async () => {
@@ -132,8 +144,9 @@ describe('buildDomainSnapshot', () => {
 
 		// The header tile and this table are two renderings of one number; a catalog
 		// that covered only the hand-written services would make them contradict.
-		expect(snapshot.services).toHaveLength(snapshot.domain.serviceCount);
-		expect(new Set(snapshot.services.map((one) => one.slug)).size).toBe(snapshot.services.length);
+		const rows = dataOf<{ slug: string; status: string }[]>(snapshot.services);
+		expect(rows).toHaveLength(snapshot.domain.serviceCount);
+		expect(new Set(rows.map((one) => one.slug)).size).toBe(rows.length);
 	});
 
 	test('and their states add up to the split the header reports', async () => {
@@ -141,8 +154,9 @@ describe('buildDomainSnapshot', () => {
 		const tile = snapshot.stats.find((stat) => stat.id === 'services');
 
 		if (tile?.kind !== 'breakdown') throw new Error('unreachable');
+		const rows = dataOf<{ status: string }[]>(snapshot.services);
 		for (const part of tile.parts) {
-			const counted = snapshot.services.filter((one) => one.status === part.status).length;
+			const counted = rows.filter((one) => one.status === part.status).length;
 			expect(counted, part.label).toBe(part.count);
 		}
 	});
@@ -150,9 +164,10 @@ describe('buildDomainSnapshot', () => {
 	test('the catalogued services are all present, with their own readings', async () => {
 		const snapshot = (await build('payment-domain'))!;
 		const catalog = await services.listServices(scope, snapshot.domain.id);
+		const rows = dataOf<{ slug: string; status: string }[]>(snapshot.services);
 
 		for (const service of catalog) {
-			const row = snapshot.services.find((one) => one.slug === service.slug);
+			const row = rows.find((one) => one.slug === service.slug);
 			expect(row, service.slug).toBeDefined();
 			expect(row!.status).toBe(service.status);
 		}
@@ -160,11 +175,13 @@ describe('buildDomainSnapshot', () => {
 
 	test('every deployment and issue belongs to this domain', async () => {
 		const snapshot = (await build('payment-domain'))!;
+		const deploymentRows = dataOf<{ domainId: string }[]>(snapshot.deployments);
+		const issueRows = dataOf<{ domainId: string }[]>(snapshot.issues);
 
-		expect(snapshot.deployments.every((one) => one.domainId === snapshot.domain.id)).toBe(true);
-		expect(snapshot.issues.every((one) => one.domainId === snapshot.domain.id)).toBe(true);
-		expect(snapshot.deployments.length).toBeLessThanOrEqual(DOMAIN_DEPLOYMENT_LIMIT);
-		expect(snapshot.issues.length).toBeLessThanOrEqual(DOMAIN_ISSUE_LIMIT);
+		expect(deploymentRows.every((one) => one.domainId === snapshot.domain.id)).toBe(true);
+		expect(issueRows.every((one) => one.domainId === snapshot.domain.id)).toBe(true);
+		expect(deploymentRows.length).toBeLessThanOrEqual(DOMAIN_DEPLOYMENT_LIMIT);
+		expect(issueRows.length).toBeLessThanOrEqual(DOMAIN_ISSUE_LIMIT);
 	});
 
 	test('the dependency graph names only domains that exist', async () => {

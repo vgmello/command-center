@@ -9,6 +9,17 @@ const deployments = new FixtureDeploymentSource();
 
 const build = (slug: string) => buildServiceSnapshot(services, deployments, scope, slug);
 
+/**
+ * Unwraps a panel that the fixture source always answers.
+ *
+ * Asserting `status === 'ok'` first is what would catch a fixture read silently
+ * becoming a gap — the same shape `insightsOf` uses in the metrics tab's tests.
+ */
+function dataOf<T>(panel: { status: string }): T {
+	expect(panel.status).toBe('ok');
+	return (panel as { status: 'ok'; data: T }).data;
+}
+
 describe('buildServiceSnapshot', () => {
 	test('an unknown slug is null, not a throw — an edited URL is not an outage', async () => {
 		expect(await build('no-such-service')).toBeNull();
@@ -29,24 +40,27 @@ describe('buildServiceSnapshot', () => {
 
 	test('the deployment history is the deployment log, narrowed to this service', async () => {
 		const snapshot = await build('payment-api');
+		const rows = dataOf<{ service: string }[]>(snapshot!.deployments);
 
-		expect(snapshot!.deployments.length).toBeGreaterThan(1);
-		expect(snapshot!.deployments.every((one) => one.service === 'payment-api')).toBe(true);
+		expect(rows.length).toBeGreaterThan(1);
+		expect(rows.every((one) => one.service === 'payment-api')).toBe(true);
 	});
 
 	test('the match is exact, so a sibling service is not counted as this one', async () => {
 		// `payment-gateway` contains no substring collision, but `payment-api` is a
 		// prefix of nothing else only by luck — the filter must not depend on that.
 		const gateway = await build('payment-gateway');
+		const rows = dataOf<{ service: string }[]>(gateway!.deployments);
 
-		expect(gateway!.deployments.every((one) => one.service === 'payment-gateway')).toBe(true);
-		expect(gateway!.deployments.some((one) => one.service === 'payment-api')).toBe(false);
+		expect(rows.every((one) => one.service === 'payment-gateway')).toBe(true);
+		expect(rows.some((one) => one.service === 'payment-api')).toBe(false);
 	});
 
 	test('honours the endpoint limit rather than trusting the source to slice', async () => {
 		const snapshot = await build('payment-api');
+		const endpoints = dataOf<{ id: string }[]>(snapshot!.endpoints);
 
-		expect(snapshot?.endpoints.length).toBeLessThanOrEqual(SERVICE_ENDPOINT_LIMIT);
+		expect(endpoints.length).toBeLessThanOrEqual(SERVICE_ENDPOINT_LIMIT);
 	});
 
 	test('every stat tile is one of the four known kinds', async () => {
@@ -109,14 +123,17 @@ describe('buildServiceSnapshot', () => {
 
 	test('endpoint bars are shares of the slowest, so the worst one fills the bar', async () => {
 		const snapshot = await build('payment-api');
-		const [slowest] = snapshot!.endpoints;
+		const endpoints = dataOf<{ latencySharePct: number; p95LatencyMs: number }[]>(
+			snapshot!.endpoints
+		);
+		const [slowest] = endpoints;
 
 		expect(slowest.latencySharePct).toBe(100);
-		expect(
-			snapshot!.endpoints.every((one) => one.latencySharePct <= 100 && one.latencySharePct >= 0)
-		).toBe(true);
+		expect(endpoints.every((one) => one.latencySharePct <= 100 && one.latencySharePct >= 0)).toBe(
+			true
+		);
 		// Ranked, so the table needs no sort of its own.
-		const latencies = snapshot!.endpoints.map((one) => one.p95LatencyMs);
+		const latencies = endpoints.map((one) => one.p95LatencyMs);
 		expect(latencies).toEqual([...latencies].sort((a, b) => b - a));
 	});
 });
