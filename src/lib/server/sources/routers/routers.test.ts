@@ -5,6 +5,7 @@ import { createDispatcher } from '../dispatch';
 import { SourceCache } from '../cache';
 import { SourceRegistry } from '../registry';
 import { CapabilityUnavailableError } from '../errors';
+import { routeOne } from './shared';
 import { FIXTURE_CONNECTIONS, FIXTURE_PROVIDERS } from '../fixtures';
 import { FixturePlatformSource } from '../../platform/fixture-source';
 import type { PlatformScope } from '$lib/platform/query';
@@ -280,5 +281,133 @@ describe('a fan-out cache entry belongs to the connections that answered it', ()
 		// read was served the first connection's answer.
 		expect(keys.size).toBe(2);
 		for (const key of keys) expect(key.startsWith('fan-out:')).toBe(true);
+	});
+});
+
+describe('routeOne', () => {
+	const ownerScope: PlatformScope = { environment: 'production', timeRange: '1h' };
+	const binding = { kind: 'cloud' as const, connectionId: '', externalId: 'payment-domain' };
+
+	function depsWith(connections: unknown) {
+		const registry = new SourceRegistry();
+		for (const p of FIXTURE_PROVIDERS) registry.register(p);
+		registry.load(connections, {});
+		return { registry, dispatcher: createDispatcher(registry), cache: new SourceCache() };
+	}
+
+	test('an empty connectionId resolves to the one connection of that kind', async () => {
+		const deps = depsWith(FIXTURE_CONNECTIONS);
+		let seen: string | undefined;
+		await routeOne(
+			deps,
+			'cloud.nodes',
+			ownerScope,
+			binding,
+			'owner=payment-domain',
+			async (_c, ctx) => {
+				seen = ctx.connection.id;
+				return 1;
+			}
+		);
+		expect(seen).toBe(deps.registry.supporting('cloud.nodes')[0].ref.id);
+	});
+
+	test('no connection of the kind → no-connection', async () => {
+		await expect(
+			routeOne(depsWith({ connections: [] }), 'cloud.nodes', ownerScope, binding, '', async () => 1)
+		).rejects.toMatchObject({ reason: 'no-connection' });
+	});
+
+	test('kind present but none declaring the capability → no-capability', async () => {
+		const withoutNodes = FIXTURE_PROVIDERS.map((provider) =>
+			provider.id === 'fixture-cloud'
+				? ({
+						...provider,
+						capabilities: new Set([...provider.capabilities].filter((c) => c !== 'cloud.nodes'))
+					} as ProviderDefinition<unknown>)
+				: provider
+		);
+		const registry = new SourceRegistry();
+		for (const p of withoutNodes) registry.register(p);
+		registry.load(FIXTURE_CONNECTIONS, {});
+		const deps = { registry, dispatcher: createDispatcher(registry), cache: new SourceCache() };
+
+		await expect(
+			routeOne(deps, 'cloud.nodes', ownerScope, binding, '', async () => 1)
+		).rejects.toMatchObject({ reason: 'no-capability' });
+	});
+
+	test('two connections of the kind → ambiguous-connection', async () => {
+		// Two connections of one *synthetic* provider are refused at load
+		// (`refuseMixedFixtures`) — a fixture beside another copy of itself would
+		// merge invented rows into invented rows, which is exactly what that guard
+		// exists to catch. Two real cloud providers connected at once (two Azure
+		// subscriptions, say) is the legitimate case `resolveConnection` must handle,
+		// so the second connection here is registered under a non-synthetic copy of
+		// the fixture-cloud provider.
+		const cloudProvider = FIXTURE_PROVIDERS.find((p) => p.id === 'fixture-cloud')!;
+		const secondProvider = {
+			...cloudProvider,
+			id: 'fixture-cloud-2',
+			synthetic: false
+		} as ProviderDefinition<unknown>;
+
+		const registry = new SourceRegistry();
+		for (const p of FIXTURE_PROVIDERS) {
+			registry.register(p.id === 'fixture-cloud' ? { ...p, synthetic: false } : p);
+		}
+		registry.register(secondProvider);
+		registry.load(
+			{
+				connections: [
+					...FIXTURE_CONNECTIONS.connections,
+					{
+						...FIXTURE_CONNECTIONS.connections.find(
+							(c: { provider: string }) => c.provider === 'fixture-cloud'
+						),
+						id: 'cloud-2',
+						provider: 'fixture-cloud-2'
+					}
+				]
+			},
+			{}
+		);
+		const deps = { registry, dispatcher: createDispatcher(registry), cache: new SourceCache() };
+
+		await expect(
+			routeOne(deps, 'cloud.nodes', ownerScope, binding, '', async () => 1)
+		).rejects.toMatchObject({ reason: 'ambiguous-connection' });
+	});
+
+	test('a second read inside TTL issues no upstream call, and owners/environments key separately', async () => {
+		const deps = depsWith(FIXTURE_CONNECTIONS);
+		let calls = 0;
+		const call = async () => {
+			calls++;
+			return calls;
+		};
+		await routeOne(deps, 'cloud.nodes', ownerScope, binding, 'owner=payment-domain', call);
+		await routeOne(deps, 'cloud.nodes', ownerScope, binding, 'owner=payment-domain', call);
+		expect(calls).toBe(1);
+
+		await routeOne(
+			deps,
+			'cloud.nodes',
+			ownerScope,
+			{ ...binding, externalId: 'order-domain' },
+			'owner=order-domain',
+			call
+		);
+		expect(calls).toBe(2);
+
+		await routeOne(
+			deps,
+			'cloud.nodes',
+			{ ...ownerScope, environment: 'staging' },
+			binding,
+			'owner=payment-domain',
+			call
+		);
+		expect(calls).toBe(3);
 	});
 });

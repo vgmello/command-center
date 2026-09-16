@@ -1,10 +1,11 @@
-import type { Capability } from '$lib/platform/sources';
+import { kindOf, type Capability } from '$lib/platform/sources';
 import type { PlatformScope } from '$lib/platform/query';
 import { DEFAULT_TTL_SECONDS, type SourceCache } from '../cache';
 import type { Dispatcher } from '../dispatch';
-import type { SourceContext } from '../provider';
+import type { SourceBinding, SourceContext } from '../provider';
 import type { SourceRegistry } from '../registry';
 import type { SourceStore, StoredSample } from '../../store/source-store';
+import { CapabilityUnavailableError } from '../errors';
 import {
 	geometryFor,
 	RANGE_SECONDS,
@@ -146,6 +147,62 @@ export async function fanOutSingle<T>(
 	);
 
 	return (data as T[])[0];
+}
+
+/**
+ * A resource-scoped read: one connection, chosen by the binding, cached per owner.
+ *
+ * `dispatcher.one()` routes by `binding.connectionId` and looks it up in the registry — so
+ * the catalog's `''` ("whichever connection of this kind answers") has to be resolved here
+ * first, or every bound read would throw `no-connection`. It is also the only dispatch path
+ * with no cache of its own; without this wrapper a domain tab would re-issue the full
+ * upstream chain on every refresh tick.
+ *
+ * The owner is in `args`, and `scopedArgs` adds the environment and time range — so a
+ * domain's answer can be served to neither the estate nor another domain nor another
+ * environment. That is the same rule `fanOutKey` applies to the connection set, on a new axis.
+ */
+export async function routeOne<T>(
+	deps: RouterDeps,
+	capability: Capability,
+	scope: PlatformScope,
+	binding: SourceBinding,
+	args: string,
+	call: (client: unknown, ctx: SourceContext) => Promise<T>
+): Promise<T> {
+	const resolved = resolveConnection(deps, capability, binding);
+	const { data } = await deps.cache.read(
+		{
+			connectionId: resolved.connectionId,
+			capability,
+			args: scopedArgs(scope, args),
+			ttlSeconds: ttlFor(deps, capability)
+		},
+		async () => (await deps.dispatcher.one<T>({ capability, scope, binding: resolved, call })).data
+	);
+	return data as T;
+}
+
+/**
+ * Which connection a binding means.
+ *
+ * Named → itself. Empty → the one connection of the kind that declares the capability; the
+ * same three-way distinction `dispatcher.all()` makes when nothing answers, plus a fourth for
+ * "several could" — a binding must name its connection once more than one cloud is connected.
+ */
+function resolveConnection(
+	deps: RouterDeps,
+	capability: Capability,
+	binding: SourceBinding
+): SourceBinding {
+	if (binding.connectionId !== '') return binding;
+	const supporting = deps.registry.supporting(capability);
+	if (supporting.length === 1) return { ...binding, connectionId: supporting[0].ref.id };
+	if (supporting.length === 0) {
+		const anyOfKind = deps.registry.connections(kindOf(capability)).length > 0;
+		throw new CapabilityUnavailableError(capability, anyOfKind ? 'no-capability' : 'no-connection');
+	}
+	throw new CapabilityUnavailableError(capability, 'ambiguous-connection');
 }
 
 /**

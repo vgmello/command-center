@@ -27,13 +27,14 @@ import { CAPABILITY_TIER } from '../tiers';
 
 const ROUTERS = ['deployment', 'service', 'platform', 'infrastructure'] as const;
 
-type Helper = 'fanOut' | 'fanOutSingle' | 'fanOutSeries';
+type Helper = 'fanOut' | 'fanOutSingle' | 'fanOutSeries' | 'routeOne';
 
 /** Which helpers a tier may legitimately be read through. */
 const ALLOWED: Record<(typeof CAPABILITY_TIER)[Capability], Helper[]> = {
 	// Both go through the cache, which persists a `reference` answer as a document.
-	live: ['fanOut', 'fanOutSingle'],
-	reference: ['fanOut', 'fanOutSingle'],
+	// `routeOne` also goes through the cache, on the resource-scoped path.
+	live: ['fanOut', 'fanOutSingle', 'routeOne'],
+	reference: ['fanOut', 'fanOutSingle', 'routeOne'],
 	// Only the series path reaches `source_series`. Anything else and the capability is
 	// classified into a strategy nothing implements for it.
 	series: ['fanOutSeries']
