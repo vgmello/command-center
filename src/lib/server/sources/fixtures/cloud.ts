@@ -30,23 +30,23 @@ export const fixtureCloudProvider = defineProvider<CloudProvider>({
 	],
 	settings: v.object({}),
 	connect: () => ({
-		async listRegions() {
-			return estate.listRegions();
+		async listRegions(ctx) {
+			return estate.listRegions(ctx?.binding?.externalId);
 		},
-		async readNodeCounts() {
-			return estate.readNodeCounts();
+		async readNodeCounts(ctx) {
+			return estate.readNodeCounts(ctx?.binding?.externalId);
 		},
-		async listClusters(_ctx, limit) {
-			return estate.listClusters(limit);
+		async listClusters(ctx, limit) {
+			return estate.listClusters(limit, ctx?.binding?.externalId);
 		},
-		async readUtilization() {
-			return estate.readUtilization(new Date());
+		async readUtilization(ctx) {
+			return estate.readUtilization(new Date(), ctx?.binding?.externalId);
 		},
-		async readStorage() {
-			return estate.readStorage();
+		async readStorage(ctx) {
+			return estate.readStorage(ctx?.binding?.externalId);
 		},
-		async listDatabases(_ctx, limit) {
-			return estate.listDatabases(limit);
+		async listDatabases(ctx, limit) {
+			return estate.listDatabases(limit, ctx?.binding?.externalId);
 		},
 		async listQueues(_ctx, limit) {
 			return estate.listQueues(limit);
@@ -54,8 +54,8 @@ export const fixtureCloudProvider = defineProvider<CloudProvider>({
 		async listAlerts(_ctx, limit) {
 			return estate.listAlerts(new Date(), limit);
 		},
-		async readCost() {
-			return estate.readCost(new Date());
+		async readCost(ctx) {
+			return estate.readCost(new Date(), ctx?.binding?.externalId);
 		},
 		resourceLink(binding: SourceBinding | undefined, view: LinkView) {
 			// A link needs a resource to point at. Without a binding there is nothing to

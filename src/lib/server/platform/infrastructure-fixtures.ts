@@ -12,6 +12,7 @@ import type {
 	TimeSeries
 } from '$lib/platform/types';
 import { statusFromScore } from '$lib/platform/health';
+import { FIXTURE_STORAGE_BYTES, fixtureOwnerOf } from '$lib/platform/ownership';
 import { buildSeries } from './series';
 
 /**
@@ -30,8 +31,30 @@ const NODE_COUNTS: NodeCounts = { healthy: 42, warning: 4, down: 2 };
 /** Nodes the estate is paying for, healthy or not. */
 const NODE_CAPACITY = 52;
 
-export function readNodeCounts(): NodeCounts {
-	return NODE_COUNTS;
+/** Region rows: `[id, name, lat, lon, nodeCount, score]`. Hoisted so an owner's node
+ * count can be derived from the same seed `listRegions` maps into a region. */
+const REGION_ROWS: Array<[string, string, number, number, number, number]> = [
+	['eu-west-1', 'eu-west-1', 53.3, -6.3, 12, 96],
+	['eu-central-1', 'eu-central-1', 50.1, 8.7, 10, 94],
+	['us-east-1', 'us-east-1', 38.0, -78.5, 14, 92],
+	['us-west-2', 'us-west-2', 45.5, -121.0, 8, 90],
+	['ap-southeast-1', 'ap-southeast-1', 1.3, 103.8, 4, 62]
+];
+
+export function readNodeCounts(owner?: string): NodeCounts {
+	if (owner === undefined) return NODE_COUNTS;
+	return listRegions(owner).reduce(
+		(acc, r) => {
+			const row = REGION_ROWS.find((one) => one[0] === r.id)!;
+			const healthy = Math.floor((row[4] * row[5]) / 100);
+			return {
+				healthy: acc.healthy + healthy,
+				warning: acc.warning + (row[4] - healthy),
+				down: acc.down
+			};
+		},
+		{ healthy: 0, warning: 0, down: 0 }
+	);
 }
 
 export function totalNodes(): number {
@@ -48,16 +71,8 @@ export function nodeCapacity(): number {
  * Coordinates are the region's namesake city, so a marker lands where a reader expects
  * it. They travel as facts; the projection that turns them into pixels is the UI's.
  */
-export function listRegions(): InfraRegion[] {
-	const seeds: Array<[string, string, number, number, number, number]> = [
-		['eu-west-1', 'eu-west-1', 53.3, -6.3, 12, 96],
-		['eu-central-1', 'eu-central-1', 50.1, 8.7, 10, 94],
-		['us-east-1', 'us-east-1', 38.0, -78.5, 14, 92],
-		['us-west-2', 'us-west-2', 45.5, -121.0, 8, 90],
-		['ap-southeast-1', 'ap-southeast-1', 1.3, 103.8, 4, 62]
-	];
-
-	return seeds.map(([id, name, latitude, longitude, nodeCount, score]) => ({
+export function listRegions(owner?: string): InfraRegion[] {
+	const all = REGION_ROWS.map(([id, name, latitude, longitude, nodeCount, score]) => ({
 		id,
 		name,
 		status: statusFromScore(score),
@@ -65,9 +80,11 @@ export function listRegions(): InfraRegion[] {
 		longitude,
 		nodeCount
 	}));
+
+	return owner === undefined ? all : all.filter((r) => fixtureOwnerOf(r.id) === owner);
 }
 
-export function listClusters(limit: number): ClusterLoad[] {
+export function listClusters(limit: number, owner?: string): ClusterLoad[] {
 	const seeds: Array<[string, number]> = [
 		['prod-eu-west-1-a', 72],
 		['prod-eu-west-1-b', 58],
@@ -77,14 +94,20 @@ export function listClusters(limit: number): ClusterLoad[] {
 		['prod-eu-central-1-a', 22]
 	];
 
-	return seeds.slice(0, limit).map(([name, cpuPct]) => ({
+	const all = seeds.map(([name, cpuPct]) => ({
 		id: name,
 		name,
 		cpuPct,
 		// Load is not health, but sustained load grades like it: past 70% a cluster has
 		// nowhere left to absorb a spike, and past 50% it is worth watching.
-		status: cpuPct >= 70 ? 'down' : cpuPct >= 50 ? 'degraded' : 'healthy'
+		status:
+			cpuPct >= 70 ? ('down' as const) : cpuPct >= 50 ? ('degraded' as const) : ('healthy' as const)
 	}));
+
+	return (owner === undefined ? all : all.filter((c) => fixtureOwnerOf(c.id) === owner)).slice(
+		0,
+		limit
+	);
 }
 
 export function listGroups(): InfrastructureGroup[] {
@@ -149,7 +172,7 @@ function toSeries(id: string, label: string, points: ReturnType<typeof clockPoin
  * a fixed 0–100 and the network panel against its own ceiling. A chart that scaled CPU
  * to its own peak would make 42% and 95% look identical.
  */
-export function readUtilization(now: Date, buckets = 18): ResourceReading[] {
+export function readUtilization(now: Date, owner?: string, buckets = 18): ResourceReading[] {
 	const seeds: Array<[string, string, number, number, number, number]> = [
 		['cpu', 'CPU', 42, 0.1, -6, 100],
 		['memory', 'Memory', 58, 0.05, -3, 100],
@@ -158,7 +181,8 @@ export function readUtilization(now: Date, buckets = 18): ResourceReading[] {
 	];
 
 	return seeds.map(([id, label, centre, volatility, change, axisMax]) => {
-		const values = buildSeries(`infra:${id}`, centre, {
+		const seedKey = owner === undefined ? `infra:${id}` : `infra:${owner}:${id}`;
+		const values = buildSeries(seedKey, centre, {
 			points: buckets,
 			volatility,
 			floor: 0
@@ -182,24 +206,36 @@ export function readUtilization(now: Date, buckets = 18): ResourceReading[] {
 
 const TIB = 1024 ** 4;
 
-export function readStorage(): { totalBytes: number; classes: StorageClass[] } {
-	const seeds: Array<[string, string, number]> = [
-		['block', 'Block Storage', 5.1 * TIB],
-		['object', 'Object Storage', 4.8 * TIB],
-		['file', 'File Storage', 2.5 * TIB]
-	];
+/** Storage class seeds: `[id, label, bytes]`. Hoisted so an owner's storage read can pull
+ * the same class ids from `FIXTURE_STORAGE_BYTES` rather than restating them. */
+const STORAGE_SEEDS: Array<[string, string, number]> = [
+	['block', 'Block Storage', 5.1 * TIB],
+	['object', 'Object Storage', 4.8 * TIB],
+	['file', 'File Storage', 2.5 * TIB]
+];
 
-	const totalBytes = seeds.reduce((sum, [, , bytes]) => sum + bytes, 0);
+export function readStorage(owner?: string): { totalBytes: number; classes: StorageClass[] } {
+	if (owner === undefined) {
+		const totalBytes = STORAGE_SEEDS.reduce((sum, [, , bytes]) => sum + bytes, 0);
 
-	// Bytes, not a formatted string and a rounded share. The share is recomputed above the
-	// port, and the API publishes these exactly rather than multiplying a percentage out.
-	return {
-		totalBytes,
-		classes: seeds.map(([id, label, bytes]) => ({ id, label, bytes }))
-	};
+		// Bytes, not a formatted string and a rounded share. The share is recomputed above the
+		// port, and the API publishes these exactly rather than multiplying a percentage out.
+		return {
+			totalBytes,
+			classes: STORAGE_SEEDS.map(([id, label, bytes]) => ({ id, label, bytes }))
+		};
+	}
+
+	const mine = FIXTURE_STORAGE_BYTES[owner] ?? { block: 0, object: 0, file: 0 };
+	const classes = STORAGE_SEEDS.map(([id, label]) => ({
+		id,
+		label,
+		bytes: mine[id as 'block' | 'object' | 'file']
+	}));
+	return { totalBytes: classes.reduce((sum, c) => sum + c.bytes, 0), classes };
 }
 
-export function listDatabases(limit: number): DatabaseInstance[] {
+export function listDatabases(limit: number, owner?: string): DatabaseInstance[] {
 	const seeds: Array<[string, string, number, number, number, number]> = [
 		['payment-db', 'PostgreSQL', 32, 120, 300, 512 * 1024 ** 3],
 		['order-db', 'PostgreSQL', 28, 98, 300, 256 * 1024 ** 3],
@@ -208,7 +244,7 @@ export function listDatabases(limit: number): DatabaseInstance[] {
 		['inventory-db', 'PostgreSQL', 24, 52, 200, 96 * 1024 ** 3]
 	];
 
-	return seeds
+	return (owner === undefined ? seeds : seeds.filter(([name]) => fixtureOwnerOf(name) === owner))
 		.slice(0, limit)
 		.map(([name, engine, cpuPct, connections, connectionLimit, bytes]) => ({
 			id: name,
@@ -298,7 +334,7 @@ export function listAlerts(now: Date, limit: number): InfraAlert[] {
  * The chart therefore has as many columns as the month has had days. That is what
  * month-to-date means; a full month of columns on the fourth would be a fiction.
  */
-export function readCost(now: Date): CostBreakdown {
+export function readCost(now: Date, owner?: string): CostBreakdown {
 	// Daily rates chosen to reach a realistic monthly spend over a thirty-day month.
 	const seeds: Array<[string, string, number]> = [
 		['compute', 'Compute', 12_430 / 30],
@@ -314,12 +350,23 @@ export function readCost(now: Date): CostBreakdown {
 		return at.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
 	});
 
+	// An owner's slice of spend follows its slice of nodes — derived, so the owners'
+	// spend sums back to the estate's exactly.
+	const estateNodes = REGION_ROWS.reduce((sum, row) => sum + row[4], 0);
+	const share =
+		owner === undefined
+			? 1
+			: (readNodeCounts(owner).healthy +
+					readNodeCounts(owner).warning +
+					readNodeCounts(owner).down) /
+				estateNodes;
+
 	const categories = seeds.map(([id, label, dailyRate]) => {
 		const daily = buildSeries(`cost:${id}`, dailyRate, {
 			points: days,
 			volatility: 0.12,
 			floor: 1
-		}).values;
+		}).values.map((value) => value * share);
 		// The month-to-date figure is the sum of the days drawn, so the legend, the
 		// headline and the columns cannot describe different months.
 		const amount = daily.reduce((sum, value) => sum + value, 0);
