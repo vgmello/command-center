@@ -50,6 +50,12 @@ const ALLOWED: Record<(typeof CAPABILITY_TIER)[Capability], Helper[]> = {
 async function readDispatches(): Promise<Map<Capability, Set<Helper>>> {
 	const found = new Map<Capability, Set<Helper>>();
 	const pattern = /\b(fanOutSeries|fanOutSingle|fanOut)\b\s*(?:<[^>]*>)?\s*\(\s*deps,\s*'([^']+)'/g;
+	// The owner-scoped path never spells `routeOne(deps, 'cap'` literally — it goes
+	// through `scoped(deps, catalog, 'cap', …)`, which resolves a binding and calls
+	// `routeOne` itself. So this second pattern records the helper the first one
+	// cannot see, the way `scoped`'s estate branch still spells `fanOut`/`fanOutSingle`
+	// literally for the first pattern to find.
+	const scopedPattern = /\bscoped\s*\(\s*deps,\s*catalog,\s*'([^']+)'/g;
 
 	for (const router of ROUTERS) {
 		const source = await Bun.file(new URL(`./${router}.ts`, import.meta.url).pathname).text();
@@ -59,6 +65,12 @@ async function readDispatches(): Promise<Map<Capability, Set<Helper>>> {
 			const capability = match[2] as Capability;
 
 			found.set(capability, (found.get(capability) ?? new Set()).add(helper));
+		}
+
+		for (const match of source.matchAll(scopedPattern)) {
+			const capability = match[1] as Capability;
+
+			found.set(capability, (found.get(capability) ?? new Set()).add('routeOne'));
 		}
 	}
 

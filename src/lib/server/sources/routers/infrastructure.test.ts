@@ -5,6 +5,7 @@ import { SourceCache } from '../cache';
 import { SourceRegistry } from '../registry';
 import { CapabilityUnavailableError } from '../errors';
 import { FIXTURE_CONNECTIONS, FIXTURE_PROVIDERS } from '../fixtures';
+import { FixtureCatalogSource } from '../../catalog/fixture-source';
 import type { PlatformScope } from '$lib/platform/query';
 import type { NodeCounts } from '$lib/platform/types';
 import type { SourceContext } from '../provider';
@@ -18,11 +19,14 @@ function build(connections: unknown = FIXTURE_CONNECTIONS) {
 
 	return {
 		registry,
-		source: createInfrastructureRouter({
-			registry,
-			dispatcher: createDispatcher(registry),
-			cache: new SourceCache()
-		})
+		source: createInfrastructureRouter(
+			{
+				registry,
+				dispatcher: createDispatcher(registry),
+				cache: new SourceCache()
+			},
+			new FixtureCatalogSource()
+		)
 	};
 }
 
@@ -135,5 +139,33 @@ describe('the infrastructure router', () => {
 
 		expect(calls).toBe(2);
 		expect(fifteenMinutes).not.toEqual(twentyFourHours);
+	});
+});
+
+describe('owner-scoped reads', () => {
+	test('a bound domain gets exactly its own resources', async () => {
+		const { source } = build();
+		expect((await source.listRegions(scope, 'payment-domain')).map((r) => r.id)).toEqual([
+			'eu-west-1'
+		]);
+		expect(
+			(await source.listClusters(scope, 100, 'payment-domain')).map((c) => c.id).sort()
+		).toEqual(['prod-eu-west-1-a', 'prod-eu-west-1-b']);
+	});
+	test('a domain with NO declared cloud binding is no-binding — the bindingFor fallback must not count', async () => {
+		const { source } = build();
+		await expect(source.readNodeCounts(scope, 'tax-domain')).rejects.toMatchObject({
+			reason: 'no-binding'
+		});
+	});
+	test('an unknown slug is no-binding too', async () => {
+		const { source } = build();
+		await expect(source.listRegions(scope, 'no-such-domain')).rejects.toMatchObject({
+			reason: 'no-binding'
+		});
+	});
+	test('the estate path is untouched', async () => {
+		const { source } = build();
+		expect((await source.listRegions(scope)).map((r) => r.id)).toHaveLength(5);
 	});
 });

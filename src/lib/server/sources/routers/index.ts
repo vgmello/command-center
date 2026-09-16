@@ -28,6 +28,6 @@ export function createRouters(
 		platform: createPlatformRouter(deps, catalog.platform, catalog.services),
 		service: createServiceRouter(deps, catalog.services),
 		deployment: createDeploymentRouter(deps),
-		infrastructure: createInfrastructureRouter(deps)
+		infrastructure: createInfrastructureRouter(deps, catalog.services)
 	};
 }

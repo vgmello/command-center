@@ -303,30 +303,25 @@ export interface InfrastructureSource {
 	/** Counts by kind: clusters, nodes, databases, queues. The overview's summary. */
 	listGroups(scope: PlatformScope): Promise<InfrastructureGroup[]>;
 
-	/** Where the estate runs, with coordinates so a map can place each region. */
-	listRegions(scope: PlatformScope): Promise<InfraRegion[]>;
-
-	/** Nodes per state. An aggregate, not a list of every node. */
-	readNodeCounts(scope: PlatformScope): Promise<NodeCounts>;
-
-	/** Busiest clusters first, already ranked by the source. */
-	listClusters(scope: PlatformScope, limit: number): Promise<ClusterLoad[]>;
-
-	/** CPU, memory, disk and network across the scope's window. */
-	readUtilization(scope: PlatformScope): Promise<ResourceReading[]>;
-
-	/** Stored bytes by class, with the total the donut prints in its middle. */
-	readStorage(scope: PlatformScope): Promise<{ totalBytes: number; classes: StorageClass[] }>;
-
-	listDatabases(scope: PlatformScope, limit: number): Promise<DatabaseInstance[]>;
-
-	listQueues(scope: PlatformScope, limit: number): Promise<MessageQueue[]>;
-
-	/** Alerts raised against infrastructure rather than against a business domain. */
-	listAlerts(scope: PlatformScope, limit: number): Promise<InfraAlert[]>;
-
-	/** Month-to-date spend by category, with the daily series behind it. */
-	readCost(scope: PlatformScope): Promise<CostBreakdown>;
+	/**
+	 * `owner` narrows a read to one domain's resources — the ones tagged with its slug.
+	 *
+	 * App vocabulary: the port says which domain, never which tag. The router resolves the
+	 * domain's DECLARED cloud binding and throws `no-binding` when there is none, which the
+	 * assembler renders as a stated gap. Absent, the read is the estate's, exactly as before.
+	 */
+	listRegions(scope: PlatformScope, owner?: string): Promise<InfraRegion[]>;
+	readNodeCounts(scope: PlatformScope, owner?: string): Promise<NodeCounts>;
+	listClusters(scope: PlatformScope, limit: number, owner?: string): Promise<ClusterLoad[]>;
+	readUtilization(scope: PlatformScope, owner?: string): Promise<ResourceReading[]>;
+	readStorage(
+		scope: PlatformScope,
+		owner?: string
+	): Promise<{ totalBytes: number; classes: StorageClass[] }>;
+	listDatabases(scope: PlatformScope, limit: number, owner?: string): Promise<DatabaseInstance[]>;
+	listQueues(scope: PlatformScope, limit: number, owner?: string): Promise<MessageQueue[]>;
+	listAlerts(scope: PlatformScope, limit: number, owner?: string): Promise<InfraAlert[]>;
+	readCost(scope: PlatformScope, owner?: string): Promise<CostBreakdown>;
 }
 
 /**

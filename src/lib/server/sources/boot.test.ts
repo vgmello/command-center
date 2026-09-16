@@ -103,7 +103,7 @@ describe('buildSources', () => {
 		// `deps` straight through, they would stop sharing an entry.
 		const deps = { registry, dispatcher: createDispatcher(registry), cache: new SourceCache() };
 		const routers = createRouters(deps, catalog);
-		const anotherInfrastructureRouter = createInfrastructureRouter(deps);
+		const anotherInfrastructureRouter = createInfrastructureRouter(deps, catalog.services);
 
 		await routers.infrastructure.readNodeCounts(scope);
 		await anotherInfrastructureRouter.readNodeCounts(scope);

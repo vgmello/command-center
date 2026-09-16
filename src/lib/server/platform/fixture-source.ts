@@ -234,42 +234,47 @@ export class FixtureInfrastructureSource implements InfrastructureSource {
 		return estate.listGroups();
 	}
 
-	async listRegions(_scope: PlatformScope): Promise<InfraRegion[]> {
-		return estate.listRegions();
+	async listRegions(_scope: PlatformScope, owner?: string): Promise<InfraRegion[]> {
+		return estate.listRegions(owner);
 	}
 
-	async readNodeCounts(_scope: PlatformScope): Promise<NodeCounts> {
-		return estate.readNodeCounts();
+	async readNodeCounts(_scope: PlatformScope, owner?: string): Promise<NodeCounts> {
+		return estate.readNodeCounts(owner);
 	}
 
-	async listClusters(_scope: PlatformScope, limit: number): Promise<ClusterLoad[]> {
-		return estate.listClusters(limit);
+	async listClusters(_scope: PlatformScope, limit: number, owner?: string): Promise<ClusterLoad[]> {
+		return estate.listClusters(limit, owner);
 	}
 
-	async readUtilization(_scope: PlatformScope): Promise<ResourceReading[]> {
-		return estate.readUtilization(new Date());
+	async readUtilization(_scope: PlatformScope, owner?: string): Promise<ResourceReading[]> {
+		return estate.readUtilization(new Date(), owner);
 	}
 
 	async readStorage(
-		_scope: PlatformScope
+		_scope: PlatformScope,
+		owner?: string
 	): Promise<{ totalBytes: number; classes: StorageClass[] }> {
-		return estate.readStorage();
+		return estate.readStorage(owner);
 	}
 
-	async listDatabases(_scope: PlatformScope, limit: number): Promise<DatabaseInstance[]> {
-		return estate.listDatabases(limit);
+	async listDatabases(
+		_scope: PlatformScope,
+		limit: number,
+		owner?: string
+	): Promise<DatabaseInstance[]> {
+		return estate.listDatabases(limit, owner);
 	}
 
-	async listQueues(_scope: PlatformScope, limit: number): Promise<MessageQueue[]> {
+	async listQueues(_scope: PlatformScope, limit: number, _owner?: string): Promise<MessageQueue[]> {
 		return estate.listQueues(limit);
 	}
 
-	async listAlerts(_scope: PlatformScope, limit: number): Promise<InfraAlert[]> {
+	async listAlerts(_scope: PlatformScope, limit: number, _owner?: string): Promise<InfraAlert[]> {
 		return estate.listAlerts(new Date(), limit);
 	}
 
-	async readCost(_scope: PlatformScope): Promise<CostBreakdown> {
-		return estate.readCost(new Date());
+	async readCost(_scope: PlatformScope, owner?: string): Promise<CostBreakdown> {
+		return estate.readCost(new Date(), owner);
 	}
 }
 
