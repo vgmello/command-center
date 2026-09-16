@@ -1,7 +1,7 @@
 # Domain detail: the Infrastructure tab
 
 **Date:** 2026-09-16
-**Status:** revised after review rounds 1 and 2 (round 2: 3 not-closed, 2 new Critical, 1 Minor — all addressed); round 3 before planning
+**Status:** revised after review rounds 1–3 (round 3: 2 not-closed, 2 Critical, 2 Important, 2 Minor — all addressed); round 4 before planning
 
 ## Goal
 
@@ -47,8 +47,10 @@ listDatabases(scope: PlatformScope, limit: number, owner?: string): Promise<Data
 readCost(scope: PlatformScope, owner?: string): Promise<CostBreakdown>;
 ```
 
-`listQueues` and `listAlerts` gain the argument for uniformity but no provider declares them;
-they remain stated gaps on both screens.
+`listQueues` and `listAlerts` gain the argument for uniformity only. **This tab does not draw
+queue or alert panels** — the purpose-built subset omits them — so nothing here depends on
+whether a provider declares them. (Under fixtures the fixture cloud DOES declare and implement
+both; only the Azure/floci-az stack leaves them as gaps on the estate screen.)
 
 ### Router
 
@@ -68,8 +70,8 @@ they remain stated gaps on both screens.
     so the catalog's `connectionId: ''` ("whichever connection of this kind answers") would throw
     `'no-connection'` on every read — `one()` has never been exercised with an empty id.
     `routeOne` resolves `''` first via `registry.supporting(capability)`: exactly one connection →
-    use it; zero → `'no-connection'`; more than one → `'no-connection'`, and the panel copy says a
-    binding must name its connection when several clouds are connected. `one()` itself is
+    use it; zero → `'no-connection'`; more than one → the new `'ambiguous-connection'` reason, so the
+    panel can say a binding must name its connection when several clouds are connected. `one()` itself is
     unchanged.
   - **Cache.** `one()` bypasses the cache entirely; `routeOne` wraps it in `deps.cache.read` keyed
     `{ connectionId: <resolved id>, capability, args: scopedArgs(scope, 'owner=<slug>') }` — the
@@ -112,13 +114,17 @@ No new capabilities. `cloud.regions` answers the estate question and the domain 
 - `metricSampleSize` applies to the _domain's_ machines. A twelve-machine domain is measured
   whole; the estate is still sampled.
 
-**Fixture cloud.** Gains an owner dimension: every fixture node, cluster, database and storage
-class belongs to a domain, from the same table the seed uses (below). Filters identically, so
-the fixture stack exercises the same path and the sweep can drop the binding.
+**Fixture cloud.** Gains an owner dimension **as a parallel table keyed by resource name** in the
+shared ownership module — none of `InfraRegion`, `ClusterLoad`, `DatabaseInstance`, `StorageClass`
+or `NodeCounts` carries an owner field, and adding one would leak the tag concept into the domain
+model. The fixture cloud filters its rows through that table when `ctx.binding` is present, so the
+fixture stack exercises the same path and the sweep can drop the binding.
 
 ### Seed and fixture coherence — one table
 
-`scripts/seed-azure.ts` tags every resource by a deterministic table, exported from one module
+`scripts/seed-azure.ts` adds a `tags` object to every `PUT` body — **verified: floci-az persists
+tags on `PUT`** (201, read back intact on a throwaway VM, then deleted), not only on `PATCH`. It
+tags every resource by a deterministic table, exported from one module
 and imported by the fixture catalog (for the bindings) and the fixture cloud (for the owner
 dimension), so the three cannot disagree:
 
@@ -137,14 +143,24 @@ the common one under fixtures and is exercised on every sweep.
 ## The tab
 
 Route `domains/[slug]/infrastructure`; `_BUILT_TABS` gains `'infrastructure'`; header via
-`getDomainHeader`; one remote query `getDomainInfrastructure` (`scopedServiceSchema`).
+`getDomainHeader`; one remote query `getDomainInfrastructure` validated with `scopedServiceSchema`.
+
+**Plumbing end to end, so nothing is left to guess:** the existing `service.ts` functions
+`readRegions(scope)`, `readNodeCounts(scope)`, `readClusters(scope, limit)`, `readUtilization(scope)`,
+`readStorage(scope)`, `readDatabases(scope, limit)`, `readCost(scope)` each gain the optional
+trailing `owner` and are **reused** by both the estate routes (unchanged calls) and the seven new
+domain routes — one function per fact, no parallel `readDomain*` set. The screen composite is a
+new assembler `src/lib/server/platform/domain-infrastructure-view.ts` exporting
+`buildDomainInfrastructureSnapshot(platform, infrastructure, scope, slug, now)` (one file per
+screen, as the other tabs; `domain-tabs-view.ts` is not extended further), exposed as
+`readDomainInfrastructure(scope, slug)` in `service.ts` and called by the remote query.
 
 ```
 ┌ nodes 12/12 · clusters 1 · databases 1 · storage 5.1 TB ──────────────┐
 ├─ Regions (this domain) ─────────────────┬─ Spend (this domain, MTD) ──┤
 ├─ Clusters ──────────────────────────────┼─ Databases ─────────────────┤
 ├─ Utilisation (this domain's machines) ─────────────────────────────────┤
-└─ Queues · Alerts: not declared — stated gaps, as on /infrastructure ──┘
+└─ (no queue or alert panels on this tab — by design, not as gaps) ──────┘
 ```
 
 Six `panel()`-wrapped reads, each passing `owner = slug`: `cloud.nodes` (strip), `cloud.regions`,
@@ -156,9 +172,13 @@ with `limit = 100`); `atLimit` is `length === limit`. The pure layer's `toInfraS
 `100+` when `atLimit` — the API publishes `count` and `atLimit`, never the string. No separate
 `listGroups(owner)`; two reads for one number would be the two-renderings smell. `findDomain` is a catalog read and stays unwrapped; unknown slug → null.
 
-**Unbound domain:** all six panels are `unavailable` / `'no-binding'`; the page renders one
-sentence once ("Not bound to a cloud — no resources are tagged `domain=<slug>`") above the
-strip rather than six identical gap cards. Never zeros.
+**Gap rendering rule, stated for the planner:** binding is per domain, so `'no-binding'` is
+all-or-nothing across the six — but a capability gap is not (a provider may declare regions and
+nodes yet lack `cloud.utilization`, as this codebase's own history records). Therefore: **if all
+six panels are `unavailable` with reason `'no-binding'`, the page renders one sentence once**
+above the strip instead of six identical cards; **any other combination falls through to ordinary
+per-panel `PanelGap`** — a bound domain missing one capability shows five panels and one stated
+gap, exactly like the estate screen. Never zeros.
 
 `DomainInfrastructureSnapshot`: `{ generatedAt, domain, summary: Panel<InfraSummary>,
 regions: Panel<InfraRegion[]>, clusters: Panel<ClusterLoad[]>, databases: Panel<DatabaseInstance[]>,
@@ -180,7 +200,9 @@ GET /api/v1/domains/{slug}/infrastructure/storage
 GET /api/v1/domains/{slug}/infrastructure/cost
 ```
 
-Each reuses the estate endpoint's DTO mapper (same shape, scoped data — a caller who knows
+Each reuses the estate endpoint's existing DTO mapper — `toRegionDto`, `toNodeCountsDto`,
+`toClusterDto`, `toDatabaseDto`, `toResourceUsageDto`, `toStorageDto`, `toCostDto` in
+`src/lib/server/api/v1/dto.ts`, all present today — same shape, scoped data (a caller who knows
 `/infrastructure/regions` knows `/domains/{slug}/infrastructure/regions`); 404 unknown slug;
 501 via `requirePanel` when the read is a gap, including the unbound case. `@swagger` blocks,
 schemas already exist in `openApiComponents()`; `components.yaml` regenerated. Seven paths →
@@ -202,6 +224,9 @@ schemas already exist in `openApiComponents()`; `components.yaml` regenerated. S
 - **Uncached by accident.** `dispatcher.one()` has no cache; `routeOne` is the whole defence
   against a tab that re-fetches the world every tick. The router test asserts a second read
   within TTL issues no upstream call, and that two owners produce two keys.
+- **Cost semantics are unchanged by the filter.** `costFrom` is generic over whatever rows arrive:
+  `changePct` stays `0` ("not derivable from month-to-date") and `forecast` stays a run-rate line,
+  per domain exactly as per estate. The panel does not gain a movement figure nobody measured.
 - **Cost by tag lags reality.** Cost Management attributes tag-filtered spend with a delay and
   untagged spend is invisible to it; the panel says "tagged spend" not "spend".
 - **floci-az does not filter.** Correctness under the emulator rests on the client-side check;
