@@ -27,6 +27,12 @@ export const METRIC_ENDPOINT_LIMIT = 5;
  * Four of them repeat the overview's, deliberately — the reader arrived here from that
  * tab and the numbers must not appear to change. They are built from the same series
  * this tab plots, so a tile and the chart beneath it cannot disagree.
+ *
+ * Composed from three independently-sourced pieces rather than built as one block,
+ * because each piece can go missing on its own: `apm.metricSeries` feeds four of these
+ * tiles, `apm.slo` feeds one, and the catalog feeds the last. A missing SLO must not
+ * cost the four tiles a working series already answered — see `buildServiceMetricsSnapshot`,
+ * which is the caller that actually has to make that choice per-read.
  */
 export function buildMetricStats(
 	requestRate: TimeSeries,
@@ -35,6 +41,62 @@ export function buildMetricStats(
 	availabilityPct: number,
 	targetPct: number,
 	instancesHealthy: number,
+	instancesTotal: number
+): ServiceStat[] {
+	return [
+		availabilityStat(availabilityPct, targetPct),
+		...seriesStats(requestRate, p95Latency, errorRate, instancesTotal),
+		instancesStat(instancesHealthy, instancesTotal)
+	];
+}
+
+/** The availability tile, when `apm.slo` answered. */
+function availabilityStat(availabilityPct: number, targetPct: number): ServiceStat {
+	return {
+		kind: 'gauge',
+		id: 'availability',
+		label: 'Availability (SLO)',
+		formatted: formatPercent(availabilityPct),
+		unit: '',
+		// The bar shows how much of the objective's allowance is intact, not the raw
+		// percentage: a bar sitting at 99.95% of its width looks the same at 99.5%.
+		progressPct: Math.max(
+			0,
+			Math.min(100, ((availabilityPct - targetPct) / (100 - targetPct)) * 100)
+		),
+		changeFormatted: '↑ 0.05%',
+		comparedToLabel: 'vs 15m ago',
+		direction: 'up',
+		polarity: 'higher-is-better',
+		tone: null,
+		icon: 'shield'
+	};
+}
+
+/**
+ * The availability tile, when `apm.slo` did not.
+ *
+ * Names the SLO specifically, not "this service" — the four series tiles beside it are
+ * measuring this service just fine, and a caption that said otherwise would contradict
+ * the charts it sits above.
+ */
+function unreportedAvailabilityStat(): ServiceStat {
+	return {
+		kind: 'note',
+		id: 'availability',
+		label: 'Availability (SLO)',
+		formatted: 'Not reported',
+		caption: "No connected APM source measures this service's SLO.",
+		tone: null,
+		icon: 'circle-help'
+	};
+}
+
+/** The four tiles `apm.metricSeries` feeds, plotting the same series the charts below draw. */
+function seriesStats(
+	requestRate: TimeSeries,
+	p95Latency: TimeSeries,
+	errorRate: TimeSeries,
 	instancesTotal: number
 ): ServiceStat[] {
 	const latest = (series: TimeSeries) => series.points.at(-1)?.value ?? 0;
@@ -46,25 +108,6 @@ export function buildMetricStats(
 	const throughput = latest(requestRate) * Math.max(1, instancesTotal) * 2.4;
 
 	return [
-		{
-			kind: 'gauge',
-			id: 'availability',
-			label: 'Availability (SLO)',
-			formatted: formatPercent(availabilityPct),
-			unit: '',
-			// The bar shows how much of the objective's allowance is intact, not the raw
-			// percentage: a bar sitting at 99.95% of its width looks the same at 99.5%.
-			progressPct: Math.max(
-				0,
-				Math.min(100, ((availabilityPct - targetPct) / (100 - targetPct)) * 100)
-			),
-			changeFormatted: '↑ 0.05%',
-			comparedToLabel: 'vs 15m ago',
-			direction: 'up',
-			polarity: 'higher-is-better',
-			tone: null,
-			icon: 'shield'
-		},
 		{
 			kind: 'trend',
 			id: 'request-rate',
@@ -120,18 +163,22 @@ export function buildMetricStats(
 			polarity: 'higher-is-better',
 			tone: null,
 			icon: 'chart-column'
-		},
-		{
-			kind: 'ratio',
-			id: 'instances',
-			label: 'Active Instances',
-			value: instancesHealthy,
-			total: instancesTotal,
-			caption: describeInstanceHealth(instancesHealthy, instancesTotal),
-			tone: instancesHealthy === instancesTotal ? 'healthy' : 'degraded',
-			icon: 'boxes'
 		}
 	];
+}
+
+/** The instances tile: the catalog's own count, unaffected by either APM read. */
+function instancesStat(instancesHealthy: number, instancesTotal: number): ServiceStat {
+	return {
+		kind: 'ratio',
+		id: 'instances',
+		label: 'Active Instances',
+		value: instancesHealthy,
+		total: instancesTotal,
+		caption: describeInstanceHealth(instancesHealthy, instancesTotal),
+		tone: instancesHealthy === instancesTotal ? 'healthy' : 'degraded',
+		icon: 'boxes'
+	};
 }
 
 /**
@@ -181,18 +228,23 @@ export async function buildServiceMetricsSnapshot(
 		environment: scope.environment,
 		timeRange: scope.timeRange,
 		service,
-		stats:
-			series && slo
-				? buildMetricStats(
+		// `apm.metricSeries` and `apm.slo` are two different capabilities that can gap
+		// independently — a source can plot every series and still not do error budgets, or
+		// the reverse. The whole strip only falls back to "not reported" when the series
+		// themselves are unavailable, because there is nothing left to build a tile from;
+		// a missing SLO alone costs exactly the one tile it feeds.
+		stats: series
+			? [
+					slo ? availabilityStat(slo.achievedPct, slo.targetPct) : unreportedAvailabilityStat(),
+					...seriesStats(
 						series.requestRate,
 						series.p95Latency,
 						series.errorRate,
-						slo.achievedPct,
-						slo.targetPct,
-						service.instancesHealthy,
 						service.instancesTotal
-					)
-				: unreportedMetricStats(service.instancesHealthy, service.instancesTotal),
+					),
+					instancesStat(service.instancesHealthy, service.instancesTotal)
+				]
+			: unreportedMetricStats(service.instancesHealthy, service.instancesTotal),
 		requestRate: pick('requestRate'),
 		p95Latency: pick('p95Latency'),
 		errorRate: pick('errorRate'),

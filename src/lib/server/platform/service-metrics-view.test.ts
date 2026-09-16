@@ -8,6 +8,7 @@ import type {
 } from '$lib/platform/types';
 import { METRIC_ENDPOINT_LIMIT, buildServiceMetricsSnapshot } from './service-metrics-view';
 import { FixtureServiceSource } from './fixture-source';
+import { CapabilityUnavailableError } from '../sources/errors';
 import type { PlatformScope } from '$lib/platform/query';
 
 const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
@@ -115,6 +116,47 @@ describe('buildServiceMetricsSnapshot', () => {
 				.slice()
 				.reverse()
 		);
+	});
+
+	test('a missing SLO costs only the availability tile, not the four the series answered', async () => {
+		/*
+		 * `apm.slo` and `apm.metricSeries` are different capabilities and gap
+		 * independently. A source that plots every series but does not do error budgets
+		 * must not lose its request-rate, error-rate, p95-latency and throughput tiles —
+		 * those came from a read that answered fine.
+		 */
+		const noSlo = new (class extends FixtureServiceSource {
+			async readSloBudget(): Promise<SloBudget> {
+				throw new CapabilityUnavailableError('apm.slo', 'no-connection');
+			}
+		})();
+
+		const snapshot = (await buildServiceMetricsSnapshot(noSlo, scope, 'payment-api'))!;
+		const statIds = snapshot.stats.map((stat) => stat.id);
+
+		expect(statIds).toEqual([
+			'availability',
+			'request-rate',
+			'error-rate',
+			'p95-latency',
+			'throughput',
+			'instances'
+		]);
+
+		const requestRate = snapshot.stats.find((stat) => stat.id === 'request-rate');
+		expect(requestRate?.kind).toBe('trend');
+		if (requestRate?.kind !== 'trend') throw new Error('unreachable');
+		// Not "Not reported" — this tile's series answered, so it carries a value.
+		expect(requestRate.formatted).not.toBe('Not reported');
+
+		const availability = snapshot.stats.find((stat) => stat.id === 'availability');
+		expect(availability?.kind).toBe('note');
+		if (availability?.kind !== 'note') throw new Error('unreachable');
+		expect(availability.formatted).toBe('Not reported');
+		// Names the SLO, not the service — the tiles beside it prove the service is
+		// measured just fine.
+		expect(availability.caption).toContain('SLO');
+		expect(availability.caption).not.toBe('No connected APM source measures this service.');
 	});
 });
 
