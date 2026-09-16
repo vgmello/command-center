@@ -17,6 +17,8 @@
  * has nowhere to be drawn.
  */
 
+import { OWNER_TAG_KEY, seedOwnerOf } from '../src/lib/platform/ownership';
+
 const baseUrl = Bun.env.AZURE_BASE_URL ?? 'http://localhost:4577';
 const subscriptionId = Bun.env.AZURE_SUBSCRIPTION_ID ?? '00000000-0000-0000-0000-000000000001';
 
@@ -67,10 +69,16 @@ function vmBody(location: string, state: 'running' | 'degraded' | 'stopped') {
 	};
 }
 
+/** The seed's half of "ownership by tag": every resource carries the domain that owns it. */
+function tagged<T extends object>(body: T, ownerOf: string): T & { tags?: Record<string, string> } {
+	const owner = seedOwnerOf(ownerOf);
+	return owner ? { ...body, tags: { [OWNER_TAG_KEY]: owner } } : body;
+}
+
 let created = 0;
 
 for (const [location, group, healthy, warning, down] of REGIONS) {
-	await put(`/resourcegroups/${group}`, { location }, '2021-04-01');
+	await put(`/resourcegroups/${group}`, tagged({ location }, group), '2021-04-01');
 	created++;
 
 	const nodes: Array<'running' | 'degraded' | 'stopped'> = [
@@ -82,7 +90,7 @@ for (const [location, group, healthy, warning, down] of REGIONS) {
 	for (const [index, state] of nodes.entries()) {
 		await put(
 			`/resourceGroups/${group}/providers/Microsoft.Compute/virtualMachines/${group}-node-${index + 1}`,
-			vmBody(location, state),
+			tagged(vmBody(location, state), group),
 			'2023-03-01'
 		);
 		created++;
@@ -91,13 +99,18 @@ for (const [location, group, healthy, warning, down] of REGIONS) {
 	// One cluster per region, so the compute panel has rows in every location the map draws.
 	await put(
 		`/resourceGroups/${group}/providers/Microsoft.ContainerService/managedClusters/${group}-aks`,
-		{
-			location,
-			properties: {
-				provisioningState: 'Succeeded',
-				agentPoolProfiles: [{ name: 'system', count: healthy + warning, vmSize: 'Standard_D4s_v3' }]
-			}
-		},
+		tagged(
+			{
+				location,
+				properties: {
+					provisioningState: 'Succeeded',
+					agentPoolProfiles: [
+						{ name: 'system', count: healthy + warning, vmSize: 'Standard_D4s_v3' }
+					]
+				}
+			},
+			group
+		),
 		'2023-10-01'
 	);
 	created++;
@@ -106,7 +119,12 @@ for (const [location, group, healthy, warning, down] of REGIONS) {
 	// and a name the real API would reject is not worth seeding into a stand-in for it.
 	await put(
 		`/resourceGroups/${group}/providers/Microsoft.Storage/storageAccounts/ccst${location.slice(0, 12)}`,
-		{ location, sku: { name: 'Standard_LRS' }, kind: 'StorageV2' },
+		// Tagged by its group: the truncated account name is deliberately not in the
+		// ownership table, so the region's owner is the storage account's too. floci-az
+		// drops `tags` on this one type — PUT and PATCH both come back without them, while
+		// every other type keeps them — so locally a domain's storage cell reads as a gap
+		// rather than a number. Real ARM stores them; the seed is written for real ARM.
+		tagged({ location, sku: { name: 'Standard_LRS' }, kind: 'StorageV2' }, group),
 		'2023-01-01'
 	);
 	created++;
@@ -123,21 +141,25 @@ for (const [name, engine] of [
 ]) {
 	await put(
 		`/resourceGroups/cc-westeurope/providers/Microsoft.DBforPostgreSQL/flexibleServers/cc-${name}`,
-		{
-			location: 'westeurope',
-			sku: { name: 'Standard_D4s_v3', tier: 'GeneralPurpose' },
-			properties: {
-				version: '16',
-				// Required by the emulator, which validates per resource type rather than
-				// storing whatever it is handed — worth knowing, since it means a seed that
-				// passes here would very likely pass against real ARM.
-				administratorLogin: 'ccadmin',
-				administratorLoginPassword: 'local-dev-only',
-				storage: { storageSizeGB: 512 },
-				state: 'Ready',
-				engine
-			}
-		},
+		// By name, not by group: the databases share one region and override its owner.
+		tagged(
+			{
+				location: 'westeurope',
+				sku: { name: 'Standard_D4s_v3', tier: 'GeneralPurpose' },
+				properties: {
+					version: '16',
+					// Required by the emulator, which validates per resource type rather than
+					// storing whatever it is handed — worth knowing, since it means a seed that
+					// passes here would very likely pass against real ARM.
+					administratorLogin: 'ccadmin',
+					administratorLoginPassword: 'local-dev-only',
+					storage: { storageSizeGB: 512 },
+					state: 'Ready',
+					engine
+				}
+			},
+			`cc-${name}`
+		),
 		'2023-03-01-preview'
 	);
 	created++;
