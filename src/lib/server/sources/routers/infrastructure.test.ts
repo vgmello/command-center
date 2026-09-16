@@ -7,6 +7,7 @@ import { CapabilityUnavailableError } from '../errors';
 import { FIXTURE_CONNECTIONS, FIXTURE_PROVIDERS } from '../fixtures';
 import type { PlatformScope } from '$lib/platform/query';
 import type { NodeCounts } from '$lib/platform/types';
+import type { SourceContext } from '../provider';
 
 const scope: PlatformScope = { environment: 'production', timeRange: '15m' };
 
@@ -71,13 +72,13 @@ describe('the infrastructure router', () => {
 	test('repeated reads inside the TTL reach the provider once', async () => {
 		const { registry, source } = build();
 		const client = registry.connection('fixture-cloud')!.client as {
-			listRegions: () => Promise<unknown[]>;
+			listRegions: (ctx: SourceContext) => Promise<unknown[]>;
 		};
 		let calls = 0;
 		const original = client.listRegions.bind(client);
-		client.listRegions = async () => {
+		client.listRegions = async (ctx) => {
 			calls++;
-			return original();
+			return original(ctx);
 		};
 
 		await source.listRegions(scope);
@@ -95,13 +96,13 @@ describe('the infrastructure router', () => {
 	test('different environments are cached separately', async () => {
 		const { registry, source } = build();
 		const client = registry.connection('fixture-cloud')!.client as {
-			readNodeCounts: () => Promise<NodeCounts>;
+			readNodeCounts: (ctx: SourceContext) => Promise<NodeCounts>;
 		};
 		let calls = 0;
 		const original = client.readNodeCounts.bind(client);
-		client.readNodeCounts = async () => {
+		client.readNodeCounts = async (ctx) => {
 			calls++;
-			return { ...(await original()), healthy: calls };
+			return { ...(await original(ctx)), healthy: calls };
 		};
 
 		const production = await source.readNodeCounts({ environment: 'production', timeRange: '15m' });
@@ -114,13 +115,13 @@ describe('the infrastructure router', () => {
 	test('different time ranges are cached separately', async () => {
 		const { registry, source } = build();
 		const client = registry.connection('fixture-cloud')!.client as {
-			readNodeCounts: () => Promise<NodeCounts>;
+			readNodeCounts: (ctx: SourceContext) => Promise<NodeCounts>;
 		};
 		let calls = 0;
 		const original = client.readNodeCounts.bind(client);
-		client.readNodeCounts = async () => {
+		client.readNodeCounts = async (ctx) => {
 			calls++;
-			return { ...(await original()), healthy: calls };
+			return { ...(await original(ctx)), healthy: calls };
 		};
 
 		const fifteenMinutes = await source.readNodeCounts({
