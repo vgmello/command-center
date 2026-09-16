@@ -1249,9 +1249,9 @@ Then run Task 7's emulator test again (still green — it restores its own tag).
 
 ### Task 10: service.ts readers, the assembler, and `toInfraSummaryView`
 
-**Files:**
+\1
 
-- Modify: `src/lib/server/platform/service.ts:317-350` (seven readers gain `owner?`); add `readDomainInfrastructure`
+- Create: `src/lib/server/testing/routers-without.ts` — `routersWithout(dropped: readonly Capability[])` moved verbatim out of `capability-gaps.test.ts:131-160` and exported; the sweep then imports it (its behaviour must not change — run the sweep before and after the move)
 - Modify: `src/lib/platform/types.ts` (`InfraSummary`, `DomainInfrastructureSnapshot`)
 - Modify: `src/lib/platform/infrastructure.ts` (`toInfraSummaryView`)
 - Create: `src/lib/server/platform/domain-infrastructure-view.ts`, `domain-infrastructure-view.test.ts`
@@ -1302,8 +1302,10 @@ export const DOMAIN_INFRA_LIMIT = 100;
 import { describe, expect, test } from 'bun:test';
 import { buildDomainInfrastructureSnapshot } from './domain-infrastructure-view';
 import { toInfraSummaryView } from '$lib/platform/infrastructure';
-// Build routers exactly as capability-gaps.test.ts does — SourceRegistry + createDispatcher + SourceCache +
-// createRouters over FIXTURE_PROVIDERS — and reuse its `routersWithout(capabilities)` for the gap cases.
+// `routersWithout` is NOT exported from capability-gaps.test.ts (that file exports nothing). Step 0 of this
+// task EXTRACTS it unchanged to `src/lib/server/testing/routers-without.ts` (exported), makes the sweep import
+// it from there, and imports it here — one helper, two callers, no copy.
+import { routersWithout } from '../testing/routers-without';
 
 const scope = { environment: 'production' as const, timeRange: '1h' as const };
 const now = new Date('2026-09-16T12:00:00Z');
