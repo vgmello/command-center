@@ -123,17 +123,21 @@ describe('the deployment router', () => {
 		expect((await deployment.readDomainBreakdown(scope)).total).toBeGreaterThan(0);
 	});
 
-	test('the estate figure is the sum of the services, including legacy rows', async () => {
+	test('the estate figure is the sum of the services', async () => {
 		// The property the estate read was rewired for. It used to be its own accumulation —
 		// a second window fetch, stored against the single entity `''`, describing exactly
 		// the runs the per-service rows describe — and under the fixtures the two disagreed
 		// outright: 186 synthesised runs against 32 real ones.
 		//
-		// Now `readTrends` sums every entity `readServiceTrends` rebuilt, so the deployments
-		// page and a domain's Deployments tab cannot tell different stories about one set of
-		// runs. A provider that can only collapse still stores its estate answer under `''`,
-		// and that row is summed the same way — the two are never written for one period, so
-		// nothing double-counts.
+		// Now `readTrends` reads `readServiceTrends` and collapses it with `estateTrendsOf`,
+		// so estate == sum(services) holds by construction. `source_series` is partitioned
+		// by capability, so a legacy `''` row written under `deployment.trends` and a
+		// per-service row written under `deployment.serviceTrends` live in different
+		// partitions and are never read — let alone summed — together: a provider that can
+		// only collapse falls back to its own `''` accumulation as an *alternative* path
+		// (`fanOutSeries(deps, 'deployment.trends', …)`), taken only when no connection
+		// declares `deployment.serviceTrends`, not merged with the per-service rows this test
+		// exercises.
 		const { deployment } = build();
 		const [estate, perService] = await Promise.all([
 			deployment.readTrends(scope, 'daily'),

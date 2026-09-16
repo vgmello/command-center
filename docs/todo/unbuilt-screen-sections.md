@@ -6,11 +6,19 @@
 
 Three screens publish a tab strip; most of the destinations are placeholders.
 
-| Screen         | Tabs | Built                      |
-| -------------- | ---: | -------------------------- |
-| Domain detail  |    8 | `overview`, `dependencies` |
-| Service detail |    8 | `overview`, `metrics`      |
-| Infrastructure |    9 | `overview`                 |
+| Screen         | Tabs | Built                                                         |
+| -------------- | ---: | ------------------------------------------------------------- |
+| Domain detail  |    8 | `overview`, `dependencies`, `services`, `deployments`, `slos` |
+| Service detail |    8 | `overview`, `metrics`                                         |
+| Infrastructure |    9 | `overview`                                                    |
+
+Domain detail's remaining three — `alerts`, `infrastructure`, `logs` — each want their own
+spec before a task builds them: `alerts` needs an incidents-scoped read this codebase does
+not have yet, `infrastructure` wants a domain-scoped cut of the estate the platform port has
+no way to ask for today, and `logs` wants a log source no provider declares. None of the
+three is "add a route" the way `services`/`deployments`/`slos` were once
+`deployment.serviceTrends` existed to read from — each is blocked on a capability question
+first.
 
 The rest share one `[tab]` route per screen that validates the segment and renders "… is
 not built yet", 404ing anything not in the list. The sidebar does the same thing at the
@@ -24,7 +32,7 @@ bug.
 
 ## Why it matters
 
-20 of 25 sub-destinations are placeholders, so the product is a good deal smaller than
+17 of 25 sub-destinations are placeholders, so the product is still a good deal smaller than
 its own navigation claims. Worth knowing before promising a demo, and worth deciding
 deliberately rather than discovering when somebody clicks.
 

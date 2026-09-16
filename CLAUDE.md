@@ -180,6 +180,26 @@ ARM-only Azure adapter served regions, nodes and spend and left utilisation to M
 page died on `cloud.utilization`. Every read on both screens is wrapped now, and the sweep
 asserts the rule with no exemptions.
 
+**Three of the sweep's own screen entries were vacuous, and a green run could not tell.**
+`domain detail`, `service detail` and `service metrics` passed a slug the fixture catalog
+does not contain (`'payments'`, `'payments-api'`) — each assembler's `findDomain`/
+`findService` guard returns `null` for an unknown slug before touching any source, so those
+three entries exercised the not-found path on every run, regardless of which capability the
+test had dropped. The sweep's assertion was never wrong; it was vacuous for three of its
+seven cases, which is a harder thing to notice than a red test. Correcting the slugs to ones
+that resolve (`'payment-domain'`, `'payment-api'`) exposed twelve real gaps across those
+three screens — none of which any earlier run of this file had exercised — and all twelve
+are wrapped now. The lesson generalises: a `SCREENS` entry is only a test of the assembler
+if its slug resolves; a green run against a slug that returns `null` early proves nothing,
+and a new entry should assert that its slug resolves rather than trust the sweep to notice.
+
+The sweep's `for (screen of SCREENS) expect(...)` loop also throws on the first failing
+screen inside a `describe`, so a run that breaks several screens at once only ever reports
+the first — which is why the twelve gaps above surfaced five at a time, not twelve: fixing
+the first-reported failure and re-running revealed the next. Safe to leave for now because
+the sweep is green, so a single new gap still surfaces; it only under-reports when several
+fail together. See `docs/todo/sweep-hides-failures.md`.
+
 **A mock of the API, not a mock of the answer.** floci-az emulates ARM but not Monitor —
 a metrics request against it returns "Unsupported Microsoft.Compute path" — and almost
 everything the infrastructure screen wants is a Monitor reading. So Monitor got a stand-in
@@ -389,15 +409,29 @@ answers in zero requests and is lost on every restart.
 
 The measured answer:
 
-| Screen          | Cold | Warm |
-| --------------- | ---: | ---: |
-| overview        |   20 |   17 |
-| domains         |   14 |   14 |
-| domain detail   |    9 |    9 |
-| deployments     |   48 |   12 |
-| service detail  |   30 |   28 |
-| service metrics |   18 |   12 |
-| infrastructure  |    0 |    0 |
+| Screen             | Cold | Warm |
+| ------------------ | ---: | ---: |
+| overview           |   20 |   17 |
+| domains            |   14 |   14 |
+| domain detail      |   56 |   55 |
+| domain services    |   15 |   15 |
+| domain deployments |   50 |   50 |
+| domain slos        |   14 |   10 |
+| deployments        |   48 |   12 |
+| service detail     |   30 |   28 |
+| service metrics    |   16 |   12 |
+| infrastructure     |    0 |    0 |
+
+`domain detail` rose from 9/9 because it no longer 404s the moment the APM source has no
+vitals for the domain (Task 8b) — it renders, and most of the cost is Octopus's window: that
+API has no server-side domain filter, so narrowing to one domain still walks the log
+(45 of the 56 cold; Coralogix accounts for the other 11). `domain services` is the
+services-tab read (`listDomainServiceVitals`) that the overview's `buildDomainSnapshot`
+also folds in — cheaper on its own because it skips the dependency graph and the deployment
+log the overview also draws. `domain deployments` and `domain slos` are the two new tabs
+this branch built (Tasks 9 and 10). `service metrics` moved from 18/12 to 16/12 between when
+this table was last written and this measurement — a drift the table itself had gone stale
+on, not a change made here.
 
 Deployments was 45 warm — the same as cold — and it was the whole reason to look. Measured
 per capability, the live log cost 6 of that and `readTrends` and `readStatusTrend` cost 45
@@ -426,9 +460,53 @@ Two things the deployment shape does that the metrics shape must not be copied f
   `run_count` and `duration_total` and the mean rebuilt by dividing the sums. Two runs at
   10s and two hundred at 1,000s is a period mean of 990, not the 505 an average of the two
   daily means gives.
+- **A rate cannot be re-aggregated from rates either.** Per-service rows store
+  `failure_count` beside `run_count` for the identical reason: a domain's change failure
+  rate is `sum(failures) / sum(runs)` over the window, not an average of pre-computed daily
+  rates, which would weight a day with no deploys the same as a day with ten.
 
 The live log stays `live` and stays cheap. A deployment feed read back off disk is a feed
 that has stopped reporting.
+
+**A domain's figures are a sum over its own services, not a domain-scoped estate read.**
+`rollUpDeployments` filters `readServiceTrends`'s per-service rows down to the services the
+domain's catalog entry owns, then sums those — there is no domain-scoped call to `readTrends`,
+because the estate trend is a single accumulated series with no per-entity breakdown left to
+filter once `estateTrendsOf` has collapsed it. A domain's figures exclude `(unattributed)`
+runs by construction: the rollup only ever sees the services the domain owns, and an
+unattributed run belongs to no domain. Those runs still count toward the estate — attributing
+one to a domain the catalog cannot identify would be inventing ownership, not reading a fact.
+
+**CORRECTION (Task 9): the estate read does not sum every entity inside one accumulation.**
+An earlier version of this section, and of the design spec, said `readTrends` sums the legacy
+`''` row together with every per-service row inside one `trendsShape.rebuild`. That is not
+reachable: `source_series` is partitioned by `SeriesQuery.capability`, so a `deployment.trends`
+row (entity `''`) and a `deployment.serviceTrends` row for the same period live in different
+partitions and are never read together, let alone summed. What `readTrends` does instead: when
+any connection in the registry declares `deployment.serviceTrends`, it calls
+`readServiceTrends` and collapses the rows with the pure `estateTrendsOf`
+(`src/lib/platform/domain-deployments.ts`) — `estate == sum(services)` holds by construction,
+not because two separate accumulations happen to agree. `fanOutSeries('deployment.trends', …)`
+remains as a _fallback_, taken only when no connection declares `serviceTrends`: a provider
+entitled to collapse — to report what the estate did without saying which service did it —
+still draws the deployments page from its own `''` accumulation, never merged with per-service
+rows.
+
+Two consequences the earlier text claimed away:
+
+- **There is a real cutover, not a seamless migration.** Pre-migration history lives in the
+  old `deployment.trends` partition and is not read on the `serviceTrends` path. But a cold
+  `deployment.serviceTrends` partition is fetched whole rather than padded forward from
+  nothing — `gapFor` returns the entire requested window on a partition with no rows yet — so
+  a domain's fortnight/quarter/year charts fill in as soon as the store has runs to show,
+  never with zero-padded history standing in for runs that predate the migration.
+- **"One accumulation per connection" is satisfied by dispatch, not by declaration.** A
+  connection may declare both `deployment.trends` and `deployment.serviceTrends` during a
+  transition; only one of the two paths above executes per read, decided by whether _any_
+  connection in the registry supports `serviceTrends` — so nothing double-writes even though
+  both capabilities can be on the books at once. (That registry-wide check, rather than a
+  per-connection one, is also the shape of a real bug — see
+  `docs/todo/estate-trends-mixed-registry.md`.)
 
 ### Charts are arithmetic, not a dependency
 
@@ -810,9 +888,13 @@ an `@` costs its full length in every session, whether or not the session touche
 ## State
 
 Overview, Domains, Deployments, the Service detail view and Infrastructure built and
-verified, plus the service Metrics tab and the Domain detail view. `bun test src` (844 tests),
-`bun run check`, `bun run lint` and `bun run build` all pass, the e2e suites pass against
-every stack whose backends are up, and the production server boots and serves.
+verified, plus the service Metrics tab and the Domain detail view. The domain tab strip is
+5 of 8 built — overview, dependencies, services, deployments, slos — with alerts,
+infrastructure and logs each pending their own spec; `_BUILT_TABS` in
+`src/routes/domains/[slug]/[tab]/+page.ts` is the guard the route-level test asserts against,
+so the two cannot drift. `bun test src` (898 tests), `bun run check`, `bun run lint` and
+`bun run build` all pass, the e2e suites pass against every stack whose backends are up
+(`e2e/harness.ts`'s `ROUTES` covers 21 paths), and the production server boots and serves.
 
 What exists:
 
@@ -827,7 +909,10 @@ What exists:
 - `src/lib/server/platform/service.ts` — the in-process API both transports call
 - `src/routes/shell.remote.ts` — `getShell`, `getSystemStatus`
 - `src/routes/overview.remote.ts` — `getOverview`
-- `src/routes/domains.remote.ts` — `getDomainPage`, `getDomainsView`, `getDomainView`
+- `src/routes/domains.remote.ts` — `getDomainPage`, `getDomainsView`, `getDomainView`,
+  `getDomainHeader` (the tab strip's shared header/badges read), `getDomainDependencies`,
+  `getDomainServices`, `getDomainDeployments`, `getDomainSlos` — one query per built tab,
+  by the "split queries by how often they change" rule
 - `src/routes/deployments.remote.ts` — `getDeploymentPage`, `getDeploymentsView`
 - `src/routes/services.remote.ts` — `getServices`, `getServiceView`, `getServiceMetrics`
   (its own query: the two tabs are never on screen together, and six series is a lot to
@@ -836,10 +921,10 @@ What exists:
   every panel reflects the same estate at the same moment. All remote
   functions are Valibot-validated against the schemas the JSON API shares, the service
   slug included: it arrives from a URL anyone can edit
-- `src/routes/api/v1/` — public JSON API, thirty-four paths: `domains` (+ `summary`,
-  `owners`, `changes`, `{slug}` and its `vitals`, `dependencies`, `services`),
-  `services` (+ `{slug}` and its `health`, `dependencies`, `endpoints`, `metrics`,
-  `slo`, `insights`), `deployments` (+ `summary`), `infrastructure` (+ `regions`,
+- `src/routes/api/v1/` — public JSON API, thirty-six paths: `domains` (+ `summary`,
+  `owners`, `changes`, `{slug}` and its `vitals`, `dependencies`, `services`,
+  `deployments`, `slo`), `services` (+ `{slug}` and its `health`, `dependencies`,
+  `endpoints`, `metrics`, `slo`, `insights`), `deployments` (+ `summary`), `infrastructure` (+ `regions`,
   `nodes`, `clusters`, `utilization`, `storage`, `databases`, `queues`, `alerts`,
   `cost`), `activity`, `insights`, `metrics`, `incidents`, `sources`, `status`.
   Token-authenticated, frozen DTOs in `src/lib/server/api/v1/dto.ts` with a shape test

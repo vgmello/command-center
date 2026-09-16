@@ -23,6 +23,7 @@
 - **Entity is the service's catalog slug**; a deployment whose service is not in the catalog accumulates under the exact string `(unattributed)`.
 - **One accumulation per connection, once the migration is complete.** The end state is that a connection declaring `deployment.serviceTrends` does not also declare `deployment.trends` — two accumulations of the same runs put two answers to one question in the store. Tasks 5 through 9 are the transition and both are declared across them: Task 5 adds the new capability while the deployments screen still reads the old one, and Task 9 Step 6 moves that screen onto a sum over entities. **Do not retire `deployment.trends` before Task 9 Step 6 passes its before-and-after budget measurement.**
 - **The estate read sums every entity, `''` included.** The two are never written for the same period, so nothing double-counts.
+- **Note (Task 9 finding):** the "one accumulation per connection" constraint above is satisfied by _dispatch_, not by forbidding a connection from declaring both capabilities — only one of the two `readTrends` paths executes per read, decided by whether any connection in the registry supports `deployment.serviceTrends`. See `docs/superpowers/specs/2026-09-15-domain-tabs-design.md`'s "Corrections during implementation" section and `CLAUDE.md`'s "What the store buys, and what it cannot".
 - **Series geometry for `deployment.serviceTrends` is identical to `deployment.trends`:** `bucketSeconds: 86400`, `settlingSeconds: 86400`, year horizon.
 - **The SLO tab headline is `DomainVitals.sloCompliancePct`, never recomputed.**
 - Commit messages end with:
@@ -1275,6 +1276,24 @@ Run: `bun test src && bun run check && bun run lint`
 git add src/routes/domains src/lib/components/domains/DomainServicesTable.svelte e2e/harness.ts src/lib/server/platform/capability-gaps.test.ts
 git commit -m "feat: a domain's Services tab, listing what the header counts"
 ```
+
+---
+
+### Task 8b (inserted)
+
+Not in the original plan. Task 8's implementer noticed `capability-gaps.test.ts`'s
+`SCREENS` array passed slugs the fixture catalog does not contain (`'payments'`,
+`'payments-api'`), which sent `domain detail`, `service detail` and `service metrics`
+down the not-found path on every run of the sweep regardless of which capability had
+been dropped — three of the sweep's seven entries had been proving nothing since the
+sweep was written. Inserted as its own task, between 8 and 9, rather than folded into
+Task 8's fix loop or deferred, because Tasks 9 and 10 add entries to this same sweep and
+those entries deserved a harness that actually exercises the assemblers it adds them to.
+Corrected the slugs, then wrapped the twelve real gaps the correction exposed across the
+three screens (three reads in `domain-view.ts`, five in `service-view.ts`, four in
+`service-metrics-view.ts`). Brief: `.superpowers/sdd/2026-09-15-domain-tabs/task-8b-brief.md`.
+Commits: `9bb69d2` (implementation), `b56de59` (fix round: an SLO-alone gap had been
+collapsing four tiles the source did answer, not just the one it didn't).
 
 ---
 

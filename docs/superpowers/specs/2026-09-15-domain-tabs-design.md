@@ -141,23 +141,32 @@ export interface ServiceTrend {
 `entity: '(unattributed)'` rather than being dropped. Silently discarding runs makes a
 frequency chart understate reality, and a visible bucket is a prompt to fix the catalog.
 
-**One accumulation per connection, never two.** A connection that declares
-`deployment.serviceTrends` accumulates per service and does **not** also accumulate
-`deployment.trends`; a connection that declares only `deployment.trends` is unchanged in
-every respect. Writing both for the same runs would put two answers to one question in the
-store, and nothing could say which was right.
+**~~One accumulation per connection, never two.~~ SUPERSEDED — see "Corrections during
+implementation" below.** ~~A connection that declares `deployment.serviceTrends`
+accumulates per service and does **not** also accumulate `deployment.trends`; a connection
+that declares only `deployment.trends` is unchanged in every respect. Writing both for the
+same runs would put two answers to one question in the store, and nothing could say which
+was right.~~ Task 9 found this constraint is satisfied by _dispatch_ rather than by
+forbidding the declaration: a connection may declare both capabilities, and only one path
+ever executes per read.
 
-**The estate read sums every entity, `''` included.** That is what makes the switchover
-seamless rather than a cutover. Rows already stored under `entity: ''` cannot be attributed
-to a service after the fact, so they stay where they are and keep counting toward the
-estate figure; per-service rows begin at the migration and fill forward. Because the two
-are never written for the same period, summing all entities double-counts nothing — and
-the deployments screen needs no knowledge of which era a row came from.
+**~~The estate read sums every entity, `''` included.~~ SUPERSEDED — see "Corrections during
+implementation" below.** ~~That is what makes the switchover seamless rather than a
+cutover. Rows already stored under `entity: ''` cannot be attributed to a service after the
+fact, so they stay where they are and keep counting toward the estate figure; per-service
+rows begin at the migration and fill forward. Because the two are never written for the
+same period, summing all entities double-counts nothing — and the deployments screen needs
+no knowledge of which era a row came from.~~ `source_series` is partitioned by capability,
+so a `''` row and a per-service row for the same period are never read together and cannot
+be summed inside one accumulation — see the correction for what the estate read does
+instead.
 
 The one consequence to state on screen: a domain tab has no history before the migration,
 because history under `''` belongs to no domain. The frequency chart shows the window it
 actually has rather than padding with zeros, which would report a quiet fortnight that
-never happened.
+never happened. (This paragraph held up: Task 9 confirmed `gapFor` fetches a cold partition
+whole rather than zero-padding it, so the "no padding" behaviour described here is correct,
+even though the mechanism above it was not.)
 
 **Row volume.** ~75 services × daily buckets × 365-day horizon × 3 metrics ≈ 82k rows.
 Comfortable for Postgres, and stated so nobody discovers it.
@@ -289,3 +298,49 @@ run before and after rather than only after.
 
 **Row volume is stated, not bounded.** 82k rows is fine; a much larger estate is a
 different conversation. The horizon is the lever if it ever matters.
+
+## Corrections during implementation (2026-09-16)
+
+Task 9 (the estate-read migration) found this spec's model of the store wrong in one place,
+struck through above rather than silently rewritten so the reasoning trail survives.
+
+**What was wrong.** The spec assumed `readTrends`'s own accumulation could sum a legacy
+`''` row together with every per-service row for the same period — "the estate read sums
+every entity, `''` included" — and forbade a connection from declaring both capabilities on
+the theory that two accumulations of the same runs could disagree with nothing to say which
+was right.
+
+**What is actually true.** `source_series` is partitioned by `SeriesQuery.capability`:
+a `deployment.trends` row (entity `''`) and a `deployment.serviceTrends` row for the same
+period live in different partitions and are never read together inside one
+`trendsShape.rebuild`, so the summing this spec described is not reachable as written.
+
+What `readTrends` does instead reaches the same invariant by a different road: it calls
+`readServiceTrends` and collapses the rows with a new pure function, `estateTrendsOf`
+(`src/lib/platform/domain-deployments.ts`), whenever any connection in the registry
+declares `deployment.serviceTrends`. `estate == sum(services)` then holds **by
+construction** rather than by two accumulations happening to agree — stronger than what
+this spec asked for. `fanOutSeries('deployment.trends', …)` remains as a fallback, taken
+only when no connection declares `serviceTrends`, so a provider entitled to collapse — to
+report the estate without saying which service did it — still draws the page from its own
+`''` accumulation.
+
+Two consequences follow, corrected from what the struck-through paragraphs claimed:
+
+- **There is a real cutover, not a seamless switchover.** Pre-migration history under
+  `deployment.trends` is not read on the `serviceTrends` path. What _is_ true, and
+  verified: a cold `deployment.serviceTrends` partition is fetched whole (`gapFor` returns
+  the entire requested window rather than padding forward from "no rows yet"), so a
+  domain's charts fill in as soon as the store holds runs rather than showing zero-padded
+  history. The "no padding" behaviour this spec asked for is correct; the "seamless,
+  because both eras sum together" mechanism it gave for it was not.
+- **"One accumulation per connection" is enforced by dispatch, not by forbidding the
+  declaration.** A connection may declare both `deployment.trends` and
+  `deployment.serviceTrends` during a transition; only one of the two paths above executes
+  per read, decided by whether any connection in the registry supports `serviceTrends`. See
+  `docs/todo/estate-trends-mixed-registry.md` for the real bug that registry-wide (rather
+  than per-connection) check produces in a mixed registry.
+
+Full detail: `.superpowers/sdd/2026-09-15-domain-tabs/progress.md`, the Task 9 entries,
+and `CLAUDE.md`'s "What the store buys, and what it cannot" section, which carries the same
+correction for a reader who has not opened this spec.

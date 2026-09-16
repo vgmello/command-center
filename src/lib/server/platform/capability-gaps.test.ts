@@ -189,9 +189,11 @@ describe('one capability missing', () => {
 			 * it immediately — an ARM-only Azure adapter serves regions, nodes and spend
 			 * and leaves utilisation to Monitor, and the page died on `cloud.utilization`.
 			 *
-			 * Being dedicated to a kind earns a screen an exemption when that kind is
-			 * *absent entirely*, which the next block still allows. It earns nothing when
-			 * the source is connected and merely cannot answer one question.
+			 * There is no dedicated-kind exemption left, in either direction. This block
+			 * proves a screen survives one missing capability of its own kind; the next
+			 * block ("a whole kind missing") proves the same screens survive that kind
+			 * being absent entirely too. Being "dedicated to" a kind buys a screen nothing
+			 * here — see the header above for why that theory was wrong.
 			 */
 			for (const screen of SCREENS) {
 				const result = await outcome(screen, [capability]);
