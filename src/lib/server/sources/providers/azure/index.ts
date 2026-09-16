@@ -2,8 +2,9 @@ import * as v from 'valibot';
 import { ClientSecretCredential, type TokenCredential } from '@azure/identity';
 import { defineProvider } from '../../provider';
 import type { CloudProvider } from '../../contracts';
-import type { LinkView, SourceBinding } from '../../provider';
+import type { LinkView, SourceBinding, SourceContext } from '../../provider';
 import { AzureClient } from './client';
+import { ownsResource } from '$lib/platform/ownership';
 import {
 	clusterIsReady,
 	costFrom,
@@ -35,6 +36,16 @@ import {
  * ("no connected cloud source provides this"), which is the whole point: a provider that
  * reported a queue depth nobody measured is the exact failure the
  * throw-on-unknown-capability rule exists to prevent.
+ *
+ * **A domain's reads are narrowed client-side, and that is a stated ceiling, not an
+ * oversight.** When `ctx.binding` names a domain, every method filters the resources it
+ * already fetched by `tags[settings.ownerTagKey] === externalId`, matched case-insensitively
+ * on the key via `ownsResource`. Nothing here sends ARM a tag `$filter`: floci-az ignores it,
+ * and ARM only documents it on the generic `/resources` list, not on a typed collection like
+ * `virtualMachines` — a `$filter` this provider trusted would be silently no-op against the
+ * emulator and unreliable against the real thing. A subscription too large to read whole and
+ * filter locally wants ARM's `/resources?$filter=tagName eq '…'` — a different endpoint
+ * (the generic, untyped one), not a parameter on this one, and is out of scope here.
  */
 export const azureSettings = v.object({
 	/** ARM's root. Omit for real Azure; set it to reach floci-az. */
@@ -68,7 +79,14 @@ export const azureSettings = v.object({
 	 * two thousand requests for one line on a chart. Sampling is a stated approximation;
 	 * fanning out would be a rate-limit incident.
 	 */
-	metricSampleSize: v.optional(v.pipe(v.number(), v.minValue(1), v.maxValue(200)), 12)
+	metricSampleSize: v.optional(v.pipe(v.number(), v.minValue(1), v.maxValue(200)), 12),
+	/**
+	 * The tag key a resource's domain owner is read from.
+	 *
+	 * `'domain'` everywhere this app runs, and a setting rather than a constant only
+	 * because a real subscription's tagging convention is not this app's to dictate.
+	 */
+	ownerTagKey: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(128)), 'domain')
 });
 
 export type AzureSettings = v.InferOutput<typeof azureSettings>;
@@ -142,37 +160,56 @@ export const azureProvider = defineProvider<CloudProvider>({
 		});
 
 		/**
-		 * Every virtual machine in the subscription, fetched once per read.
+		 * Every virtual machine in the subscription, fetched once per read — and, keyed by
+		 * owner, the same estate narrowed to one domain's tag.
 		 *
-		 * Both capabilities that use it want the whole estate — one counts power states and
-		 * the other groups by location — so a shared window is memoised for a few seconds
-		 * the way the Octopus provider's is, rather than paging the estate twice a page.
+		 * The estate window (key `''`) is what both aggregate capabilities want — one counts
+		 * power states and the other groups by location — so it is memoised for a few
+		 * seconds the way the Octopus provider's is, rather than paging the estate twice a
+		 * page. An owner's window derives from that same estate window rather than replacing
+		 * or narrowing it in place: a domain read must not evict the estate's own cache entry,
+		 * because the very next aggregate read would otherwise refetch the whole subscription.
+		 * Each owner key gets its own memoised entry under the same 30s TTL, so a tab a reader
+		 * revisits does not refilter a settled estate on every render.
 		 */
-		let machines: { at: number; rows: Promise<ArmVirtualMachine[]> } | null = null;
+		const windows = new Map<string, { at: number; rows: Promise<ArmVirtualMachine[]> }>();
 
-		function loadMachines(): Promise<ArmVirtualMachine[]> {
+		function loadMachines(owner?: string): Promise<ArmVirtualMachine[]> {
+			const key = owner ?? '';
 			const now = Date.now();
+			const cached = windows.get(key);
 
-			if (!machines || now - machines.at > 30_000) {
-				machines = {
-					at: now,
-					rows: client.collect<ArmVirtualMachine>(
-						`${client.scopePath}/providers/Microsoft.Compute/virtualMachines`,
-						{ limit: settings.nodeLimit, params: { 'api-version': VM_API } }
-					)
-				};
+			if (!cached || now - cached.at > 30_000) {
+				const rows = owner
+					? loadMachines().then((estate) =>
+							estate.filter((machine) => ownsResource(machine.tags, settings.ownerTagKey, owner))
+						)
+					: client.collect<ArmVirtualMachine>(
+							`${client.scopePath}/providers/Microsoft.Compute/virtualMachines`,
+							{ limit: settings.nodeLimit, params: { 'api-version': VM_API } }
+						);
+
+				windows.set(key, { at: now, rows });
 			}
 
-			return machines.rows;
+			return windows.get(key)!.rows;
+		}
+
+		/** A collection already fetched, narrowed to `ctx.binding`'s owner when one is asking. */
+		function owned<T extends ArmResource>(rows: T[], ctx: SourceContext): T[] {
+			if (!ctx.binding) return rows;
+			return rows.filter((row) =>
+				ownsResource(row.tags, settings.ownerTagKey, ctx.binding!.externalId)
+			);
 		}
 
 		return {
-			async listRegions() {
-				return regionsOf(await loadMachines());
+			async listRegions(ctx) {
+				return regionsOf(await loadMachines(ctx.binding?.externalId));
 			},
 
-			async readNodeCounts() {
-				return countNodes(await loadMachines());
+			async readNodeCounts(ctx) {
+				return countNodes(await loadMachines(ctx.binding?.externalId));
 			},
 
 			/**
@@ -185,7 +222,10 @@ export const azureProvider = defineProvider<CloudProvider>({
 			 * machines, which is a stated approximation rather than a silent one.
 			 */
 			async readUtilization(ctx) {
-				const machines = (await loadMachines()).slice(0, settings.metricSampleSize);
+				const machines = (await loadMachines(ctx.binding?.externalId)).slice(
+					0,
+					settings.metricSampleSize
+				);
 				if (machines.length === 0) return [];
 
 				// Fifteen minutes at a minute a bucket, which is what the strip's own
@@ -209,10 +249,13 @@ export const azureProvider = defineProvider<CloudProvider>({
 				return utilizationFrom(readings, window);
 			},
 
-			async listClusters(_ctx, limit) {
-				const clusters = await client.collect<ArmCluster>(
-					`${client.scopePath}/providers/Microsoft.ContainerService/managedClusters`,
-					{ limit, params: { 'api-version': AKS_API } }
+			async listClusters(ctx, limit) {
+				const clusters = owned(
+					await client.collect<ArmCluster>(
+						`${client.scopePath}/providers/Microsoft.ContainerService/managedClusters`,
+						{ limit, params: { 'api-version': AKS_API } }
+					),
+					ctx
 				);
 
 				const cpu = await Promise.all(
@@ -233,10 +276,13 @@ export const azureProvider = defineProvider<CloudProvider>({
 				}));
 			},
 
-			async readStorage() {
-				const accounts = await client.collect<ArmResource>(
-					`${client.scopePath}/providers/Microsoft.Storage/storageAccounts`,
-					{ limit: 200, params: { 'api-version': STORAGE_API } }
+			async readStorage(ctx) {
+				const accounts = owned(
+					await client.collect<ArmResource>(
+						`${client.scopePath}/providers/Microsoft.Storage/storageAccounts`,
+						{ limit: 200, params: { 'api-version': STORAGE_API } }
+					),
+					ctx
 				);
 
 				const used = await Promise.all(
@@ -262,10 +308,13 @@ export const azureProvider = defineProvider<CloudProvider>({
 				};
 			},
 
-			async listDatabases(_ctx, limit) {
-				const servers = await client.collect<ArmResource>(
-					`${client.scopePath}/providers/Microsoft.DBforPostgreSQL/flexibleServers`,
-					{ limit, params: { 'api-version': POSTGRES_API } }
+			async listDatabases(ctx, limit) {
+				const servers = owned(
+					await client.collect<ArmResource>(
+						`${client.scopePath}/providers/Microsoft.DBforPostgreSQL/flexibleServers`,
+						{ limit, params: { 'api-version': POSTGRES_API } }
+					),
+					ctx
 				);
 
 				const readings = await Promise.all(
@@ -303,7 +352,7 @@ export const azureProvider = defineProvider<CloudProvider>({
 				});
 			},
 
-			async readCost() {
+			async readCost(ctx) {
 				const body = await client.queryCost<{
 					properties: { rows: CostRow[] };
 				}>({
@@ -313,7 +362,18 @@ export const azureProvider = defineProvider<CloudProvider>({
 						granularity: 'Daily',
 						aggregation: { totalCost: { name: 'Cost', function: 'Sum' } },
 						grouping: [{ type: 'Dimension', name: 'ServiceName' }]
-					}
+					},
+					...(ctx.binding
+						? {
+								filter: {
+									tags: {
+										name: settings.ownerTagKey,
+										operator: 'In',
+										values: [ctx.binding.externalId]
+									}
+								}
+							}
+						: {})
 				});
 
 				return costFrom(body.properties?.rows ?? [], new Date());

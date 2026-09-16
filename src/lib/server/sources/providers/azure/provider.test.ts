@@ -7,10 +7,12 @@ import {
 	powerStateOf,
 	regionsOf,
 	utilizationFrom,
+	type ArmVirtualMachine,
 	type CostRow
 } from './map';
 import { startCostMock } from './mock/cost';
 import type { SourceContext } from '../../provider';
+import { ownsResource } from '$lib/platform/ownership';
 
 /**
  * The provider, against the emulator where one is running.
@@ -265,6 +267,64 @@ describe('what it declares', () => {
 	});
 });
 
+describe('owner filtering (pure)', () => {
+	const vm = (
+		name: string,
+		location: string,
+		tags?: Record<string, string>
+	): ArmVirtualMachine => ({
+		id: `/subscriptions/s/resourceGroups/g/providers/Microsoft.Compute/virtualMachines/${name}`,
+		name,
+		location,
+		tags,
+		properties: { instanceView: { statuses: [{ code: 'PowerState/running' }] } }
+	});
+	test("regionsOf over the owned subset lists only the owner's regions", () => {
+		const machines = [
+			vm('a', 'eastus', { domain: 'payment-domain' }),
+			vm('b', 'westeurope'),
+			vm('c', 'westus2', { Domain: 'payment-domain' })
+		];
+		const mine = machines.filter((m) => ownsResource(m.tags, 'domain', 'payment-domain'));
+		expect(
+			regionsOf(mine)
+				.map((r) => r.id)
+				.sort()
+		).toEqual(['eastus', 'westus2']); // key case-insensitive
+		expect(countNodes(mine)).toEqual({ healthy: 2, warning: 0, down: 0 });
+	});
+});
+
+describe('no tag $filter is sent on ARM lists', () => {
+	test('an owner read lists the whole type and filters here', async () => {
+		const urls: string[] = [];
+		const server = Bun.serve({
+			port: 0,
+			fetch: (req) => {
+				urls.push(req.url);
+				return Response.json({ value: [] });
+			}
+		});
+		try {
+			const client = azureProvider.connect({
+				baseUrl: `http://localhost:${server.port}`,
+				subscriptionId: 'sub',
+				tenantId: 't',
+				clientId: 'c',
+				clientSecret: 'local-dev-only'
+			});
+			await client.listRegions!({
+				...context(),
+				binding: { kind: 'cloud', connectionId: 'az', externalId: 'payment-domain' }
+			});
+			expect(urls.length).toBeGreaterThan(0);
+			for (const u of urls) expect(new URL(u).searchParams.has('$filter')).toBe(false);
+		} finally {
+			server.stop(true);
+		}
+	});
+});
+
 const emulator = await (async () => {
 	try {
 		const response = await fetch('http://localhost:4577/health', {
@@ -351,5 +411,53 @@ describe.if(emulator)('against floci-az', () => {
 
 		const total = regions.reduce((sum, one) => sum + one.nodeCount, 0);
 		expect(total).toBe(counts.healthy + counts.warning + counts.down);
+	});
+
+	const H = { authorization: 'Bearer local-dev-key', 'content-type': 'application/json' };
+	const VM =
+		'/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/cc-eastus/providers/Microsoft.Compute/virtualMachines/cc-eastus-node-1';
+	const patch = (tags: Record<string, string>) =>
+		fetch(`http://localhost:4577${VM}?api-version=2023-03-01`, {
+			method: 'PATCH',
+			headers: H,
+			body: JSON.stringify({ tags })
+		});
+	test("a tagged VM appears in its owner's regions and nowhere else", async () => {
+		const before = (
+			(await (
+				await fetch(`http://localhost:4577${VM}?api-version=2023-03-01`, { headers: H })
+			).json()) as { tags?: Record<string, string> }
+		).tags;
+
+		// A fresh connection, not the block's shared `client`: the estate window is
+		// memoised for 30s per connection, and the tests above already warmed `client`'s
+		// cache with the pre-patch, untagged estate. A fresh connection's cache starts
+		// cold, so this exercises the real 30s-fresh path rather than the shared one the
+		// suite's own ordering happened to make stale.
+		const freshClient = azureProvider.connect({
+			baseUrl: 'http://localhost:4577',
+			costBaseUrl: 'http://localhost:4593',
+			monitorBaseUrl: 'http://localhost:4594',
+			subscriptionId: '00000000-0000-0000-0000-000000000001',
+			tenantId: '00000000-0000-0000-0000-000000000002',
+			clientId: 'local',
+			clientSecret: 'local-dev-only'
+		});
+
+		await patch({ domain: 'zz-test-domain' });
+		try {
+			const mine = await freshClient.listRegions!({
+				...context(),
+				binding: { kind: 'cloud', connectionId: 'azure-local', externalId: 'zz-test-domain' }
+			});
+			expect(mine.map((r) => [r.id, r.nodeCount])).toEqual([['eastus', 1]]);
+			const other = await freshClient.listRegions!({
+				...context(),
+				binding: { kind: 'cloud', connectionId: 'azure-local', externalId: 'zz-other' }
+			});
+			expect(other).toEqual([]);
+		} finally {
+			await patch(before ?? {});
+		}
 	});
 });

@@ -21,6 +21,7 @@ export interface ArmResource {
 	id: string;
 	name: string;
 	location: string;
+	tags?: Record<string, string>;
 	properties?: Record<string, unknown>;
 }
 
