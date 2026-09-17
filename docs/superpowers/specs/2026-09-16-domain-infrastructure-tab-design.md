@@ -376,3 +376,22 @@ history; editing tags from this UI.
   the `service.ts`/`errorResponse` layer, not through a `+server.ts` HTTP harness. No test in the
   repo invokes a `+server.ts` handler directly (auth reads `$env`, which a bare handler call
   cannot supply) — the same precedent the estate's own infrastructure routes already follow.
+- **Cost Management filter nesting (final review, Critical).** Task 7's brief placed `filter.tags` beside
+  `dataset`; Task 8's brief read it from `dataset.filter`. Azure's `QueryDataset.filter` is the real
+  location, so the provider's clause was silently dropped and a bound domain's Spend panel showed the
+  estate's total. Fixed to `dataset.filter`, with a seam test that calls `readCost` against the cost mock
+  and asserts the bound total is below the unbound one — asserted from the producing side, which the
+  Testing matrix's row had promised and no test had delivered.
+- **Owner-scoped `cloud.queues` / `cloud.alerts` are refused, not ignored.** The port keeps the trailing
+  `owner` on both for uniformity, but the router throws `CapabilityUnavailableError(cap, 'not-implemented')`
+  before consulting the catalog: no provider filters either by owner yet, and accepting the owner while
+  returning the estate's rows would cache invented numbers under the domain's key. The Alerts spec lifts it.
+- **Panel titles and "tagged spend".** The tab's five reused cards now take an optional `title` (and, for
+  the four that link to an estate tab, an `href` that the domain tab sets to `null`): "Regions (this
+  domain)", "Compute (this domain)", "Databases (this domain)", "Utilisation (this domain's machines)",
+  "Tagged spend (this domain, MTD)" — the Risks section's requirement that the panel say _tagged_ spend.
+- **Fixture owner split disagrees with the estate split, by design.** Owners derive `down: 0`, so the five
+  bound domains sum to 41/7/0 against the estate's 42/4/2; totals agree at 48. Pinned by a test; the
+  estate's two down nodes belong to no domain in the fixture world.
+- **The seed tags the resource group as well as its resources.** The Ownership table said tags live on
+  resources; the group carries the same tag, harmlessly, because `tagged(body, group)` wraps every PUT.

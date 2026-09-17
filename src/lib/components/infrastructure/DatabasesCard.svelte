@@ -10,14 +10,22 @@
 
 	interface Props {
 		databases: Panel<DatabaseInstance[]>;
+		title?: string;
+		/**
+		 * The estate's placeholder tab. `null` on the domain tab, since a domain has no scoped
+		 * "all rows" page of its own to point at — `SectionCard` renders no link at all for a
+		 * missing href, rather than a link to the wrong scope. `null` and not `undefined`,
+		 * because an explicit `undefined` re-applies the prop's default.
+		 */
+		href?: string | null;
 	}
 
-	let { databases }: Props = $props();
+	let { databases, title = 'Database Overview', href = '/infrastructure/rows' }: Props = $props();
 
 	const rows = $derived(databases.status === 'ok' ? databases.data : []);
 </script>
 
-<SectionCard title="Database Overview" href="/infrastructure/rows" viewAllLabel="View all rows">
+<SectionCard {title} href={href ?? undefined} viewAllLabel="View all rows">
 	<PanelGap panel={databases} noun="database readings" class="px-4 pb-4" />
 	<div class="overflow-x-auto px-4 pb-4">
 		<table class="w-full">

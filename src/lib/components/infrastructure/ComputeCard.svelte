@@ -11,9 +11,17 @@
 	interface Props {
 		nodes: Panel<NodeCounts>;
 		clusters: Panel<ClusterLoad[]>;
+		title?: string;
+		/** `null` on the domain tab — see `DatabasesCard`. */
+		href?: string | null;
 	}
 
-	let { nodes, clusters }: Props = $props();
+	let {
+		nodes,
+		clusters,
+		title = 'Compute Overview',
+		href = '/infrastructure/compute'
+	}: Props = $props();
 
 	const counts = $derived(nodes.status === 'ok' ? nodes.data : { healthy: 0, warning: 0, down: 0 });
 	const clusterRows = $derived(clusters.status === 'ok' ? clusters.data : []);
@@ -46,11 +54,7 @@
 	const segments = $derived(donutSegments(rows, radius));
 </script>
 
-<SectionCard
-	title="Compute Overview"
-	href="/infrastructure/compute"
-	viewAllLabel="View all clusters"
->
+<SectionCard {title} href={href ?? undefined} viewAllLabel="View all clusters">
 	<PanelGap panel={gap} noun="compute readings" class="px-4 pb-4" />
 	<div class="grid gap-5 px-4 pb-4 lg:grid-cols-[1fr_1fr]">
 		<div class="flex items-center gap-4">

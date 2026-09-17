@@ -38,6 +38,14 @@ async function scoped<T>(
 	estate: () => Promise<T>
 ): Promise<T> {
 	if (owner === undefined) return estate();
+	if (capability === 'cloud.queues' || capability === 'cloud.alerts') {
+		// No provider filters queues or alerts by owner yet; the alerts spec that lands
+		// the domain Alerts tab is where this lifts. Accepting the owner and returning the
+		// estate's rows would be the exact "invented numbers" failure this codebase writes
+		// the most rules against, so the router refuses rather than resolving a binding it
+		// cannot honour — thrown before `catalog.findDomain` is even consulted.
+		throw new CapabilityUnavailableError(capability, 'not-implemented');
+	}
 	const binding = await ownerBinding(catalog, capability, owner);
 	return routeOne(
 		deps,

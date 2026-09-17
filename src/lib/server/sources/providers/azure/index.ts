@@ -46,6 +46,11 @@ import {
  * emulator and unreliable against the real thing. A subscription too large to read whole and
  * filter locally wants ARM's `/resources?$filter=tagName eq '…'` — a different endpoint
  * (the generic, untyped one), not a parameter on this one, and is out of scope here.
+ *
+ * `owned()` runs after `client.collect(…, { limit })`, so a domain inside an estate larger
+ * than `limit` undercounts: a page that never reaches the domain's own resources cannot
+ * find them. `docs/todo/azure-owner-server-side-narrowing.md` names the server-side ceiling
+ * that removes this.
  */
 export const azureSettings = v.object({
 	/** ARM's root. Omit for real Azure; set it to reach floci-az. */
@@ -361,19 +366,21 @@ export const azureProvider = defineProvider<CloudProvider>({
 					dataset: {
 						granularity: 'Daily',
 						aggregation: { totalCost: { name: 'Cost', function: 'Sum' } },
-						grouping: [{ type: 'Dimension', name: 'ServiceName' }]
-					},
-					...(ctx.binding
-						? {
-								filter: {
-									tags: {
-										name: settings.ownerTagKey,
-										operator: 'In',
-										values: [ctx.binding.externalId]
+						grouping: [{ type: 'Dimension', name: 'ServiceName' }],
+						// `QueryDataset.filter`, not a sibling of `dataset` — Azure (and this
+						// repo's own mock, `mock/cost.ts`) reads the tag clause from here.
+						...(ctx.binding
+							? {
+									filter: {
+										tags: {
+											name: settings.ownerTagKey,
+											operator: 'In',
+											values: [ctx.binding.externalId]
+										}
 									}
 								}
-							}
-						: {})
+							: {})
+					}
 				});
 
 				return costFrom(body.properties?.rows ?? [], new Date());

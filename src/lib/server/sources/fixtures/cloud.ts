@@ -48,6 +48,10 @@ export const fixtureCloudProvider = defineProvider<CloudProvider>({
 		async listDatabases(ctx, limit) {
 			return estate.listDatabases(limit, ctx.binding?.externalId);
 		},
+		// Owner is accepted for uniformity with the other seven methods but ignored here:
+		// the router (`routers/infrastructure.ts`'s `scoped()`) refuses an owner-scoped
+		// `cloud.queues`/`cloud.alerts` call before it ever reaches a provider, so this
+		// path is unreachable through the router today.
 		async listQueues(_ctx, limit) {
 			return estate.listQueues(limit);
 		},

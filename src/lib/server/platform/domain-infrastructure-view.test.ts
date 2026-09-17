@@ -1,9 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { buildDomainInfrastructureSnapshot } from './domain-infrastructure-view';
 import { toInfraSummaryView } from '$lib/platform/infrastructure';
-// `routersWithout` is NOT exported from capability-gaps.test.ts (that file exports nothing). Step 0 of this
-// task EXTRACTS it unchanged to `src/lib/server/testing/routers-without.ts` (exported), makes the sweep import
-// it from there, and imports it here — one helper, two callers, no copy.
 import { routersWithout } from '../testing/routers-without';
 
 const scope = { environment: 'production' as const, timeRange: '1h' as const };

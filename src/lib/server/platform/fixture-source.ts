@@ -265,6 +265,10 @@ export class FixtureInfrastructureSource implements InfrastructureSource {
 		return estate.listDatabases(limit, owner);
 	}
 
+	// Owner is accepted for uniformity with the other seven methods but ignored here: the
+	// router (`routers/infrastructure.ts`'s `scoped()`) refuses an owner-scoped
+	// `cloud.queues`/`cloud.alerts` call before it ever reaches a provider, so this path is
+	// unreachable through the router today.
 	async listQueues(_scope: PlatformScope, limit: number, _owner?: string): Promise<MessageQueue[]> {
 		return estate.listQueues(limit);
 	}

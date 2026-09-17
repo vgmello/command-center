@@ -168,4 +168,18 @@ describe('owner-scoped reads', () => {
 		const { source } = build();
 		expect((await source.listRegions(scope)).map((r) => r.id)).toHaveLength(5);
 	});
+	test('owner-scoped queues and alerts are refused, not silently unfiltered', async () => {
+		const { source } = build();
+
+		await expect(source.listAlerts(scope, 10, 'payment-domain')).rejects.toMatchObject({
+			reason: 'not-implemented'
+		});
+		await expect(source.listQueues(scope, 10, 'payment-domain')).rejects.toMatchObject({
+			reason: 'not-implemented'
+		});
+
+		// The estate path (no owner) still works for both.
+		expect(await source.listQueues(scope, 2)).toHaveLength(2);
+		expect(await source.listAlerts(scope, 2)).toHaveLength(2);
+	});
 });

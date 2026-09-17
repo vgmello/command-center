@@ -243,6 +243,35 @@ describe('what it declares', () => {
 		}
 	});
 
+	test('a bound readCost reaches Azure with the tag filter, and narrows the total', async () => {
+		// The mock parses `dataset.filter.tags.values`, the real Cost Management shape
+		// (`QueryDataset.filter`). A clause sent as a sibling of `dataset` is silently
+		// dropped by both the mock and the real API, so a bound read would return the
+		// whole estate's spend under one domain's name — this is the seam that catches it.
+		const cost = startCostMock({ now: new Date('2026-09-06T00:00:00Z') });
+
+		try {
+			const client = azureProvider.connect({
+				costBaseUrl: cost.url,
+				subscriptionId: 'sub-1',
+				tenantId: 't',
+				clientId: 'c',
+				clientSecret: 'local-dev-only'
+			});
+
+			const unbound = await client.readCost!(context());
+			const bound = await client.readCost!({
+				...context(),
+				binding: { kind: 'cloud', connectionId: 'az', externalId: 'payment-domain' }
+			});
+
+			expect(bound.total).toBeGreaterThan(0);
+			expect(bound.total).toBeLessThan(unbound.total);
+		} finally {
+			cost.stop();
+		}
+	});
+
 	test('a deep link addresses a resource by its whole ARM id', () => {
 		const client = azureProvider.connect({
 			subscriptionId: 'sub-1',

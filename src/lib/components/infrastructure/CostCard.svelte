@@ -16,9 +16,16 @@
 
 	interface Props {
 		cost: Panel<CostBreakdownView>;
+		title?: string;
+		/** `null` on the domain tab — see `DatabasesCard`. */
+		href?: string | null;
 	}
 
-	let { cost }: Props = $props();
+	let {
+		cost,
+		title = 'Infrastructure Cost (MTD)',
+		href = '/infrastructure/costs'
+	}: Props = $props();
 
 	const spend = $derived(
 		cost.status === 'ok'
@@ -90,11 +97,7 @@
 	);
 </script>
 
-<SectionCard
-	title="Infrastructure Cost (MTD)"
-	href="/infrastructure/costs"
-	viewAllLabel="View cost analysis"
->
+<SectionCard {title} href={href ?? undefined} viewAllLabel="View cost analysis">
 	<PanelGap panel={cost} noun="spend" class="px-4 pb-4" />
 	<div class="grid gap-5 px-4 pb-4 xl:grid-cols-[1fr_auto]">
 		<div class="flex min-w-0 gap-4">

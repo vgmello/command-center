@@ -84,16 +84,29 @@
 					<DomainInfraSummary summary={snapshot.summary} />
 
 					<div class="grid gap-4 xl:grid-cols-2">
-						<RegionHealthCard regions={snapshot.regions} />
-						<ComputeCard nodes={snapshot.nodes} clusters={snapshot.clusters} />
+						<RegionHealthCard regions={snapshot.regions} title="Regions (this domain)" />
+						<ComputeCard
+							nodes={snapshot.nodes}
+							clusters={snapshot.clusters}
+							title="Compute (this domain)"
+							href={null}
+						/>
 					</div>
 
 					<div class="grid gap-4 xl:grid-cols-2">
-						<DatabasesCard databases={snapshot.databases} />
-						<UtilizationCard resources={snapshot.utilization} />
+						<DatabasesCard
+							databases={snapshot.databases}
+							title="Databases (this domain)"
+							href={null}
+						/>
+						<UtilizationCard
+							resources={snapshot.utilization}
+							title="Utilisation (this domain's machines)"
+							href={null}
+						/>
 					</div>
 
-					<CostCard cost={snapshot.cost} />
+					<CostCard cost={snapshot.cost} title="Tagged spend (this domain, MTD)" href={null} />
 				{/if}
 			{/if}
 		{/if}

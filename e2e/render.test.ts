@@ -101,8 +101,8 @@ describeRender('what a reader actually sees', () => {
 		const text = await settle(view, (one) => one.includes('Not bound'));
 
 		expect(text.includes('Not bound')).toBe(true);
-		expect(text.includes('Infrastructure Health')).toBe(false);
-		expect(text.includes('Database Overview')).toBe(false);
+		expect(text.includes('Regions (this domain)')).toBe(false);
+		expect(text.includes('Databases (this domain)')).toBe(false);
 	}, 40_000);
 });
 

@@ -471,9 +471,8 @@ measured it wrong; the two files count different things by construction, per the
 above. `domain infrastructure` is five requests cold and warm alike, in both harnesses, and
 all five are Coralogix: `findDomain`'s `apm.serviceHealth` fan-out, `live` tier by design.
 The tab's own seven cloud reads cost nothing to measure because they run against the
-in-process fixture cloud; `routeOne`'s cache is what keeps a real connection from repeating
-that cost on the next view, and the row exists to prove that promise rather than to describe
-today's zero.
+in-process fixture cloud, which issues zero requests cached or not — so this row cannot
+observe `routeOne`'s cache at all. `routers.test.ts`'s TTL test is what proves that promise.
 
 Deployments was 45 warm — the same as cold — and it was the whole reason to look. Measured
 per capability, the live log cost 6 of that and `readTrends` and `readStatusTrend` cost 45

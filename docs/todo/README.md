@@ -11,6 +11,7 @@ answers, a control that is on screen and does nothing. Ideas belong in a spec un
 
 | File                                                                                 | What                                                                       | Blocked on                            |
 | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- | ------------------------------------- |
+| [warm-budget-utc-local-day-edge.md](warm-budget-utc-local-day-edge.md)               | Three warm-budget rows fail between 00:00 and 01:00 Irish time             | nothing                               |
 | [azure-e2e-in-ci.md](azure-e2e-in-ci.md)                                             | The only real-cloud e2e mode never runs in CI                              | nothing                               |
 | [monitor-batch-endpoint.md](monitor-batch-endpoint.md)                               | 26 Monitor requests per infrastructure page                                | nothing                               |
 | [azure-owner-server-side-narrowing.md](azure-owner-server-side-narrowing.md)         | Domain ownership is filtered client-side, after the estate list is capped  | floci-az has no `/resources` list     |

@@ -246,7 +246,7 @@ const WARM_CEILING: Record<string, number> = {
 	// it is `findDomain`'s `apm.serviceHealth` fanout, which is `live` tier by design and
 	// therefore re-fetched in full both times, the same reason `domain slos` above never
 	// drops below its own `apm.domainVitals` read.
-	'domain infrastructure': 15,
+	'domain infrastructure': 8,
 	'service detail': 33,
 	'service metrics': 16,
 	infrastructure: 5

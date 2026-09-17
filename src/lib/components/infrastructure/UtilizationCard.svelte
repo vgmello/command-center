@@ -9,9 +9,16 @@
 
 	interface Props {
 		resources: Panel<ResourceUsage[]>;
+		title?: string;
+		/** `null` on the domain tab — see `DatabasesCard`. */
+		href?: string | null;
 	}
 
-	let { resources }: Props = $props();
+	let {
+		resources,
+		title = 'Resource Utilization',
+		href = '/infrastructure/capacity'
+	}: Props = $props();
 
 	const rows = $derived(resources.status === 'ok' ? resources.data : []);
 
@@ -35,11 +42,7 @@
 	};
 </script>
 
-<SectionCard
-	title="Resource Utilization"
-	href="/infrastructure/capacity"
-	viewAllLabel="View all rows"
->
+<SectionCard {title} href={href ?? undefined} viewAllLabel="View all rows">
 	<PanelGap panel={resources} noun="utilisation readings" class="px-4 pb-4" />
 	<div class="grid gap-4 px-4 pb-4 sm:grid-cols-2 xl:grid-cols-4">
 		{#each rows as resource (resource.id)}

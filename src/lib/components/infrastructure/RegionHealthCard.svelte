@@ -9,14 +9,15 @@
 
 	interface Props {
 		regions: Panel<InfraRegion[]>;
+		title?: string;
 	}
 
-	let { regions }: Props = $props();
+	let { regions, title = 'Infrastructure Health' }: Props = $props();
 
 	const rows = $derived(regions.status === 'ok' ? regions.data : []);
 </script>
 
-<SectionCard title="Infrastructure Health">
+<SectionCard {title}>
 	<PanelGap panel={regions} noun="a region inventory" class="px-4 pb-4" />
 	<div class="grid gap-4 px-4 pb-4 lg:grid-cols-[1.4fr_1fr]">
 		<div class="min-w-0 self-center">
