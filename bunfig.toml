@@ -1,0 +1,5 @@
+# Run every `bun run` script with the Bun runtime rather than following a
+# binary's `#!/usr/bin/env node` shebang. Without this, `bun run dev` hands
+# Vite to Node and dev silently diverges from production. See CLAUDE.md.
+[run]
+bun = true

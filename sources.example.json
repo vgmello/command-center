@@ -1,0 +1,48 @@
+{
+	"$comment": [
+		"A local stack: the real Octopus and Coralogix adapters, pointed at the mocks that",
+		"`bun run dev:stack` starts. Only the base URL differs from a real deployment —",
+		"the providers, the mapping and the paging are the production code paths.",
+		"",
+		"Run it with:",
+		"  bun run dev:stack                                   # the two mocks",
+		"  bun run db:up && bun run db:migrate                 # the store",
+		"  SOURCES_CONFIG=sources.example.json \\",
+		"  SOURCES_ALLOW_FIXTURES=true \\",
+		"  DATABASE_URL=postgres://postgres:postgres@localhost:5432/command_center \\",
+		"  bun --bun node_modules/.bin/vite dev",
+		"",
+		"SOURCES_ALLOW_FIXTURES is required here and only here: naming a fixture provider",
+		"in a connections file is refused otherwise, so a production file cannot quietly",
+		"serve seeded numbers. It is needed because there is no real cloud provider yet —",
+		"the Azure one is increment 5 of the data-source spec and is not built."
+	],
+	"connections": [
+		{
+			"id": "octopus-local",
+			"provider": "octopus",
+			"label": "Octopus (mock)",
+			"settings": {
+				"baseUrl": "http://localhost:4591",
+				"apiKey": "local-dev-key",
+				"spaceId": "Spaces-1",
+				"windowSize": 400
+			}
+		},
+		{
+			"id": "coralogix-local",
+			"provider": "coralogix",
+			"label": "Coralogix (mock)",
+			"settings": {
+				"baseUrl": "http://localhost:4592",
+				"apiKey": "local-dev-key"
+			}
+		},
+		{
+			"id": "cloud-fixture",
+			"provider": "fixture-cloud",
+			"label": "Fixture Cloud",
+			"settings": {}
+		}
+	]
+}

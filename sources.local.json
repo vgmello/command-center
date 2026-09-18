@@ -1,0 +1,61 @@
+{
+	"$comment": [
+		"Full end-to-end: the real Azure, Octopus and Coralogix adapters, pointed at local",
+		"emulators. Only the base URLs differ from a production file \u2014 the providers, their",
+		"mapping, their paging and their auth are the production code paths.",
+		"",
+		"  bun run db:up        # Postgres and floci-az",
+		"  bun run db:migrate",
+		"  bun run seed:azure   # floci-az starts empty; without this the estate is blank",
+		"  bun run dev:stack    # Octopus, Coralogix and the Azure cost mock",
+		"",
+		"  SOURCES_CONFIG=sources.local.json \\",
+		"  DATABASE_URL=postgres://postgres:postgres@localhost:5432/command_center \\",
+		"  bun run dev",
+		"",
+		"The Azure provider declares seven of the nine cloud capabilities. Regions, nodes,",
+		"clusters and spend come from ARM and Cost Management; utilisation, storage and",
+		"databases are Azure Monitor readings, which floci-az answers with \"Unsupported",
+		"Microsoft.Compute path\" \u2014 so `bun run dev:stack` serves them from a Monitor mock",
+		"on 4594. Queues and alerts stay undeclared and render as stated gaps: Service Bus",
+		"will not provision through floci-az at all, and alerts are Monitor\u0027s alerts API",
+		"rather than its metrics one. No SOURCES_ALLOW_FIXTURES here \u2014 nothing in this",
+		"file is a fixture."
+	],
+	"connections": [
+		{
+			"id": "azure-local",
+			"provider": "azure",
+			"label": "Azure (floci-az)",
+			"settings": {
+				"baseUrl": "http://localhost:4577",
+				"costBaseUrl": "http://localhost:4593",
+				"monitorBaseUrl": "http://localhost:4594",
+				"subscriptionId": "00000000-0000-0000-0000-000000000001",
+				"tenantId": "00000000-0000-0000-0000-000000000002",
+				"clientId": "local",
+				"clientSecret": "local-dev-only"
+			}
+		},
+		{
+			"id": "octopus-local",
+			"provider": "octopus",
+			"label": "Octopus (mock)",
+			"settings": {
+				"baseUrl": "http://localhost:4591",
+				"apiKey": "local-dev-key",
+				"spaceId": "Spaces-1",
+				"windowSize": 400
+			}
+		},
+		{
+			"id": "coralogix-local",
+			"provider": "coralogix",
+			"label": "Coralogix (mock)",
+			"settings": {
+				"baseUrl": "http://localhost:4592",
+				"apiKey": "local-dev-key"
+			}
+		}
+	]
+}

@@ -1,0 +1,1032 @@
+# command-center
+
+## Stack
+
+- **Svelte 5** — runes only (`$state`, `$derived`, `$effect`, `$props`). No Svelte 4 idioms: no `export let`, no `$:` reactive statements, no stores where a rune fits, no `on:click` (use `onclick`).
+- **SvelteKit 2** — with **remote functions** as the primary client/server data layer.
+- **Bun** — package manager, script runner, and production server runtime.
+- **Tailwind CSS v4** + **shadcn-svelte** (vendored components) + **Bits UI** (headless primitives) for UI.
+- **TypeScript** throughout.
+
+## API selection order
+
+When solving any problem, work down this list and stop at the first tier that can do the job. Do not skip a tier because a lower one is more familiar.
+
+1. **SvelteKit / Svelte built-ins.** If the framework already solves it, use it. Remote functions instead of hand-rolled fetch wrappers; `form` instead of a submit handler; `$state`/`$derived` instead of a store library; `<svelte:boundary>` instead of manual loading flags; `redirect`/`error` from `@sveltejs/kit` instead of custom control flow; `$env/*` instead of reading `process.env`; `enhance` instead of bespoke progressive enhancement.
+
+2. **Bun native APIs** — <https://bun.com/docs/runtime/bun-apis.md>. `Bun.file` over `node:fs` reads, `bun:sqlite` over a SQLite driver, `Bun.password` over bcrypt, `Bun.$` over a shell-exec library, `Bun.serve` internals, `Bun.env`.
+
+   Web-standard APIs (`fetch`, `Request`/`Response`, `URL`, `crypto.subtle`, `WebSocket`, `FormData`, `AbortController`) sit at this tier too, and are **preferred over Bun-proprietary equivalents when both work** — they behave identically on the server and in the browser, and they survive a runtime change.
+
+3. **Node APIs**, imported with the explicit `node:` prefix (`node:crypto`, `node:path`). Bun implements most of the Node API surface, so this is a real option — just not the first one.
+
+4. **A community library, or write it.** Only once tiers 1–3 genuinely cannot. Prefer a well-maintained, widely-adopted package over a clever one. If the need is small and the dependency large, write it — but a dependency is usually right for anything security-sensitive (auth, crypto, parsing untrusted input); don't hand-roll those.
+
+**Why this order:** each tier down adds something to maintain. A framework feature is tested by its maintainers and moves with the version bump. A dependency is a supply-chain surface, a bundle cost, and an upgrade obligation, and it goes stale on someone else's schedule.
+
+When adding a dependency, say in the PR which tiers you ruled out and why. "Tier 1–3 can't do X" is a fine answer; not having checked is not.
+
+## Architecture
+
+The general doctrine — coupling metrics, dependency direction, composability,
+behavioral encapsulation, domain boundaries, the change-time checklist — is a
+separate document, imported here so it loads with this file every session:
+
+@docs/devs/architecture-rules.md
+
+Read that for _what_ the rules are. The rest of this section is what they mean **here**:
+the concrete layering this codebase settled on, and the decisions already made.
+
+### Layers
+
+Five layers. Each one may know about the layers below it and nothing above.
+
+| Layer          | Lives in                                 | Knows about                            | Must never                                         |
+| -------------- | ---------------------------------------- | -------------------------------------- | -------------------------------------------------- |
+| **Domain**     | `src/lib/<domain>/types.ts`              | nothing                                | import from `$lib/server` or from a component      |
+| **Pure logic** | `src/lib/<domain>/*.ts`                  | the domain types                       | touch the network, the clock, or `process`         |
+| **Server**     | `src/lib/server/**`                      | domain types, pure logic, data sources | be imported by anything reachable from the browser |
+| **Transport**  | `src/routes/*.remote.ts`                 | server modules                         | contain business logic worth testing               |
+| **UI**         | `src/lib/components/**`, `src/routes/**` | domain types, remote functions         | re-derive a fact the server already stated         |
+
+### The server sends facts, not presentation
+
+A payload describes what is true, never how it looks. A domain carries a `status`
+and a `healthScore`; it does not carry a colour, a CSS class, or a component.
+
+This is what lets the theme change without touching the data layer, and it is what
+keeps a snapshot serialisable — devalue can send a string, not a Svelte component.
+
+Two consequences worth stating outright:
+
+- **Icons are string keys.** The data says `icon: 'landmark'`; one module
+  (`src/lib/components/icon.ts`) knows what that draws. That keeps `@lucide/svelte`
+  out of every server module and off the wire.
+- **Status maps to colour in exactly one file.** `src/lib/components/tone.ts` is the
+  only crossing point between operational meaning and Tailwind classes. Components
+  ask for `statusTone('degraded')`, never for amber. Write the classes out in full
+  there — Tailwind only ships classes it can see literally in the source.
+
+### Derive rather than store
+
+If a value is a function of another value, compute it in one place and export that
+function. `statusFromScore()` is the example: every caller derives a domain's status
+from its score the same way, so a badge cannot contradict the number printed beside it.
+
+Storing both invites them to drift, and the drift shows up in the UI as a lie.
+
+### Identity is not status
+
+A property that describes what something _is_ stays separate from a property that
+describes how it is _doing_. A domain's accent tint is identity; its health is status.
+They are allowed to disagree — and they usually do — so they never share a field.
+
+### Plugging in a real data source
+
+Everything the UI shows comes from a **source** behind an interface, never from a
+module the UI imports directly:
+
+- `src/lib/server/platform/source.ts` — `PlatformSource` (telemetry: domain counts,
+  the domain page, rates, incidents, infrastructure), `DeploymentSource` (the CI/CD
+  feed: the deployment log, its aggregates and its trends), `ServiceSource` (the
+  service catalog and per-service telemetry), `InfrastructureSource` (the estate:
+  regions, nodes, utilisation, storage, databases, queues and spend) and
+  `WorkspaceSource` (the signed-in user and their pins). Five interfaces, because they
+  are five upstreams that will be replaced independently and on different schedules —
+  and because one interface carrying all of it would stop describing a single
+  responsibility.
+
+  **When to add a port rather than a method.** Deployments got their own the moment
+  they stopped being one method: the data comes from a build system, not a metrics
+  pipeline, so a real adapter for one has nothing to do with the other. Services
+  followed for the same reason — a catalog entry (owner, repo, runbook, language) comes
+  from a service registry. A real adapter may well stitch a registry and a metrics
+  backend together behind `ServiceSource`; that is the point, the stitching is one
+  adapter's problem rather than every caller's. Spend sits inside
+  `InfrastructureSource` rather than in a billing port, because it is a property of the
+  estate read on the same screen — if a finance surface ever wants budgets or chargeback
+  on its own terms, that is when it earns a seam.
+
+- `src/lib/server/platform/fixture-source.ts` — the seeded stand-in.
+- `src/lib/server/platform/index.ts` — resolves `WorkspaceSource` from `WORKSPACE_SOURCE`,
+  caches the instance, and **throws on an unknown name**. Falling back to fixtures on a
+  typo would serve invented numbers in production with nothing on the page admitting it.
+  The other four ports are no longer resolved by a per-port env var here: `index.ts`
+  hands `buildSources()` whatever `SOURCES_CONFIG` names (or nothing) and gets back
+  `PlatformSource`, `DeploymentSource`, `ServiceSource` and `InfrastructureSource`
+  already wired to routers — see "Data sources sit beneath the ports" below for how
+  those routers work.
+
+To add a real backend for the workspace port: implement `WorkspaceSource`, register it
+in the resolver, set `WORKSPACE_SOURCE`. For the other four: write a provider
+(`defineProvider`, under `src/lib/server/sources/`) and list a connection in the file
+`SOURCES_CONFIG` names — there is no per-port env var to set, and a connection naming an
+unregistered or misspelled provider still fails at boot rather than serving nothing, for
+the same reason a bad `WORKSPACE_SOURCE` does. Nothing above the interface changes.
+
+Two rules the interface encodes, and that a new implementation must honour:
+
+- **Ask for the answer, not the raw rows.** `readDomainStatusCounts()` returns counts,
+  not every domain, because that is one aggregate query against a real backend.
+- **Push filtering, sorting and paging down.** `queryDomains()` takes the whole query
+  so an adapter can translate it to SQL or a search API. Doing it above the interface
+  would force every adapter to over-fetch. In-memory filtering is one adapter's
+  strategy (`in-memory-query.ts`), not the contract.
+
+Every method is `async` even where the fixture needs nothing awaited — a synchronous
+port would have to be rewritten, along with every caller, the first time real I/O
+appears.
+
+Sources return **facts**. Formatting, deriving status from a score, turning counts into
+percentages — all of that stays in the pure layer above, so a new adapter cannot
+accidentally ship its own opinion about how a number should read.
+
+### Data sources sit beneath the ports
+
+`src/lib/server/sources/` is where data comes from; `src/lib/server/platform/` is what
+the app asks for. Providers declare a kind (`cloud`, `apm`, `deployment`) and the
+capabilities they implement; connections are configured instances of them, listed in the
+file `SOURCES_CONFIG` names. Routers implement each port by serving app-owned methods
+from the catalog and dispatching the rest to whichever connection owns the resource.
+
+**Every read goes through a router, always.** With `SOURCES_CONFIG` unset the routers
+dispatch to fixture providers, so the routed path is the only path and cannot rot while
+nobody is looking.
+
+**A capability nobody implements is stated, never faked.** The router throws
+`CapabilityUnavailableError` rather than returning zeros, which would reproduce exactly
+the failure the resolver's throw-on-unknown-name exists to prevent. `panel()` and
+`Panel<T>` are the contract that turns one of those into a rendered empty state, and
+`PanelGap.svelte` is the one place the two sentences a gap can produce are written.
+
+**No screen falls over, full stop.** A gap costs the reader that panel and nothing else —
+a missing queue metric must not take down the dashboard, and a missing `cloud.utilization`
+must not take down infrastructure.
+
+That rule was reactive for four rounds. `deployment.insights`, `apm.insights`,
+`apm.dependencies` and `apm.activity` each took a page down in production and each got
+wrapped afterwards, which fixes the case that broke and defends against nothing.
+`capability-gaps.test.ts` is the sweep that replaced waiting: it drops one capability at a
+time, and then a whole kind at a time, and runs every screen against the result. It found
+seventeen more, and it is what makes the eighteenth a red test instead of a blank page.
+
+**It used to carry an exemption, and the exemption was the bug.** A screen "dedicated to" a
+kind — infrastructure is a view of a cloud account, deployments a view of a CI/CD system —
+was allowed to fall over when that kind could not answer, on the grounds that with the kind
+absent there is no page left to draw. True of the data and false of the page, and
+_dedicated_ quietly meant exempt from every **single**-capability gap too — so the first
+real cloud provider took the infrastructure page down on one missing capability. An
+ARM-only Azure adapter served regions, nodes and spend and left utilisation to Monitor; the
+page died on `cloud.utilization`. Every read on both screens is wrapped now, and the sweep
+asserts the rule with no exemptions.
+
+**Three of the sweep's own screen entries were vacuous, and a green run could not tell.**
+`domain detail`, `service detail` and `service metrics` passed a slug the fixture catalog
+does not contain (`'payments'`, `'payments-api'`) — each assembler's `findDomain`/
+`findService` guard returns `null` for an unknown slug before touching any source, so those
+three entries exercised the not-found path on every run, regardless of which capability the
+test had dropped. The sweep's assertion was never wrong; it was vacuous for three of its
+seven cases, which is a harder thing to notice than a red test. Correcting the slugs to ones
+that resolve (`'payment-domain'`, `'payment-api'`) exposed twelve real gaps across those
+three screens — none of which any earlier run of this file had exercised — and all twelve
+are wrapped now. The lesson generalises: a `SCREENS` entry is only a test of the assembler
+if its slug resolves; a green run against a slug that returns `null` early proves nothing,
+and a new entry should assert that its slug resolves rather than trust the sweep to notice.
+
+The sweep's `for (screen of SCREENS) expect(...)` loop also throws on the first failing
+screen inside a `describe`, so a run that breaks several screens at once only ever reports
+the first — which is why the twelve gaps above surfaced five at a time, not twelve: fixing
+the first-reported failure and re-running revealed the next. Safe to leave for now because
+the sweep is green, so a single new gap still surfaces; it only under-reports when several
+fail together. See `docs/todo/sweep-hides-failures.md`.
+
+**A mock of the API, not a mock of the answer.** floci-az emulates ARM but not Monitor —
+a metrics request against it returns "Unsupported Microsoft.Compute path" — and almost
+everything the infrastructure screen wants is a Monitor reading. So Monitor got a stand-in
+of its own (`providers/azure/mock/monitor.ts`, port 4594), answering the real contract:
+the resource id is the path, `metricnames` is comma-separated, `timespan` is `from/to`,
+and a series comes back as `value[].timeseries[0].data[]` under the aggregation's own
+field name. A mock that invented a convenient shape would test the mock. With it the Azure
+provider answers seven of nine capabilities instead of three; queues and alerts stay
+undeclared, because Service Bus will not provision through floci-az at all and alerts are
+a different Monitor API rather than another metric name.
+
+**What that costs: 31 requests for one infrastructure page, 26 of them Monitor.** Monitor
+answers per resource, so every cluster, storage account and database is its own call and
+the estate's utilisation is a call per machine — which is why `metricSampleSize` caps that
+at twelve and says so in the panel rather than fanning out across two thousand VMs. A real
+deployment that outgrows this wants Monitor's batch endpoint, which is a different path
+(`…/providers/Microsoft.Insights/metrics:getBatch`) and not a parameter on this one.
+
+**Four units reach the utilisation strip, and only one is a percentage.** Azure publishes
+free memory in bytes, because a used percentage needs the VM size's total RAM and that is
+not a metric; disk and network arrive as `Total` counters over the sampling interval, so
+both are divided by it and the network one goes on to bits. Each reading states the unit
+it is actually in — `'%'`, `'B'`, `'B/s'`, `'bps'` — and `toUsageView` scales the headline.
+Printed raw, available memory is `5482128896 B`, which is exactly what the render sweep
+looks for.
+
+**A mock that checks its token catches an adapter that stopped sending one — and did.**
+The local Azure credential is a stub, because asking an emulator for a real
+client-credentials grant fails in a way that reads like misconfiguration. It issued the
+token `local` while both Azure mocks check for `local-dev-key`, so every cost read in the
+local stack had been 401ing silently. Found by running it, and now asserted: the stub
+issues `MOCK_API_KEY`, and a test fails if it drifts again.
+
+**A fan-out's cache key names the connections that answered it.** Aggregate reads were
+keyed under the literal string `fan-out`, which cannot tell one set of connections from
+another — so swapping a fixture cloud for a real Azure left every stored answer matching,
+and the page served storage, database and queue readings from a source that was no longer
+connected, for capabilities the new one does not declare. Invented numbers with nothing on
+the page admitting it, which is the failure this whole section exists to prevent. Found by
+looking at a running page, not by a test.
+
+**A domain owns a cloud resource by tag, not by a second catalog.** `CatalogDomain.bindings`
+gains a `cloud` binding whose `externalId` is the tag value (`domain=<slug>`) — the router
+reads it straight off the declared catalog record, never through `bindingFor()`'s fallback,
+which synthesises a binding for APM identity and would make every domain look bound. That
+needed a dispatch `dispatcher.one()` didn't have: it has no cache and cannot resolve the
+catalog's empty `connectionId` (`registry.connection('')` throws), so `routeOne`
+(`routers/shared.ts`) resolves first — exactly one connection supporting the capability →
+use it, none → `no-connection` (no connection of the kind) or `no-capability` (the kind
+exists, nobody declares it), more than one → the new `GapReason` `'ambiguous-connection'` —
+then caches the result under `scopedArgs(scope, args)` with `owner=<slug>` appended to the
+read's own args (`limit=<n>&owner=<slug>` for the list reads, `owner=<slug>` alone for the
+rest), the same key shape every fan-out already uses. Domain infrastructure reads are the
+first callers of `dispatcher.one()`; the estate's own reads still fan out across every
+connection of a kind, by design — one domain has one binding, an estate has however many
+connections are configured. One function,
+`gapSentence`, is now the only place a gap becomes a sentence — `PanelGap.svelte` and the 501
+`message` both call it, so `'no-binding'` (key-agnostic, since `ownerTagKey` is a provider
+setting a sentence must not name) reads the same on the page and on the wire.
+
+**The Azure filter is client-side, and that has a ceiling.** floci-az ignores `$filter`
+entirely, and ARM itself documents tag `$filter` only on `/subscriptions/{id}/resources` and
+the resource-group list — not on the type-specific lists (`Microsoft.Compute/virtualMachines`
+and the rest) this provider already calls — so ownership is decided by fetching everything
+and checking `tags[ownerTagKey]` in memory. `owned()` runs after `collect(limit)` in the
+three list methods, so a domain inside a subscription larger than `limit` undercounts;
+`docs/todo/azure-owner-server-side-narrowing.md` names the fix (`/resources?$filter=…` or
+Resource Graph) and why it isn't built yet. floci-az also drops `tags` on
+`Microsoft.Storage/storageAccounts` on both `PUT` and `PATCH`, so `owned()` finds no account
+for any domain and the local Azure-mode strip's storage cell reads **0 B** rather than the
+domain's real figure until the emulator persists them. That is a measurement, not a gap —
+zero tagged accounts is what the provider can truthfully see — so the panel is `ok` and the
+cell prints a zero, never a dash.
+
+Two consequences for new work:
+
+- **An assembler's source-backed reads are wrapped; its catalog reads are not.** The
+  catalog is this app's own record, and a screen with no rows has nothing to hang a gap
+  on — failing there is honest.
+- **A gap propagates as `null`, never as zero.** "No incidents" and "nothing is watching
+  for incidents" are opposite readings of the same tile, so `CountTile.value` is nullable
+  and prints a dash. The published `ActivitySummary` keeps non-null numbers and 501s
+  instead: a frozen contract must not quietly grow a new value, and a caller who asked
+  for a fact is owed a status code rather than a null.
+
+### Two transports, one service
+
+The data is reachable two ways, and both go through the same in-process service:
+
+```
+Browser (UI)                         External client
+    │ /_app/remote/…                     │ GET /api/v1/domains
+    ▼                                    ▼
+overview.remote.ts                 routes/api/v1/**/+server.ts
+    │ devalue · session                  │ JSON · bearer token
+    └───────────────┬────────────────────┘
+                    ▼
+        server/platform/service.ts       ← in-process calls
+                    ▼
+            PlatformSource               ← the port
+```
+
+**A transport never calls the other transport over HTTP.** A remote function that
+fetched `/api/v1/*` would add a network hop for nothing, throw away end-to-end types,
+and fail during SSR, where the server would be fetching itself. Call the service.
+
+`service.ts` is one function per thing a caller can ask for. `readOverview()` — the
+composite the overview page needs — is composed there and deliberately _not_ exposed
+publicly: it is shaped for one screen. External clients get the resources it is
+composed from, which stay stable while the screen changes.
+
+**The public contract is frozen and separate.** `src/lib/server/api/v1/dto.ts` maps
+internal types to v1 shapes, and `dto.test.ts` asserts those shapes key by key.
+Returning `Domain` or `OverviewSnapshot` directly would make every field rename a
+breaking change found by a customer instead of by a test. The mapper is also where
+presentation is stripped: `icon`, `accent`, the sparkline bounds and the pre-formatted
+strings are how _our_ UI draws a thing and mean nothing to another client.
+
+What legitimately differs between the two:
+
+|               | Remote functions           | `/api/v1`                       |
+| ------------- | -------------------------- | ------------------------------- |
+| Serialization | devalue                    | plain JSON                      |
+| Auth          | session                    | bearer token (`API_TOKENS`)     |
+| Errors        | envelope, generic message  | real status codes, named fields |
+| Versioning    | free to change with the UI | frozen per version              |
+
+What they share: the Valibot schemas in `src/lib/server/api/schemas.ts`. One
+definition of a valid time range, so the two surfaces cannot disagree.
+
+The error handling is opposite on purpose. `handleValidationError` in
+`src/hooks.server.ts` returns a bare "Bad Request" to remote callers and logs the
+detail, because those issues describe our schemas and the endpoint is public. The
+JSON API names the offending field, because there the caller wrote the request by
+hand and is owed an explanation.
+
+**Every new screen owes the API its resources.** A screen composite stays private —
+`readOverview`, `readDomainsView`, `readDeploymentsView`, `readServiceView` are shaped
+for one page — but the resources it is composed _from_ belong in `/api/v1`, and adding
+a screen without them leaves the public contract describing a smaller platform than the
+one that exists. Two rules the service endpoints settled:
+
+- **A missing resource is a 404, not an empty 200.** `NotFoundError` in
+  `src/lib/server/api/respond.ts` is the one place that maps it, for the same reason
+  validation errors are mapped there: the moment two endpoints write their own 404,
+  they write two different ones.
+- **A query key means one thing.** The deployment log's environment filter is
+  `deployedTo`, not a second `environment`, because the scope already owns that key and
+  the two are different axes — what the view reports on, and what a run targeted.
+- **Publish the measurement, not the rendering.** A health check travels as
+  `{value, unit}` rather than `"517 ms"`; storage as bytes rather than `"5.1 TB"`; an
+  error budget as minutes rather than `"21m"`; spend as numbers rather than `"$28,540"`.
+  Bar widths never travel at all — `latencySharePct` and `requestSharePct` are computed
+  against whichever rows we happened to return, so a caller with a different `limit`
+  would get different percentages for identical traffic.
+- **Publish the unit the number is actually in.** `ResourceUsage.unit` is the unit its
+  _headline_ is printed in: the network tile says "1.2 Gbps" while its series carries
+  bits per second. The DTO states the base unit, because pairing the two would label
+  1,200,000,000 as gigabits.
+
+**Static sub-paths win over `{slug}`.** `/api/v1/domains/summary` resolves to the
+aggregate, not to a domain called "summary" — which is fine here and worth knowing
+before a slug is ever allowed to be one of those words.
+
+**With `API_TOKENS` unset the API is closed, not open** — every request gets 401. A
+data API that serves everything because someone forgot an environment variable is not
+a failure mode worth having.
+
+### The API reference is generated, not maintained
+
+`/api` renders an interactive reference from `/api/v1/openapi.json`, via
+`@scalar/sveltekit`. The document itself is assembled by
+`sveltekit-openapi-generator`, a Vite plugin that collects `@swagger` JSDoc blocks
+from the route files. Both are devDependencies; neither ships to the client.
+
+**The reference is not versioned; the document is.** `/api` is the entry point to the
+API as a whole — the URL that ends up in a README or a bookmark — so it must survive a
+v2. The document it loads, `/api/v1/openapi.json`, describes exactly one version and is
+versioned accordingly. When a v2 lands, the page gains a second document to switch
+between rather than a second address.
+
+**The document has two halves, kept apart on purpose:**
+
+| Half                           | Lives in                                   | Written how                |
+| ------------------------------ | ------------------------------------------ | -------------------------- |
+| Which paths exist, and why     | the `@swagger` block above each handler    | by hand, once per endpoint |
+| Schemas, parameters, responses | `components.yaml`, generated from `dto.ts` | never by hand              |
+
+Prose belongs next to the code it describes. Schemas belong wherever they are already
+defined once — which is the Valibot schemas the endpoints validate and serialise with.
+Writing response shapes into a JSDoc comment, as the plugin's own examples do, would
+reintroduce exactly the drift this split exists to prevent: the constraints go first,
+because nobody remembers to update a `maximum` in a comment.
+
+**The generated half.** `bun run openapi:components` serialises `openApiComponents()`
+to `src/lib/server/api/v1/components.yaml`, which the plugin merges in. It runs as part
+of `bun run build`, and `openapi.test.ts` regenerates it in memory and fails if the
+committed file disagrees — so a schema change that was not regenerated is a red test,
+not a wrong published contract.
+
+**Adding an endpoint** means an `@swagger` block above the handler. Everything it
+refers to — `#/components/parameters/Environment`, `#/components/schemas/DomainPage` —
+already exists.
+
+**What the tests catch**, because the plugin checks none of it:
+
+- an annotation that is not valid YAML (`swagger-jsdoc` _skips_ those silently, so the
+  endpoint would vanish from the document with no error)
+- a route under `/api/v1` with no annotation, and an annotation naming a path that has
+  no route — the annotation repeats the route in its own text, so a typo is otherwise
+  invisible
+- a `$ref` pointing at a component that does not exist
+- an operation missing its scope parameters, its `security`, or its error responses
+- a duplicate `operationId`, which would collide in a generated client
+- a tag used by an operation but never described
+- `components.yaml` being stale
+
+**Watch out for YAML in comments.** An unquoted `key: value` colon or a leading quote
+inside a `description` ends the scalar and breaks the block. Use `>-` folded scalars for
+any description with punctuation. The parse test is what tells you.
+
+**Two gaps filled at serve time** in `src/routes/api/v1/openapi.json/+server.ts`,
+because the plugin's base document has no option for either and it merges only
+`components.*` from the shared file: the root-level `security` (without it Scalar
+reports "no authentication selected" for an API that 401s everyone) and the `tags`
+array carrying descriptions and order.
+
+The plugin emits OpenAPI **3.0.0**, not 3.1. Scalar renders both.
+
+The document is served without a token: it describes the shape of the API, not any
+data, and the reference UI fetches it before anyone has authenticated.
+
+### What the store buys, and what it cannot
+
+`request-budget.test.ts` counts a cold cache with no database — the worst case, and for a
+long time the only one anybody had counted. `warm-budget.test.ts` counts the normal one: a
+second page view, served by an instance with an empty memory tier over a warm Postgres.
+Fresh routers on purpose, because reusing them would measure the memory tier, which
+answers in zero requests and is lost on every restart.
+
+The measured answer, quoted from `warm-budget.test.ts`'s cold column rather than
+`request-budget.test.ts`'s: the two files build their mock estates the same way but are not
+the same harness, and their cold counts do not always agree (`request-budget.test.ts`
+currently measures 15/45/20 for domains/deployments/service metrics against the 14/48/16
+below) — neither harness is wrong, they are simply two different cold starts, and the table
+picks one rather than silently averaging or omitting the disagreement:
+
+| Screen                | Cold | Warm |
+| --------------------- | ---: | ---: |
+| overview              |   20 |   17 |
+| domains               |   14 |   14 |
+| domain detail         |   56 |   55 |
+| domain services       |   10 |   10 |
+| domain deployments    |   50 |   50 |
+| domain slos           |   14 |   10 |
+| deployments           |   48 |   12 |
+| service detail        |   30 |   28 |
+| service metrics       |   16 |   12 |
+| infrastructure        |    0 |    0 |
+| domain infrastructure |    5 |    5 |
+
+`domain detail` rose from 9/9 because it no longer 404s the moment the APM source has no
+vitals for the domain (Task 8b) — it renders, and most of the cost is Octopus's window: that
+API has no server-side domain filter, so narrowing to one domain still walks the log
+(45 of the 56 cold; Coralogix accounts for the other 11). `domain services` is the
+services-tab read (`listDomainServiceVitals`) that the overview's `buildDomainSnapshot`
+also folds in — cheaper on its own because it skips the dependency graph and the deployment
+log the overview also draws, and warm equals cold because nothing it reads is cached:
+`apm.domainVitals` is `live` tier by design and the rest is a catalog lookup. `domain
+deployments` and `domain slos` are the two new tabs this branch built (Tasks 9 and 10).
+`service metrics` moved from 18/12 to 16/12 between when this table was last written and
+this measurement — a change in what was measured, not a claim that `request-budget.test.ts`
+measured it wrong; the two files count different things by construction, per the note
+above. `domain infrastructure` is five requests cold and warm alike, in both harnesses, and
+all five are Coralogix: `findDomain`'s `apm.serviceHealth` fan-out, `live` tier by design.
+The tab's own seven cloud reads cost nothing to measure because they run against the
+in-process fixture cloud, which issues zero requests cached or not — so this row cannot
+observe `routeOne`'s cache at all. `routers.test.ts`'s TTL test is what proves that promise.
+
+Deployments was 45 warm — the same as cold — and it was the whole reason to look. Measured
+per capability, the live log cost 6 of that and `readTrends` and `readStatusTrend` cost 45
+each. Both were declared `series` in `tiers.ts` while `fanOutSeries` was called in exactly
+one place, so they fell through **both** strategies: `isDocument` false, so the cache never
+persisted them, and no router accumulated them, so they never reached `source_series`
+either. Every read paged a four-hundred-row window and nothing reported a problem.
+
+**`series` is a promise that a router accumulates the capability.** `tiers.test.ts` asserts
+the tier holds exactly what `fanOutSeries` reads, and `dispatch-tiers.test.ts` asserts the
+converse by reading the routers: every capability's dispatch helper matches its tier, and a
+capability no router reads at all fails too.
+
+**The geometry is per-capability, because one size is wrong.** Metrics are continuous, so a
+sixty-second bucket settling in five minutes is right. Deployments are discrete events —
+four hundred runs across a fortnight would write twenty thousand rows of mostly zeros on
+that grid — so they use a day bucket settling in a day, over a horizon of a year. The
+window comes from the capability too: the trends look back 14, 84 or 365 days by grain and
+ignore `scope.timeRange` entirely.
+
+Two things the deployment shape does that the metrics shape must not be copied for:
+
+- **Counts sum, they do not average.** A week that averaged its days would report a seventh
+  of the deployments that happened, so `downsample` takes an aggregation mode.
+- **A mean cannot be re-aggregated from means.** `meanDuration` is stored decomposed as
+  `run_count` and `duration_total` and the mean rebuilt by dividing the sums. Two runs at
+  10s and two hundred at 1,000s is a period mean of 990, not the 505 an average of the two
+  daily means gives.
+- **A rate cannot be re-aggregated from rates either.** Per-service rows store
+  `failure_count` beside `run_count` for the identical reason: a domain's change failure
+  rate is `sum(failures) / sum(runs)` over the window, not an average of pre-computed daily
+  rates, which would weight a day with no deploys the same as a day with ten.
+
+The live log stays `live` and stays cheap. A deployment feed read back off disk is a feed
+that has stopped reporting.
+
+**A domain's figures are a sum over its own services, not a domain-scoped estate read.**
+`rollUpDeployments` filters `readServiceTrends`'s per-service rows down to the services the
+domain's catalog entry owns, then sums those — there is no domain-scoped call to `readTrends`,
+because the estate trend is a single accumulated series with no per-entity breakdown left to
+filter once `estateTrendsOf` has collapsed it. A domain's figures exclude `(unattributed)`
+runs by construction: the rollup only ever sees the services the domain owns, and an
+unattributed run belongs to no domain. Those runs still count toward the estate — attributing
+one to a domain the catalog cannot identify would be inventing ownership, not reading a fact.
+
+**CORRECTION (Task 9): the estate read does not sum every entity inside one accumulation.**
+An earlier version of this section, and of the design spec, said `readTrends` sums the legacy
+`''` row together with every per-service row inside one `trendsShape.rebuild`. That is not
+reachable: `source_series` is partitioned by `SeriesQuery.capability`, so a `deployment.trends`
+row (entity `''`) and a `deployment.serviceTrends` row for the same period live in different
+partitions and are never read together, let alone summed. What `readTrends` does instead: when
+any connection in the registry declares `deployment.serviceTrends`, it calls
+`readServiceTrends` and collapses the rows with the pure `estateTrendsOf`
+(`src/lib/platform/domain-deployments.ts`) — `estate == sum(services)` holds by construction,
+not because two separate accumulations happen to agree. `fanOutSeries('deployment.trends', …)`
+remains as a _fallback_, taken only when no connection declares `serviceTrends`: a provider
+entitled to collapse — to report what the estate did without saying which service did it —
+still draws the deployments page from its own `''` accumulation, never merged with per-service
+rows.
+
+Two consequences the earlier text claimed away:
+
+- **There is a real cutover, not a seamless migration.** Pre-migration history lives in the
+  old `deployment.trends` partition and is not read on the `serviceTrends` path. But a cold
+  `deployment.serviceTrends` partition is fetched whole rather than padded forward from
+  nothing — `gapFor` returns the entire requested window on a partition with no rows yet — so
+  a domain's fortnight/quarter/year charts fill in as soon as the store has runs to show,
+  never with zero-padded history standing in for runs that predate the migration.
+- **"One accumulation per connection" is satisfied by dispatch, not by declaration.** A
+  connection may declare both `deployment.trends` and `deployment.serviceTrends` during a
+  transition; only one of the two paths above executes per read, decided by whether _any_
+  connection in the registry supports `serviceTrends` — so nothing double-writes even though
+  both capabilities can be on the books at once. (That registry-wide check, rather than a
+  per-connection one, is also the shape of a real bug — see
+  `docs/todo/estate-trends-mixed-registry.md`.)
+
+### Charts are arithmetic, not a dependency
+
+`src/lib/platform/chart.ts` holds the layout maths — scales, ticks, point placement,
+bar rectangles — and `LineChart` / `BarChart` turn the results into SVG. No charting
+library, by the API selection order: the requirement is points on a grid and
+rectangles on a baseline, which SVG does natively.
+
+The split matters more than the saving. Because the maths is pure and takes its bounds
+as arguments, an axis can be asserted in a test — and that is how the axis labelled
+0, 12.5, 25 was caught. `niceScale` returns a ceiling **and** its step together for
+that reason: rounding them independently produces numbers each defensible alone and
+unreadable side by side.
+
+### A fixture must cover what another fixture claims
+
+A domain states a `serviceCount`; the service catalog had six hand-written services in
+total. The domain header therefore said 24 services over a table listing 2 — two
+renderings of one number, disagreeing. `listServiceVitals` now takes the domain's split
+and its count and returns exactly that many rows, generating the ones nobody wrote by
+hand and dealing the states out to match. A test asserts the table's length equals the
+count and its statuses sum to the header's parts.
+
+The general rule: when two fixtures describe the same quantity, one of them derives from
+the other. Seeding both is how a dashboard ends up telling two stories.
+
+### Fixtures: ask for the window, never slice it
+
+`buildSeries` defaults to 24 points. Callers that need more must pass `points`, because
+slicing a longer window out of a shorter series yields `undefined` entries that pass
+silently through arithmetic and land in whichever bucket a `NaN` comparison falls into.
+That is exactly how the latency heatmap ended up with eight blank columns per row, and
+how the cost chart would have lost days after the 24th of a month. `series.test.ts`
+asserts the requested length is honoured; no fixture slices any more.
+
+**A number a reader sees twice must be pinned once.** The metrics tab plots a series
+and prints its latest value in a tile, while the overview tab prints the catalog's
+figure for the same metric. Left alone those disagree, and a reader switching tabs
+watches P95 move by a hundred milliseconds for no reason — so the newest bucket of each
+series is pinned to the stated reading, and a test compares the two tabs.
+
+### A rollup is not always worst-wins
+
+`rollUpStatus` is right for a service — one dead instance of three is an incident — and
+wrong for an estate. Fifty nodes always have one rebuilding, and a headline reading
+"At risk" whenever a single node is down is a headline nobody reads twice.
+`estateHealth()` judges on proportion instead, with its bands stated beside it. When a
+new screen rolls many things into one verdict, decide which of the two it is.
+
+### The client declares no data
+
+If a value is not a literal constant of the app's own structure, it arrives from the
+server. That includes lists the UI merely _offers_: the domain table's status filters
+and sort options travel in `getShell`, built from the same `src/lib/platform/query.ts`
+arrays the Valibot picklists are built from. A hardcoded option list in a component is
+a second source of truth that drifts until the endpoint rejects something the UI
+offered.
+
+The same rule covers copy that restates a rule: the health-score tooltip is generated
+by `describeHealthThresholds()` from the constants `statusFromScore()` applies, so it
+cannot describe bands the code no longer uses.
+
+### Split queries by how often they change
+
+One remote function per thing that changes on its own schedule, not one per page.
+Typing in the domain table's search box must refetch eight rows, not the incident
+list, the deployment feed and the infrastructure counts as well.
+
+The corollary: do not merge two queries just because one page happens to render both.
+
+### Page state is context, never module state
+
+Per-user, per-render state (selected environment, time range, filters) goes in a
+`.svelte.ts` class published through `setContext`/`getContext`.
+
+Module-level `$state` is a **single instance shared by every concurrent SSR request**
+on the server — one user's environment switch leaks into another user's render. Context
+is created per render, so it cannot. See `src/lib/scope.svelte.ts`.
+
+### Fixtures are deterministic
+
+Stand-in data is seeded (`seededRandom`, `hashSeed`), never `Math.random()`. A sparkline
+that redraws differently on every refresh reports change that did not happen, which
+undermines every number beside it. Deterministic fixtures are also the only kind that
+can be asserted on in a test.
+
+Anything time-relative takes the clock as an argument (`buildOverview(env, range, now)`,
+`formatRelativeTime(iso, now)`) rather than calling `new Date()` internally. Untestable
+otherwise, and it lets the client re-render "2m ago" without refetching.
+
+### Detail routes: 404 is an answer, not a failure
+
+`/services/[slug]` asks the source for a service and gets `null` when there is none.
+That is an ordinary answer to an ordinary question — someone edited a URL — so the page
+renders a not-found panel inside the shell rather than throwing. A thrown error would
+replace the nav and the chrome, making a typo look like an outage.
+
+The sub-tabs are the other half of the same rule. The strip has eight destinations and
+every one of them navigates, so back, middle-click and a pasted link all behave; the
+seven that are not built yet share one `[tab]` route that says so. Its `+page.ts`
+validates the segment against `SERVICE_TABS` and 404s anything else — the one case this
+codebase keeps a `load` for, because a route-level guard has to run before render.
+`overview` is rejected there too, so a tab never has two URLs.
+
+### Do not ship links to routes that do not exist
+
+A row that navigates to a 404 is worse than a row that does not navigate. Render it as
+a row; make it a link when the destination lands.
+
+`resolve()` is typed against the literal route union, so it cannot be applied to an href
+that is only known at runtime — a nav list supplied by the server is the one legitimate
+reason to disable `svelte/no-navigation-without-resolve`, and the override is scoped to
+the two components that need it.
+
+## Data layer: remote functions, not `+page.server.ts`
+
+Remote functions are the default way this app talks to the server. Prefer them over `load` functions and `+server.ts` endpoints. Reach for a `load` function only when SvelteKit genuinely requires it (e.g. route-level redirects/guards before render), and for `+server.ts` only for true external HTTP surfaces (webhooks, OAuth callbacks, RSS/sitemap).
+
+Remote functions live in `*.remote.ts` files, anywhere under `src/` **except** `src/lib/server/`.
+Name them after what they serve, not the page that first needed them: `shell.remote.ts`
+is the chrome every route renders inside, `domains.remote.ts` the domain table and the
+domains page, `overview.remote.ts` only the overview's own composite. A module named
+after one page is the wrong home for a query two pages call. They are called from anywhere in the app but always run on the server, so they may import server-only modules (env vars, DB clients).
+
+Four flavours from `$app/server`:
+
+| Function    | Use for                                                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------------------ |
+| `query`     | Read dynamic data. Also `query.batch` (solves n+1) and `query.live` (streaming/real-time).                         |
+| `form`      | Write data via a `<form>`. **Preferred mutation**, because it degrades gracefully without JS.                      |
+| `command`   | Write data from anywhere (event handlers, etc.). Use only when `form` doesn't fit. Cannot be called during render. |
+| `prerender` | Data that changes at most once per deploy; resolved at build time.                                                 |
+
+### Rules
+
+- **Validate every argument.** Remote functions are exposed HTTP endpoints. Pass a **Valibot** schema as the first argument. `'unchecked'` only with a written justification.
+- **Prefer `form` over `command`** for mutations.
+- **Use single-flight mutations.** After a mutation, refresh affected queries from inside the server handler (`getThing().refresh()` / `.set(result)`), or accept client-requested refreshes via `requested(fn, limit)` with an explicit, non-`Infinity` limit. Never let the client drive an unbounded refresh list.
+- **Never trust `url`, `route`, or `params` from `getRequestEvent()`** inside a remote function for authorization — they describe the calling page, not the endpoint, and are client-controlled. Authorize from cookies/session.
+- **Sensitive form fields get a leading underscore** (`_password`) so they're not echoed back on failed non-JS submissions.
+- Redirects work in `query`, `form`, and `prerender` — not in `command`.
+- Implement `handleValidationError` in `src/hooks.server.ts`; return a generic message, never validation internals.
+
+### Validation
+
+**Valibot** is the validation library. Not Zod — don't introduce a second Standard Schema implementation.
+
+Chosen for bundle size: Valibot is modular and tree-shakes to roughly what you import, which matters because preflight schemas ship to the client. Import it namespaced (`import * as v from 'valibot'`) so the tree-shaking actually works.
+
+Any Standard Schema library would satisfy SvelteKit here — this is a consistency decision, not a technical constraint.
+
+Schemas used as form preflight must live in a shared module or a `<script module>` block. **They cannot be exported from a `.remote.ts` file** — only remote functions may be exported from those.
+
+### Experimental flags
+
+Both flags live in **`vite.config.ts`**, inside the `sveltekit()` plugin options — this SvelteKit version has no `svelte.config.js`. Older guides and the official docs still show `svelte.config.js`; translate, don't create the file.
+
+- `experimental.remoteFunctions: true` — plugin option
+- `compilerOptions.experimental.async: true` — enables `await` in deriveds, template expressions, and component top level
+
+Experimental APIs change between releases. Read the changelog before bumping SvelteKit or Svelte.
+
+Because `experimental.async` is on, `await` is usable directly in components and `{#each await ...}` in markup. Wrap awaiting UI in `<svelte:boundary>` for pending/error states.
+
+### Further reading
+
+Before writing or reviewing any remote function, read these in order:
+
+1. **[docs/devs/svelte/remote-functions-batching-and-performance.md](docs/devs/svelte/remote-functions-batching-and-performance.md)** — this repo's working guide. Covers `query.batch`, the N+1 trap, waterfalls, single-flight mutations, when _not_ to batch, retry anti-patterns, and measurement. Read this first; it encodes the decisions this repo has already made.
+2. **<https://svelte.dev/docs/kit/remote-functions/llms.txt>** — the official, always-current remote functions reference in LLM-readable form. Fetch it when the repo doc doesn't cover the case, when an API signature needs verifying, or when the SvelteKit version has moved. The official docs win any conflict with the repo doc — when they disagree, fix the repo doc.
+
+Remote functions are experimental and the API moves. Never answer a remote-functions question from memory; check one of the two sources above.
+
+## Runtime: Bun
+
+**Bun is the runtime everywhere — local dev included.** Node never executes this project's code, in any environment. This is deliberate: dev and production must agree on the runtime, or Bun-specific server APIs work locally and fail in production (or the reverse).
+
+### Tooling
+
+- `bun install`, `bun run <script>`, `bunx` — never `npm`/`pnpm`/`yarn`/`npx`.
+- `bun.lock` is committed. Don't add other lockfiles.
+
+### Running Vite under Bun
+
+Bun respects a binary's shebang, and Vite's is `#!/usr/bin/env node`, so anything that
+resolves the `vite` bin and runs it hands the dev server to Node. The banner is identical
+either way, which is why this went unnoticed for the whole of the project's life so far.
+
+**Only one form actually works, and it is the one the `dev` script now uses:**
+
+```
+bun --bun node_modules/.bin/vite dev
+```
+
+The bin path is passed to Bun directly. Neither documented alternative survives contact —
+both were measured and both lose it:
+
+| Command                                | Listener |
+| -------------------------------------- | -------- |
+| `bun --bun run dev`                    | `node`   |
+| `bunx --bun vite dev`                  | `node`   |
+| `bun --bun node_modules/.bin/vite dev` | `bun`    |
+
+`run.bun = true` in `bunfig.toml` does not rescue it either. The `--bun` flag applies to
+the command Bun runs, not to a `vite` process that command goes on to spawn.
+
+**Verify rather than assume, and do not trust the banner.** `ps -o comm= -p $(lsof -nP
+-iTCP:5173 -sTCP:LISTEN -t)` names the runtime of the process actually holding the port.
+`process.versions.bun` is the in-process check and is `undefined` under Node.
+
+### Adapter
+
+**`svelte-adapter-bun`**, pinned to `1.0.1`.
+
+This is deliberately _not_ the official `@sveltejs/adapter-bun`. That package exists, but `1.0.0-next.1` declares `peerDependencies: { "@sveltejs/kit": "^3.0.0-next.0" }` — it targets SvelteKit **3**, which is still a prerelease. On SvelteKit 2 it crashes during `adapt()` with `TypeError: undefined is not an object (evaluating 'builder.config.paths.base')`, because the `builder.config` shape differs between majors. Verified here, not assumed.
+
+**Migration trigger:** when SvelteKit 3 goes stable and this project upgrades, switch to `@sveltejs/adapter-bun` — it is maintained by the SvelteKit team and will track API changes that a third-party adapter lags on. Until then `svelte-adapter-bun` is the only working option.
+
+Pin exact versions for both the adapter and SvelteKit — no `^` ranges on the pieces holding this together.
+
+### Bun APIs
+
+Bun-specific server APIs (`Bun.file`, `Bun.serve` internals, `bun:sqlite`, …) are allowed in server-only code — remote functions, `src/lib/server/`, hooks. Keep them out of anything reachable from the browser. Since dev and production share the runtime, a Bun API that works locally works in production; the remaining hazard is only the client bundle.
+
+## UI: Tailwind, shadcn-svelte, Bits UI
+
+Three layers, each with a distinct job. Know which one you are working in.
+
+| Layer             | What it is                                                                                                    | Where it lives           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **Tailwind v4**   | The styling mechanism. Utilities in markup; theme tokens in CSS.                                              | `src/routes/layout.css`  |
+| **shadcn-svelte** | Styled components, **copied into this repo**. Not a dependency — we own and edit the source.                  | `src/lib/components/ui/` |
+| **Bits UI**       | Headless primitives (behavior, focus management, ARIA). A real dependency, pulled in under shadcn components. | `node_modules`           |
+
+Config: `components.json`. Preset **vega** (the classic shadcn/ui look), Lucide icons, Inter.
+
+### Which layer to reach for
+
+Follow the same order as the API selection tiers above:
+
+1. **An existing component in `src/lib/components/ui/`** — use it.
+2. **`bunx shadcn-svelte@latest add <component>`** — check the registry before building anything from scratch. It lands as editable source in this repo.
+3. **Bits UI primitive + Tailwind** — for something the registry doesn't have. Never hand-roll a dropdown, dialog, or combobox: the accessibility and focus-trap work is the hard part and Bits UI has done it.
+4. **Plain markup + Tailwind** — only for genuinely simple, non-interactive things.
+
+### Tailwind v4
+
+Configured **in CSS**, not `tailwind.config.js` — that file does not exist and should not be created. Theme tokens are CSS variables in `src/routes/layout.css` under `:root` / `.dark`.
+
+Use the semantic tokens (`bg-background`, `text-muted-foreground`, `border-border`), not raw palette values like `bg-zinc-100`. The semantic tokens are what make dark mode and a preset swap work; raw colors silently opt out of both.
+
+`prettier-plugin-tailwindcss` sorts class lists — run `bun run format` rather than ordering by hand.
+
+### Editing vendored components
+
+`src/lib/components/ui/` is ours to edit, but `shadcn-svelte add`/`update` overwrites files. Keep local changes small and deliberate, or wrap rather than fork.
+
+ESLint disables `svelte/no-navigation-without-resolve` for that directory only — upstream's `Button` trips it. Every other rule still applies. If a new vendored component trips a different rule, add it to that same scoped override with a comment; don't disable linting for the directory.
+
+### Reference
+
+Both publish LLM-readable docs — use them rather than recalling an API:
+
+- **shadcn-svelte** — <https://www.shadcn-svelte.com/llms.txt> (component list, CLI, `components.json`)
+- **Bits UI** — <https://bits-ui.com/llms.txt> (primitives, props, composition)
+
+The `shadcn-svelte` CLI needs `--preset` for non-interactive `init`; the value is a share-code from their theme builder, not a name. The pre-configured presets are only listable through the interactive prompt.
+
+## Testing
+
+**`bun test` is the test runner.** Not Vitest, not Jest. Native, no config, Jest-compatible API: `import { test, expect } from 'bun:test'`.
+
+Tests target logic, which is where this app's risk lives: remote function handlers, `src/lib/server/` modules, Valibot schemas, pure helpers. Since remote functions hold the data layer, testing them well covers most of what can break.
+
+Test a remote function by extracting its handler body into a plain exported function and testing that directly. A wrapped `query`/`form` needs a request context to invoke, which isn't worth constructing — and the wrapper is SvelteKit's code, not ours.
+
+Note that `bun test` cannot compile `.svelte` files, so component rendering is out of scope. If a component ever genuinely needs a rendering test, raise it then rather than adding a second runner pre-emptively.
+
+### Tests that run the app, not just its logic
+
+`bun test src` is the logic suite: 970 tests (911 pass, 59 skip), a few seconds, nothing
+booted. `bun run test:e2e` builds the app, starts `build/index.js`, and asks it questions
+over HTTP. The two answer different things, and the split is not academic — every rendering
+bug this repo has had passed `check`, `lint` and the full unit suite:
+
+| What shipped                               | What would have caught it |
+| ------------------------------------------ | ------------------------- |
+| `2.1387043477711356 req/s` in a table      | the render sweep          |
+| `41.12903225806452%` in the storage panel  | the render sweep          |
+| All 25 domain pages claiming 404           | the route smoke test      |
+| "Internal domains" twice with no direction | a person looking          |
+
+**`Bun.WebView`, not a browser-automation dependency.** It is in the runtime, so this is
+tier 2 of the API selection order rather than tier 4, and CI needs a Chrome rather than a
+downloaded browser matrix. `navigate`, `evaluate`, `click(selector)` and `screenshot` are
+the whole surface required.
+
+**Wait for the text to stop growing, never for one phrase.** `navigate()` resolves on the
+load event, and this app paints after hydration and a remote call. The first version of
+this suite waited for the app's chrome, which the nav renders immediately — so the sweep
+read an almost-empty body, found nothing wrong, and passed. A broken test that looks
+exactly like a working one. `settle()` polls until the body length is unchanged three times
+running.
+
+**Every configuration, always.** Fixtures answer every question and hold whole numbers, so
+the paths that handle "the source cannot say" never run and nothing is ever printed
+unformatted. Three bugs in one session existed only under real adapters. `e2e` therefore
+runs three stacks and skips the ones whose backends are not listening rather than
+pretending to have covered them: fixtures, `sources.example.json` (the Octopus and
+Coralogix adapters over a fixture cloud), and `sources.local.json` (the Azure adapter over
+floci-az and the Monitor and Cost mocks — the only mode where the infrastructure page is
+drawn from a cloud API, and the only one where a panel legitimately has nothing to draw).
+The Azure mode needs Docker as well as the mocks, so CI skips it today; `bun run db:up`,
+`bun run seed:azure` and `bun run dev:stack` are what turn it on locally.
+
+**Run CI locally before pushing.** `bun run ci:local` runs the same job in the same
+container image — install, check, lint, the unit suite, a build, the mock stack, e2e. It
+exists because `Bun.WebView` uses a different backend on each platform: the system webview
+on macOS, Chrome over CDP on Linux. A suite that only ever ran on a laptop would first meet
+its Linux backend on someone's pull request.
+
+It archives HEAD rather than copying the working tree, so it runs what CI will run and not
+what happens to be uncommitted.
+
+Four things it found on its first run, none of which any test on macOS could have:
+
+- **Chromium will not launch as root** and reports "Chrome process closed the pipe", which
+  reads like a Bun problem and is a sandbox one. `openView()` passes `--no-sandbox` and
+  `--disable-dev-shm-usage` on Linux and leaves `WKWebView` untouched on macOS. Every
+  WebView test failed without it.
+- **The `oven/bun` image ships no `curl`.** A readiness probe using it reported "mocks never
+  started" for a stack that had started fine. Both the script and the workflow use Bun's
+  own `fetch` now, so the two cannot drift.
+- **Colima does not share `/tmp`.** A checkout there mounts as an empty directory and fails
+  with "could not find a package.json file to install from" — a mount problem wearing a
+  repo problem's error message. The checkout goes under `$HOME`.
+- **A 4GB VM cannot hold a Vite build and a Chromium.** `svelte-check` was OOM-killed
+  outright, and the build was killed on one run and survived the next, which is a harness
+  that fails at random. So the bundle is built on the host and carried in — it is
+  platform-independent JavaScript, so nothing is lost — and `check`, `lint` and the unit
+  suite stay on the host, where they prove exactly as much. `--full` runs them inside for
+  anyone with a larger VM; CI has the memory and runs everything.
+
+**Tell Bun where Chrome is; do not hope it finds one.** Bun searches PATH and a list of
+standard locations, and `browser-actions/setup-chrome` installs to neither reliably — so
+discovery makes the suite depend on where a third-party action happened to unpack a
+browser. The workflow joins the two explicitly through `BUN_CHROME_PATH`.
+
+That the variable is load-bearing was measured, not assumed: with Chrome hidden from PATH,
+constructing a WebView fails with "Failed to spawn Chrome", and setting `BUN_CHROME_PATH`
+to the moved binary makes the same code pass. An earlier probe that left Chrome on PATH
+proved nothing — both a real path and a nonsense one succeeded, because discovery found it
+either way.
+
+**Assert on named tokens, not on screenshots.** The sweep looks for four-decimal floats,
+`undefined`, `NaN`, `[object Object]` and `Infinity`. Every one of those has reached a page
+here. Visual diffing was considered and skipped: the fixtures are deterministic enough to
+make it work, but the maintenance cost of noisy diffs outweighs it while text assertions
+still catch what actually breaks.
+
+## Conventions
+
+- Components: `PascalCase.svelte`. Remote modules: `<domain>.remote.ts`. Rune modules: `<name>.svelte.ts`.
+- App components go in `src/lib/components/`; `src/lib/components/ui/` is reserved for shadcn-svelte's vendored output.
+- Component subfolders group by role, not by page: `components/app/` is the shell (sidebar, top bar), `components/overview/` and `components/domains/` are one screen's panels, and anything reused across screens sits at the top of `components/`. `DomainToolbar`, `DomainTable` and `DomainPager` live there because two screens compose them differently — the overview into a narrow summary, the domains page into the full table.
+- Server-only code that is not a remote function goes in `src/lib/server/`, grouped by domain (`server/platform/`).
+- Shared types and pure helpers go in `src/lib/<domain>/` — `types.ts` for the contract, one file per concern beside it.
+- Delete vendored components nothing imports. `shadcn-svelte add` brings them back in one command; unused source is not free.
+
+## Docs
+
+Developer docs live under `docs/devs/<topic>/`. Svelte and SvelteKit notes go in `docs/devs/svelte/`.
+
+`docs/devs/architecture-rules.md` is imported into this file with `@`, so it is loaded
+into context every session — no one has to remember to open it. Everything else is
+linked, not imported, and gets read when the task calls for it. Import sparingly:
+an `@` costs its full length in every session, whether or not the session touches it.
+
+## State
+
+Overview, Domains, Deployments, the Service detail view and Infrastructure built and
+verified, plus the service Metrics tab and the Domain detail view. The domain tab strip is
+6 of 8 built — overview, dependencies, services, deployments, slos, infrastructure — with
+alerts and logs each pending their own spec; `_BUILT_TABS` in
+`src/routes/domains/[slug]/[tab]/+page.ts` is the guard the route-level test asserts against,
+so the two cannot drift. `bun test src` (970 tests, 59 of them skipped), `bun run check`,
+`bun run lint` and `bun run build` all pass, the e2e suites pass against every stack whose
+backends are up (`e2e/harness.ts`'s `ROUTES` covers 22 paths), and the production server
+boots and serves.
+
+What exists:
+
+- `src/lib/platform/` — `types.ts` (the server↔UI contract), `query.ts` (the domain-query
+  vocabulary shared by the schemas and the toolbar), plus `health.ts`, `format.ts`,
+  `geometry.ts` and `pagination.ts`, each with a test file
+- `src/lib/server/platform/` — the `PlatformSource` / `WorkspaceSource` ports, the fixture
+  implementation, the resolver, and one assembler per screen (`snapshot.ts` for the
+  overview, `domains-view.ts`, `deployments-view.ts`, `service-view.ts`,
+  `service-metrics-view.ts`, `domain-view.ts`, `infrastructure-view.ts`,
+  `domain-infrastructure-view.ts`). **Replacing the fixture with real
+  telemetry is a new file plus a resolver entry**; nothing above the ports changes
+- `src/lib/server/platform/service.ts` — the in-process API both transports call
+- `src/routes/shell.remote.ts` — `getShell`, `getSystemStatus`
+- `src/routes/overview.remote.ts` — `getOverview`
+- `src/routes/domains.remote.ts` — `getDomainPage`, `getDomainsView`, `getDomainView`,
+  `getDomainHeader` (the tab strip's shared header/badges read), `getDomainDependencies`,
+  `getDomainServices`, `getDomainDeployments`, `getDomainSlos`, `getDomainInfrastructure` —
+  one query per built tab, by the "split queries by how often they change" rule
+- `src/routes/deployments.remote.ts` — `getDeploymentPage`, `getDeploymentsView`
+- `src/routes/services.remote.ts` — `getServices`, `getServiceView`, `getServiceMetrics`
+  (its own query: the two tabs are never on screen together, and six series is a lot to
+  fetch for a reader looking at the dependency graph)
+- `src/routes/infrastructure.remote.ts` — `getInfrastructureView`, one query because
+  every panel reflects the same estate at the same moment. All remote
+  functions are Valibot-validated against the schemas the JSON API shares, the service
+  slug included: it arrives from a URL anyone can edit
+- `src/routes/api/v1/` — public JSON API, forty-three paths: `domains` (+ `summary`,
+  `owners`, `changes`, `{slug}` and its `vitals`, `dependencies`, `services`,
+  `deployments`, `slo`, and `infrastructure`'s seven — `regions`, `nodes`, `clusters`,
+  `databases`, `utilization`, `storage`, `cost` — the estate's own resources mirrored one
+  for one, narrowed to the domain), `services` (+ `{slug}` and its `health`, `dependencies`,
+  `endpoints`, `metrics`, `slo`, `insights`), `deployments` (+ `summary`), `infrastructure` (+ `regions`,
+  `nodes`, `clusters`, `utilization`, `storage`, `databases`, `queues`, `alerts`,
+  `cost`), `activity`, `insights`, `metrics`, `incidents`, `sources`, `status`.
+  Token-authenticated, frozen DTOs in `src/lib/server/api/v1/dto.ts` with a shape test
+  per resource. `sources` publishes each connection's id, provider, kind and
+  capabilities and **never its settings** — credentials do not leave the server
+- `/api/v1/openapi.json` and `/api` — the generated OpenAPI document and
+  the Scalar reference that renders it
+- `src/hooks.server.ts` — `handleValidationError`: generic message to the client,
+  detail to the log
+- `src/lib/platform/chart.ts` — chart layout maths (lines, bars, stacks, axes,
+  equirectangular projection), and `world.ts` — the coarse land mask the region map
+  draws. Both have test files; the mask's asserts that the cities the regions are named
+  after are on land and the open oceans are not
+- `src/lib/components/` — app shell (`app/`), one folder per screen (`overview/`,
+  `domains/`, `deployments/`, `services/`, `infrastructure/`), the shared `StatTiles`
+  strip, the shared table pieces (`DomainToolbar`, `DomainTable`,
+  `TablePager`), `LineChart` / `BarChart`, the cards, the icon registry and `tone.ts`
+- `src/lib/scope.svelte.ts` — environment / time range / auto-refresh, held in context
+- `src/routes/status/` — the original health-probe slice, kept as the minimal end-to-end reference
+- Placeholder routes for every nav destination, so the sidebar navigates instead of 404ing
+- `.env.example` — the source selection and the production server's `PORT`/`ORIGIN`
+
+**Deliberate deviations from the deployments mock**, both by the "do not ship a dead
+control" rule: the date filter is a preset window select (Any time / Today / Last 7 /
+Last 30) rather than a calendar, because a real filter with no new dependency beats a
+picker that needs one; and the Filters button reports and clears the active filters
+rather than opening a panel of controls that are already on screen. The insight rows
+have no "View report" link, because those reports do not exist yet.
+
+**Where the fixtures deliberately differ from the mocks.** Two figures in the metrics
+mock are not derivable and are computed properly here instead. The error budget reads
+"21m remaining", not "21h 36m": a 99.90% target over 30 days allows 43.2 minutes of
+downtime, and achieving 99.95% spends half of it — no window and no target produce 21
+hours. And "Budget burn" is labelled with the window it actually measures, because the
+mock's percentage and its "last 7 days" caption describe different periods.
+
+**The deferred links have landed.** `/domains/[slug]` exists, so the domain table's rows,
+the service breadcrumb's domain step and the service info card's Domain row are links
+now rather than plain text — which is what "make it a link when the destination lands"
+was waiting for. Per-incident and per-deployment routes are still unbuilt, so the row
+actions menu and those rows stay non-navigating. The domains
+table's column-settings button is likewise inert — the columns a screen shows are still a
+prop, not a preference, and there is nowhere yet to persist one.
+
+**The domain table is width-budgeted.** Eleven columns fit a 1680px viewport beside the
+368px side column with nothing to spare, which is why the widths are explicit and why the
+compact identity mode exists: `identity="compact"` prints `shortName` alone, and that is
+what buys the other ten columns their room. Adding a column means taking the width from
+somewhere — measure it in a browser rather than estimating, because table auto-layout
+makes cells wider than their `w-[…]` hint whenever content demands it.
+
+**Known behaviour:** with an async `<svelte:boundary>`, SSR renders the `pending` snippet and the
+awaited content resolves on the client. Expect the skeletons in view-source rather than the table.
+If a route needs its data present in the initial HTML for SEO or first paint, that route is a case
+for a `load` function.

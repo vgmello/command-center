@@ -1,0 +1,75 @@
+/**
+ * The Octopus and Coralogix mocks, as long-running servers.
+ *
+ * The mocks already existed, but only as functions a test starts on an ephemeral port.
+ * That covers the tests and nothing else: running the app against the real adapters meant
+ * hand-writing a script, which is how it never got done and why every local run has been
+ * on in-process fixtures.
+ *
+ * Fixed ports, because a connections file has to name them. Seeded estates, because the
+ * mocks are deterministic by design and a dashboard whose numbers move on restart reports
+ * change that did not happen.
+ *
+ *   bun run mocks
+ *
+ * Ports and sizes are overridable so a second stack can run beside this one.
+ */
+import { startOctopusMock } from '../src/lib/server/sources/providers/octopus/mock/server';
+import { buildEstate as octopusEstate } from '../src/lib/server/sources/providers/octopus/mock/data';
+import { startCoralogixMock } from '../src/lib/server/sources/providers/coralogix/mock/server';
+import { buildEstate as coralogixEstate } from '../src/lib/server/sources/providers/coralogix/mock/data';
+import { startCostMock } from '../src/lib/server/sources/providers/azure/mock/cost';
+import { startMonitorMock } from '../src/lib/server/sources/providers/azure/mock/monitor';
+
+const now = new Date();
+
+const octopusPort = Number(Bun.env.OCTOPUS_MOCK_PORT ?? 4591);
+const coralogixPort = Number(Bun.env.CORALOGIX_MOCK_PORT ?? 4592);
+// Azure Cost Management, which floci-az does not emulate. The rest of Azure comes from
+// floci-az on 4577, started by `bun run db:up`.
+const costPort = Number(Bun.env.AZURE_COST_MOCK_PORT ?? 4593);
+// Azure Monitor, which floci-az answers with "Unsupported Microsoft.Compute path".
+const monitorPort = Number(Bun.env.AZURE_MONITOR_MOCK_PORT ?? 4594);
+const apiKey = Bun.env.MOCK_API_KEY ?? 'local-dev-key';
+
+/**
+ * Deep enough that the aggregates have something to aggregate.
+ *
+ * 400 deployments is the window the provider pages, and 2,000 points at 60s is a little
+ * over 24 hours — the longest range the store will serve from accumulated samples.
+ */
+const deployments = Number(Bun.env.OCTOPUS_MOCK_DEPLOYMENTS ?? 400);
+const points = Number(Bun.env.CORALOGIX_MOCK_POINTS ?? 2000);
+
+const octopus = startOctopusMock({
+	estate: octopusEstate({ now, count: deployments }),
+	apiKey,
+	port: octopusPort
+});
+
+const coralogix = startCoralogixMock({
+	estate: coralogixEstate({ now, points, stepSeconds: 60 }),
+	apiKey,
+	port: coralogixPort
+});
+
+const cost = startCostMock({ apiKey, port: costPort, now });
+const monitor = startMonitorMock({ apiKey, port: monitorPort });
+
+console.log(`Octopus mock    ${octopus.url}   (${deployments} deployments)`);
+console.log(`Coralogix mock  ${coralogix.url}   (${points} points at 60s)`);
+console.log(`Azure cost mock ${cost.url}   (month to date, ${now.getUTCDate()} days)`);
+console.log(`Azure metrics   ${monitor.url}   (Monitor, seeded per resource)`);
+console.log(`API key         ${apiKey}`);
+console.log('\nPoint SOURCES_CONFIG at a connections file naming these. Ctrl-C to stop.');
+
+// Bun keeps the process alive for the listening servers; this only makes the exit tidy.
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+	process.on(signal, () => {
+		octopus.stop();
+		coralogix.stop();
+		cost.stop();
+		monitor.stop();
+		process.exit(0);
+	});
+}
