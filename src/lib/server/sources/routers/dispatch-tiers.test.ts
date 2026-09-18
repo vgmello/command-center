@@ -29,6 +29,9 @@ const ROUTERS = ['deployment', 'service', 'platform', 'infrastructure'] as const
 
 type Helper = 'fanOut' | 'fanOutSingle' | 'fanOutSeries' | 'routeOne';
 
+/** The estate fan-out an owner-scoped call takes when no owner is given. */
+type ScopedMode = 'list' | 'single';
+
 /** Which helpers a tier may legitimately be read through. */
 const ALLOWED: Record<(typeof CAPABILITY_TIER)[Capability], Helper[]> = {
 	// Both go through the cache, which persists a `reference` answer as a document.
@@ -41,21 +44,30 @@ const ALLOWED: Record<(typeof CAPABILITY_TIER)[Capability], Helper[]> = {
 };
 
 /**
- * Every `(capability, helper)` pair the routers contain.
+ * Every `(capability, helper)` pair the routers contain, plus the owner-scoped calls on
+ * their own so a test can prove each one was parsed.
  *
  * The capability may sit on the same line as the call or on its own, because the generic
  * form (`fanOut<ServiceReading>(`) wraps — so the pattern spans a little whitespace rather
  * than assuming one line.
  */
-async function readDispatches(): Promise<Map<Capability, Set<Helper>>> {
+async function readDispatches(): Promise<{
+	dispatches: Map<Capability, Set<Helper>>;
+	scopedCalls: number;
+	scopedModes: Map<Capability, ScopedMode>;
+}> {
 	const found = new Map<Capability, Set<Helper>>();
+	const scopedModes = new Map<Capability, ScopedMode>();
+	let scopedCalls = 0;
 	const pattern = /\b(fanOutSeries|fanOutSingle|fanOut)\b\s*(?:<[^>]*>)?\s*\(\s*deps,\s*'([^']+)'/g;
-	// The owner-scoped path never spells `routeOne(deps, 'cap'` literally — it goes
-	// through `scoped(deps, catalog, 'cap', …)`, which resolves a binding and calls
-	// `routeOne` itself. So this second pattern records the helper the first one
-	// cannot see, the way `scoped`'s estate branch still spells `fanOut`/`fanOutSingle`
-	// literally for the first pattern to find.
-	const scopedPattern = /\bscoped\s*\(\s*deps,\s*catalog,\s*'([^']+)'/g;
+	// The owner-scoped path never spells a helper per capability. It goes through
+	// `scoped(deps, catalog, 'cap', 'list' | 'single', …)`, which calls `routeOne` for an
+	// owner and `fanOut` or `fanOutSingle` for the estate, by the mode argument — so this
+	// pattern captures the mode too and records both helpers the first one cannot see.
+	// The mode sits right after the capability so the regex stays this simple; a `scoped(`
+	// call that does not match here is counted below and fails the parsed-mode test.
+	const scopedPattern = /\bscoped\s*\(\s*deps,\s*catalog,\s*'([^']+)',\s*'(list|single)'/g;
+	const scopedCallPattern = /\bscoped\s*\(\s*deps,\s*catalog,/g;
 
 	for (const router of ROUTERS) {
 		const source = await Bun.file(new URL(`./${router}.ts`, import.meta.url).pathname).text();
@@ -67,17 +79,26 @@ async function readDispatches(): Promise<Map<Capability, Set<Helper>>> {
 			found.set(capability, (found.get(capability) ?? new Set()).add(helper));
 		}
 
+		scopedCalls += [...source.matchAll(scopedCallPattern)].length;
+
 		for (const match of source.matchAll(scopedPattern)) {
 			const capability = match[1] as Capability;
+			const mode = match[2] as ScopedMode;
 
-			found.set(capability, (found.get(capability) ?? new Set()).add('routeOne'));
+			scopedModes.set(capability, mode);
+			found.set(
+				capability,
+				(found.get(capability) ?? new Set())
+					.add('routeOne')
+					.add(mode === 'single' ? 'fanOutSingle' : 'fanOut')
+			);
 		}
 	}
 
-	return found;
+	return { dispatches: found, scopedCalls, scopedModes };
 }
 
-const dispatches = await readDispatches();
+const { dispatches, scopedCalls, scopedModes } = await readDispatches();
 
 describe('how each capability is actually read', () => {
 	test('the routers were parsed, so an empty result cannot pass as agreement', () => {
@@ -103,6 +124,27 @@ describe('how each capability is actually read', () => {
 			}
 		});
 	}
+
+	test('every owner-scoped call names its estate fan-out, and the mode was parsed', () => {
+		// `scoped()` picks `fanOut` or `fanOutSingle` from its mode argument rather than
+		// spelling the helper per capability, so the helper only reaches the tier check
+		// above if the pattern read the mode. A `scoped(` call whose mode is not where the
+		// pattern looks would silently record `routeOne` alone — green, and blind.
+		expect(scopedCalls).toBeGreaterThan(0);
+		expect(scopedModes.size, 'a scoped() call was found whose mode was not parsed').toBe(
+			scopedCalls
+		);
+
+		for (const [capability, mode] of scopedModes) {
+			const fanOuts = [...dispatches.get(capability)!].filter(
+				(one) => one === 'fanOut' || one === 'fanOutSingle'
+			);
+
+			expect(`${capability}: ${fanOuts.join(',')}`).toBe(
+				`${capability}: ${mode === 'single' ? 'fanOutSingle' : 'fanOut'}`
+			);
+		}
+	});
 
 	test('nothing is read through two different strategies', () => {
 		// A capability read one way on one screen and another way elsewhere would be

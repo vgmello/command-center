@@ -5,8 +5,10 @@ import {
 	listClusters,
 	listDatabases,
 	listRegions,
+	readCost,
 	readNodeCounts,
-	readStorage
+	readStorage,
+	readUtilization
 } from './infrastructure-fixtures';
 
 describe('owner-scoped fixtures', () => {
@@ -33,13 +35,54 @@ describe('owner-scoped fixtures', () => {
 				.sort()
 		).toEqual(['prod-eu-west-1-a', 'prod-eu-west-1-b']);
 	});
-	test("an owner's node count is derived from its regions, and the owners sum to the estate total", () => {
+	test("an owner's node split is its regions' split, and the owners sum to the estate field by field", () => {
 		const mine = readNodeCounts('payment-domain');
 		expect(total(mine)).toBe(12); // eu-west-1 nodeCount
-		expect(mine.healthy).toBe(Math.floor((12 * 96) / 100)); // region score 96 → 11
-		expect(mine.down).toBe(0);
-		const owned = boundDomains('fixture').map((s) => total(readNodeCounts(s)));
-		expect(owned.reduce((t, n) => t + n, 0)).toBe(48); // the five regions' nodeCounts = the estate total
+		const owned = boundDomains('fixture').map((s) => readNodeCounts(s));
+		const summed = owned.reduce(
+			(acc, c) => ({
+				healthy: acc.healthy + c.healthy,
+				warning: acc.warning + c.warning,
+				down: acc.down + c.down
+			}),
+			{ healthy: 0, warning: 0, down: 0 }
+		);
+		// The estate's two down nodes must be findable on some domain's tab — a per-owner
+		// read that could never say `down` was the bug.
+		expect(summed).toEqual(readNodeCounts());
+		expect(owned.some((c) => c.down > 0)).toBe(true);
+	});
+	test("a region's nodeCount is the sum of its split", () => {
+		for (const region of listRegions()) {
+			const [owner] = boundDomains('fixture').filter((s) =>
+				listRegions(s).some((r) => r.id === region.id)
+			);
+			const split = readNodeCounts(owner);
+			// Every fixture region is owned by exactly one domain, and no domain owns two
+			// regions, so the owner's split is the region's.
+			expect(total(split)).toBe(region.nodeCount);
+		}
+		expect(listRegions().reduce((t, r) => t + r.nodeCount, 0)).toBe(48);
+	});
+	test("an owner's cost share follows its nodes, and the owners' spend sums to the estate", () => {
+		const now = new Date('2026-09-18T12:00:00Z');
+		const estate = readCost(now);
+		const owned = boundDomains('fixture').map((s) => readCost(now, s).total);
+		expect(owned.reduce((t, n) => t + n, 0)).toBeCloseTo(estate.total, 6);
+	});
+	test('utilisation: an owner with no nodes has no machines to read, so it gets no series', () => {
+		const now = new Date('2026-09-18T12:00:00Z');
+		// analytics-domain is bound (analytics-db) but owns no region, so its strip says
+		// Nodes 0 — four live series beside that would describe machines the page denies.
+		expect(total(readNodeCounts('analytics-domain'))).toBe(0);
+		expect(readUtilization(now, 'analytics-domain')).toEqual([]);
+	});
+	test('utilisation: an owner with nodes reads the same four panels as the estate', () => {
+		const now = new Date('2026-09-18T12:00:00Z');
+		expect(total(readNodeCounts('payment-domain'))).toBeGreaterThan(0);
+		expect(readUtilization(now, 'payment-domain').map((r) => r.id)).toEqual(
+			readUtilization(now).map((r) => r.id)
+		);
 	});
 	test('databases: analytics-domain owns analytics-db only', () => {
 		expect(listDatabases(100, 'analytics-domain').map((d) => d.id)).toEqual(['analytics-db']);

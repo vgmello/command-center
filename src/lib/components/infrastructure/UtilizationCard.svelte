@@ -80,6 +80,17 @@
 					/>
 				</div>
 			</div>
+		{:else}
+			<!--
+				The third state. A gap is PanelGap's above; this is the source answering with
+				nothing to measure — a bound domain with no machines — and it must not read
+				like a failure. Guarded on `ok` so the two sentences never share the card.
+			-->
+			{#if resources.status === 'ok'}
+				<p class="py-6 text-center text-[12px] text-muted-foreground sm:col-span-2 xl:col-span-4">
+					No machines are reporting utilisation.
+				</p>
+			{/if}
 		{/each}
 	</div>
 </SectionCard>

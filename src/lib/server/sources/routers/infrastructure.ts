@@ -26,18 +26,56 @@ async function ownerBinding(
 	return { kind: 'cloud', connectionId: declared.connectionId, externalId: declared.externalId };
 }
 
-/** Estate → the fan-out as before; owner → resolve and route to one connection, cached per owner. */
+/**
+ * Estate → the fan-out as before; owner → resolve and route to one connection, cached per owner.
+ *
+ * One `call` serves both branches. `mode` says which fan-out the estate takes — `'list'`
+ * for a port method returning rows, `'single'` for one returning a value — so the provider
+ * is spelled once per method and the owner path cannot drift from the estate path.
+ */
 async function scoped<T>(
 	deps: RouterDeps,
 	catalog: CatalogSource,
 	capability: Capability,
+	mode: 'list',
 	scope: PlatformScope,
 	args: string,
 	owner: string | undefined,
-	call: (client: unknown, ctx: SourceContext) => Promise<T>,
-	estate: () => Promise<T>
+	call: (client: unknown, ctx: SourceContext) => Promise<T[]>
+): Promise<T[]>;
+async function scoped<T>(
+	deps: RouterDeps,
+	catalog: CatalogSource,
+	capability: Capability,
+	mode: 'single',
+	scope: PlatformScope,
+	args: string,
+	owner: string | undefined,
+	call: (client: unknown, ctx: SourceContext) => Promise<T>
+): Promise<T>;
+async function scoped<T>(
+	deps: RouterDeps,
+	catalog: CatalogSource,
+	capability: Capability,
+	mode: 'list' | 'single',
+	scope: PlatformScope,
+	args: string,
+	owner: string | undefined,
+	call: (client: unknown, ctx: SourceContext) => Promise<T>
 ): Promise<T> {
-	if (owner === undefined) return estate();
+	if (owner === undefined) {
+		// The overloads above guarantee `call` returns rows in `'list'` mode; the
+		// implementation signature cannot express that, hence the one cast.
+		return mode === 'single'
+			? fanOutSingle(deps, capability, scope, args, call)
+			: ((await fanOut(
+					deps,
+					capability,
+					scope,
+					args,
+					call as (client: unknown, ctx: SourceContext) => Promise<unknown[]>
+				)) as T);
+	}
 	if (capability === 'cloud.queues' || capability === 'cloud.alerts') {
 		// No provider filters queues or alerts by owner yet; the alerts spec that lands
 		// the domain Alerts tab is where this lifts. Accepting the owner and returning the
@@ -75,33 +113,13 @@ export function createInfrastructureRouter(
 		id: 'routed-infrastructure',
 
 		listRegions: (scope, owner) =>
-			scoped(
-				deps,
-				catalog,
-				'cloud.regions',
-				scope,
-				'',
-				owner,
-				(client, ctx) => (client as CloudProvider).listRegions!(ctx),
-				() =>
-					fanOut(deps, 'cloud.regions', scope, '', (client, ctx) =>
-						(client as CloudProvider).listRegions!(ctx)
-					)
+			scoped(deps, catalog, 'cloud.regions', 'list', scope, '', owner, (client, ctx) =>
+				(client as CloudProvider).listRegions!(ctx)
 			),
 
 		readNodeCounts: (scope, owner) =>
-			scoped(
-				deps,
-				catalog,
-				'cloud.nodes',
-				scope,
-				'',
-				owner,
-				(client, ctx) => (client as CloudProvider).readNodeCounts!(ctx),
-				() =>
-					fanOutSingle(deps, 'cloud.nodes', scope, '', (client, ctx) =>
-						(client as CloudProvider).readNodeCounts!(ctx)
-					)
+			scoped(deps, catalog, 'cloud.nodes', 'single', scope, '', owner, (client, ctx) =>
+				(client as CloudProvider).readNodeCounts!(ctx)
 			),
 
 		listClusters: (scope, limit, owner) =>
@@ -109,44 +127,21 @@ export function createInfrastructureRouter(
 				deps,
 				catalog,
 				'cloud.clusters',
+				'list',
 				scope,
 				`limit=${limit}`,
 				owner,
-				(client, ctx) => (client as CloudProvider).listClusters!(ctx, limit),
-				() =>
-					fanOut(deps, 'cloud.clusters', scope, `limit=${limit}`, (client, ctx) =>
-						(client as CloudProvider).listClusters!(ctx, limit)
-					)
+				(client, ctx) => (client as CloudProvider).listClusters!(ctx, limit)
 			),
 
 		readUtilization: (scope, owner) =>
-			scoped(
-				deps,
-				catalog,
-				'cloud.utilization',
-				scope,
-				'',
-				owner,
-				(client, ctx) => (client as CloudProvider).readUtilization!(ctx),
-				() =>
-					fanOut(deps, 'cloud.utilization', scope, '', (client, ctx) =>
-						(client as CloudProvider).readUtilization!(ctx)
-					)
+			scoped(deps, catalog, 'cloud.utilization', 'list', scope, '', owner, (client, ctx) =>
+				(client as CloudProvider).readUtilization!(ctx)
 			),
 
 		readStorage: (scope, owner) =>
-			scoped(
-				deps,
-				catalog,
-				'cloud.storage',
-				scope,
-				'',
-				owner,
-				(client, ctx) => (client as CloudProvider).readStorage!(ctx),
-				() =>
-					fanOutSingle(deps, 'cloud.storage', scope, '', (client, ctx) =>
-						(client as CloudProvider).readStorage!(ctx)
-					)
+			scoped(deps, catalog, 'cloud.storage', 'single', scope, '', owner, (client, ctx) =>
+				(client as CloudProvider).readStorage!(ctx)
 			),
 
 		listDatabases: (scope, limit, owner) =>
@@ -154,59 +149,26 @@ export function createInfrastructureRouter(
 				deps,
 				catalog,
 				'cloud.databases',
+				'list',
 				scope,
 				`limit=${limit}`,
 				owner,
-				(client, ctx) => (client as CloudProvider).listDatabases!(ctx, limit),
-				() =>
-					fanOut(deps, 'cloud.databases', scope, `limit=${limit}`, (client, ctx) =>
-						(client as CloudProvider).listDatabases!(ctx, limit)
-					)
+				(client, ctx) => (client as CloudProvider).listDatabases!(ctx, limit)
 			),
 
 		listQueues: (scope, limit, owner) =>
-			scoped(
-				deps,
-				catalog,
-				'cloud.queues',
-				scope,
-				`limit=${limit}`,
-				owner,
-				(client, ctx) => (client as CloudProvider).listQueues!(ctx, limit),
-				() =>
-					fanOut(deps, 'cloud.queues', scope, `limit=${limit}`, (client, ctx) =>
-						(client as CloudProvider).listQueues!(ctx, limit)
-					)
+			scoped(deps, catalog, 'cloud.queues', 'list', scope, `limit=${limit}`, owner, (client, ctx) =>
+				(client as CloudProvider).listQueues!(ctx, limit)
 			),
 
 		listAlerts: (scope, limit, owner) =>
-			scoped(
-				deps,
-				catalog,
-				'cloud.alerts',
-				scope,
-				`limit=${limit}`,
-				owner,
-				(client, ctx) => (client as CloudProvider).listAlerts!(ctx, limit),
-				() =>
-					fanOut(deps, 'cloud.alerts', scope, `limit=${limit}`, (client, ctx) =>
-						(client as CloudProvider).listAlerts!(ctx, limit)
-					)
+			scoped(deps, catalog, 'cloud.alerts', 'list', scope, `limit=${limit}`, owner, (client, ctx) =>
+				(client as CloudProvider).listAlerts!(ctx, limit)
 			),
 
 		readCost: (scope, owner) =>
-			scoped(
-				deps,
-				catalog,
-				'cloud.cost',
-				scope,
-				'',
-				owner,
-				(client, ctx) => (client as CloudProvider).readCost!(ctx),
-				() =>
-					fanOutSingle(deps, 'cloud.cost', scope, '', (client, ctx) =>
-						(client as CloudProvider).readCost!(ctx)
-					)
+			scoped(deps, catalog, 'cloud.cost', 'single', scope, '', owner, (client, ctx) =>
+				(client as CloudProvider).readCost!(ctx)
 			),
 
 		async listGroups(scope): Promise<InfrastructureGroup[]> {

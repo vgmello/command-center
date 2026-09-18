@@ -28,7 +28,7 @@ describe('the domain infrastructure tab', () => {
 				.sort()
 		).toEqual(['prod-eu-west-1-a', 'prod-eu-west-1-b']);
 		const summary = ok(snap.summary);
-		expect(summary.nodes).toEqual({ healthy: 11, warning: 1, down: 0 }); // floor(12·96/100) = 11
+		expect(summary.nodes).toEqual({ healthy: 11, warning: 1, down: 0 }); // eu-west-1's stated split in REGION_ROWS
 		expect(summary.clusters).toEqual({ count: 2, atLimit: false });
 		expect(summary.databases).toEqual({ count: 1, atLimit: false }); // payment-db
 		expect(summary.storageBytes).toBeGreaterThan(0);

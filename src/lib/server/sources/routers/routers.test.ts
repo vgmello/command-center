@@ -379,6 +379,68 @@ describe('routeOne', () => {
 		).rejects.toMatchObject({ reason: 'ambiguous-connection' });
 	});
 
+	test("a named binding is cached for its own connection's TTL, not the first connection's", async () => {
+		// Same two-cloud registry as the ambiguous-connection test above, except the second
+		// provider overrides the `cloud.nodes` TTL to one second. A binding that names it
+		// must expire on that second, and a binding naming the first cloud must not — the
+		// bug was `ttlFor` reading the first supporting connection's TTL for both.
+		const cloudProvider = FIXTURE_PROVIDERS.find((p) => p.id === 'fixture-cloud')!;
+		const secondProvider = {
+			...cloudProvider,
+			id: 'fixture-cloud-2',
+			synthetic: false,
+			ttl: { 'cloud.nodes': 1 }
+		} as ProviderDefinition<unknown>;
+
+		const registry = new SourceRegistry();
+		for (const p of FIXTURE_PROVIDERS) {
+			registry.register(p.id === 'fixture-cloud' ? { ...p, synthetic: false } : p);
+		}
+		registry.register(secondProvider);
+		registry.load(
+			{
+				connections: [
+					...FIXTURE_CONNECTIONS.connections,
+					{
+						...FIXTURE_CONNECTIONS.connections.find(
+							(c: { provider: string }) => c.provider === 'fixture-cloud'
+						),
+						id: 'cloud-2',
+						provider: 'fixture-cloud-2'
+					}
+				]
+			},
+			{}
+		);
+
+		let now = 1_700_000_000_000;
+		const cache = new SourceCache({ now: () => now });
+		const deps = { registry, dispatcher: createDispatcher(registry), cache };
+
+		const calls = { first: 0, second: 0 };
+		const first = { ...binding, connectionId: 'fixture-cloud' };
+		const second = { ...binding, connectionId: 'cloud-2' };
+		const countFirst = async () => ++calls.first;
+		const countSecond = async () => ++calls.second;
+
+		await routeOne(deps, 'cloud.nodes', ownerScope, first, 'owner=payment-domain', countFirst);
+		await routeOne(deps, 'cloud.nodes', ownerScope, second, 'owner=payment-domain', countSecond);
+		expect(calls).toEqual({ first: 1, second: 1 });
+
+		// Inside both TTLs: neither re-calls.
+		now += 500;
+		await routeOne(deps, 'cloud.nodes', ownerScope, first, 'owner=payment-domain', countFirst);
+		await routeOne(deps, 'cloud.nodes', ownerScope, second, 'owner=payment-domain', countSecond);
+		expect(calls).toEqual({ first: 1, second: 1 });
+
+		// Past the second cloud's one-second TTL, well inside the first's sixty: only the
+		// binding naming the second connection goes back upstream.
+		now += 1_000;
+		await routeOne(deps, 'cloud.nodes', ownerScope, first, 'owner=payment-domain', countFirst);
+		await routeOne(deps, 'cloud.nodes', ownerScope, second, 'owner=payment-domain', countSecond);
+		expect(calls).toEqual({ first: 1, second: 2 });
+	});
+
 	test('a second read inside TTL issues no upstream call, and owners/environments key separately', async () => {
 		const deps = depsWith(FIXTURE_CONNECTIONS);
 		let calls = 0;

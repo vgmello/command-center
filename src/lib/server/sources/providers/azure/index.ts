@@ -4,7 +4,7 @@ import { defineProvider } from '../../provider';
 import type { CloudProvider } from '../../contracts';
 import type { LinkView, SourceBinding, SourceContext } from '../../provider';
 import { AzureClient } from './client';
-import { ownsResource } from '$lib/platform/ownership';
+import { OWNER_TAG_KEY, ownsResource } from '$lib/platform/ownership';
 import {
 	clusterIsReady,
 	costFrom,
@@ -88,10 +88,11 @@ export const azureSettings = v.object({
 	/**
 	 * The tag key a resource's domain owner is read from.
 	 *
-	 * `'domain'` everywhere this app runs, and a setting rather than a constant only
-	 * because a real subscription's tagging convention is not this app's to dictate.
+	 * Defaults to the app's own `OWNER_TAG_KEY` — the key the seed tags resources under —
+	 * so the two cannot drift apart. A setting rather than a constant only because a real
+	 * subscription's tagging convention is not this app's to dictate.
 	 */
-	ownerTagKey: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(128)), 'domain')
+	ownerTagKey: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(128)), OWNER_TAG_KEY)
 });
 
 export type AzureSettings = v.InferOutput<typeof azureSettings>;
@@ -165,39 +166,39 @@ export const azureProvider = defineProvider<CloudProvider>({
 		});
 
 		/**
-		 * Every virtual machine in the subscription, fetched once per read — and, keyed by
-		 * owner, the same estate narrowed to one domain's tag.
+		 * Every virtual machine in the subscription, fetched once per read.
 		 *
-		 * The estate window (key `''`) is what both aggregate capabilities want — one counts
-		 * power states and the other groups by location — so it is memoised for a few
-		 * seconds the way the Octopus provider's is, rather than paging the estate twice a
-		 * page. An owner's window derives from that same estate window rather than replacing
-		 * or narrowing it in place: a domain read must not evict the estate's own cache entry,
-		 * because the very next aggregate read would otherwise refetch the whole subscription.
-		 * Each owner key gets its own memoised entry under the same 30s TTL, so a tab a reader
-		 * revisits does not refilter a settled estate on every render.
+		 * The estate window is what both aggregate capabilities want — one counts power
+		 * states and the other groups by location — so it is memoised for a few seconds the
+		 * way the Octopus provider's is, rather than paging the estate twice a page.
+		 *
+		 * An owner's rows are a filter over that same window, and deliberately not a second
+		 * cache. A per-owner memo stamped with its own clock would let a domain tab lag the
+		 * estate page by up to twice the TTL — built at second 29 from a window fetched at
+		 * second 0, still served at second 59 after the estate refetched at 31 — and it would
+		 * copy a rejected estate promise into every owner entry for the full TTL. Filtering a
+		 * few hundred rows in memory costs nothing beside the request the estate memo already
+		 * saves, so the domain and the estate read the same window by construction.
 		 */
-		const windows = new Map<string, { at: number; rows: Promise<ArmVirtualMachine[]> }>();
+		let estate: { at: number; rows: Promise<ArmVirtualMachine[]> } | undefined;
 
 		function loadMachines(owner?: string): Promise<ArmVirtualMachine[]> {
-			const key = owner ?? '';
 			const now = Date.now();
-			const cached = windows.get(key);
 
-			if (!cached || now - cached.at > 30_000) {
-				const rows = owner
-					? loadMachines().then((estate) =>
-							estate.filter((machine) => ownsResource(machine.tags, settings.ownerTagKey, owner))
-						)
-					: client.collect<ArmVirtualMachine>(
-							`${client.scopePath}/providers/Microsoft.Compute/virtualMachines`,
-							{ limit: settings.nodeLimit, params: { 'api-version': VM_API } }
-						);
-
-				windows.set(key, { at: now, rows });
+			if (!estate || now - estate.at > 30_000) {
+				estate = {
+					at: now,
+					rows: client.collect<ArmVirtualMachine>(
+						`${client.scopePath}/providers/Microsoft.Compute/virtualMachines`,
+						{ limit: settings.nodeLimit, params: { 'api-version': VM_API } }
+					)
+				};
 			}
 
-			return windows.get(key)!.rows;
+			if (!owner) return estate.rows;
+			return estate.rows.then((rows) =>
+				rows.filter((machine) => ownsResource(machine.tags, settings.ownerTagKey, owner))
+			);
 		}
 
 		/** A collection already fetched, narrowed to `ctx.binding`'s owner when one is asking. */

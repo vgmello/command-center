@@ -1,4 +1,4 @@
-import { boundDomains } from '$lib/platform/ownership';
+import { OWNER_TAG_KEY, boundDomains, sameTagName } from '$lib/platform/ownership';
 import { buildSeries } from '../../../../platform/series';
 
 /**
@@ -101,7 +101,7 @@ const COLUMNS = [
 
 /** The shape of the one clause the adapter (Task 7) sends: a domain tag `In` some values. */
 interface CostQueryBody {
-	dataset?: { filter?: { tags?: { values?: string[] } } };
+	dataset?: { filter?: { tags?: { name?: string; operator?: string; values?: string[] } } };
 }
 
 /** The request handler, so a test can serve it without opening a port. */
@@ -146,8 +146,30 @@ export function costMockHandler(
 			);
 		}
 
-		const wanted = body.dataset?.filter?.tags?.values;
-		const rows = wanted ? estate.rows.filter((row) => wanted.includes(row[4])) : estate.rows;
+		// The whole clause is checked, not just `values`: a mock that narrowed on the values
+		// alone would still answer an adapter that sent the wrong tag key or the wrong
+		// operator, and the seam test would pass against a request the real API rejects.
+		const clause = body.dataset?.filter?.tags;
+
+		if (clause && clause.operator !== 'In') {
+			return Response.json(
+				{
+					error: {
+						code: 'BadRequest',
+						message: `Unsupported tag filter operator '${clause.operator}'. Supported: In.`
+					}
+				},
+				{ status: 400 }
+			);
+		}
+
+		// Tag names are case-insensitive, as in ARM; a tag nobody carries matches no rows.
+		const wanted = clause?.values ?? [];
+		const rows = !clause
+			? estate.rows
+			: !sameTagName(clause.name, OWNER_TAG_KEY)
+				? []
+				: estate.rows.filter((row) => wanted.includes(row[4]));
 
 		// Real Cost Management groups by (day, service); the estate's rows carry a domain too,
 		// so a tag filter must re-aggregate back down rather than emit duplicate (day, service)

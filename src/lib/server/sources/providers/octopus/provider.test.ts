@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, setSystemTime, test } from 'bun:test';
 import { octopusProvider } from './index';
 import { buildEstate } from './mock/data';
 import { startOctopusMock } from './mock/server';
@@ -30,6 +30,11 @@ const ctx = {
 
 beforeAll(() => {
 	mock = startOctopusMock({ estate, apiKey: KEY });
+	// The estate is seeded backwards from NOW, but the provider takes its trend windows
+	// from the real clock (`trendWindow` reads `new Date()`). Left unpinned, the fourteen-day
+	// daily window drifted past every seeded run on 2026-09-18 and the trend tests went
+	// red with no code change. Pin the runtime clock to the fixture clock for this file.
+	setSystemTime(NOW);
 	client = octopusProvider.connect({
 		baseUrl: mock.url,
 		apiKey: KEY,
@@ -40,6 +45,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
+	setSystemTime();
 	mock.stop();
 });
 

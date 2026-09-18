@@ -43,6 +43,21 @@ function ttlFor(deps: RouterDeps, capability: Capability): number {
 }
 
 /**
+ * How long one named connection's answer keeps.
+ *
+ * `routeOne` has already resolved which connection answers, so it asks that one. `ttlFor`
+ * would ask the first supporting connection instead — the right number for a fan-out, which
+ * caches all of them as one entry, and the wrong one for a binding that names the second of
+ * two clouds: its answer would be cached for the first cloud's TTL.
+ */
+function ttlOf(deps: RouterDeps, connectionId: string, capability: Capability): number {
+	return (
+		deps.registry.connection(connectionId)?.definition.ttl?.[capability] ??
+		DEFAULT_TTL_SECONDS[capability]
+	);
+}
+
+/**
  * The cache key's argument half, scope included.
  *
  * A capability's answer depends on which environment and which window were asked about,
@@ -176,7 +191,7 @@ export async function routeOne<T>(
 			connectionId: resolved.connectionId,
 			capability,
 			args: scopedArgs(scope, args),
-			ttlSeconds: ttlFor(deps, capability)
+			ttlSeconds: ttlOf(deps, resolved.connectionId, capability)
 		},
 		async () => (await deps.dispatcher.one<T>({ capability, scope, binding: resolved, call })).data
 	);

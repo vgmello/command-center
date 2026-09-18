@@ -122,8 +122,9 @@ for (const [location, group, healthy, warning, down] of REGIONS) {
 		// Tagged by its group: the truncated account name is deliberately not in the
 		// ownership table, so the region's owner is the storage account's too. floci-az
 		// drops `tags` on this one type — PUT and PATCH both come back without them, while
-		// every other type keeps them — so locally a domain's storage cell reads as a gap
-		// rather than a number. Real ARM stores them; the seed is written for real ARM.
+		// every other type keeps them — so locally `owned()` finds no account and a domain's
+		// storage cell reads 0 B (a measurement, not a gap) rather than the real figure.
+		// Real ARM stores them; the seed is written for real ARM.
 		tagged({ location, sku: { name: 'Standard_LRS' }, kind: 'StorageV2' }, group),
 		'2023-01-01'
 	);

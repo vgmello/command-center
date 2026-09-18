@@ -250,10 +250,12 @@ catalog's empty `connectionId` (`registry.connection('')` throws), so `routeOne`
 (`routers/shared.ts`) resolves first — exactly one connection supporting the capability →
 use it, none → `no-connection` (no connection of the kind) or `no-capability` (the kind
 exists, nobody declares it), more than one → the new `GapReason` `'ambiguous-connection'` —
-then caches the result under `scopedArgs(scope, 'owner=<slug>')`, the same key shape every
-fan-out already uses. Domain infrastructure reads are the first callers of `dispatcher.one()`;
-the estate's own reads still fan out across every connection of a kind, by design — one
-domain has one binding, an estate has however many connections are configured. One function,
+then caches the result under `scopedArgs(scope, args)` with `owner=<slug>` appended to the
+read's own args (`limit=<n>&owner=<slug>` for the list reads, `owner=<slug>` alone for the
+rest), the same key shape every fan-out already uses. Domain infrastructure reads are the
+first callers of `dispatcher.one()`; the estate's own reads still fan out across every
+connection of a kind, by design — one domain has one binding, an estate has however many
+connections are configured. One function,
 `gapSentence`, is now the only place a gap becomes a sentence — `PanelGap.svelte` and the 501
 `message` both call it, so `'no-binding'` (key-agnostic, since `ownerTagKey` is a provider
 setting a sentence must not name) reads the same on the page and on the wire.
@@ -266,8 +268,11 @@ and checking `tags[ownerTagKey]` in memory. `owned()` runs after `collect(limit)
 three list methods, so a domain inside a subscription larger than `limit` undercounts;
 `docs/todo/azure-owner-server-side-narrowing.md` names the fix (`/resources?$filter=…` or
 Resource Graph) and why it isn't built yet. floci-az also drops `tags` on
-`Microsoft.Storage/storageAccounts` on both `PUT` and `PATCH`, so the local Azure-mode
-strip's storage cell reads a dash rather than a number until the emulator persists them.
+`Microsoft.Storage/storageAccounts` on both `PUT` and `PATCH`, so `owned()` finds no account
+for any domain and the local Azure-mode strip's storage cell reads **0 B** rather than the
+domain's real figure until the emulator persists them. That is a measurement, not a gap —
+zero tagged accounts is what the provider can truthfully see — so the panel is `ok` and the
+cell prints a zero, never a dash.
 
 Two consequences for new work:
 
@@ -828,10 +833,10 @@ Note that `bun test` cannot compile `.svelte` files, so component rendering is o
 
 ### Tests that run the app, not just its logic
 
-`bun test src` is the logic suite: 955 tests, a few seconds, nothing booted. `bun run
-test:e2e` builds the app, starts `build/index.js`, and asks it questions over HTTP. The two
-answer different things, and the split is not academic — every rendering bug this repo has
-had passed `check`, `lint` and the full unit suite:
+`bun test src` is the logic suite: 970 tests (911 pass, 59 skip), a few seconds, nothing
+booted. `bun run test:e2e` builds the app, starts `build/index.js`, and asks it questions
+over HTTP. The two answer different things, and the split is not academic — every rendering
+bug this repo has had passed `check`, `lint` and the full unit suite:
 
 | What shipped                               | What would have caught it |
 | ------------------------------------------ | ------------------------- |
@@ -933,9 +938,10 @@ verified, plus the service Metrics tab and the Domain detail view. The domain ta
 6 of 8 built — overview, dependencies, services, deployments, slos, infrastructure — with
 alerts and logs each pending their own spec; `_BUILT_TABS` in
 `src/routes/domains/[slug]/[tab]/+page.ts` is the guard the route-level test asserts against,
-so the two cannot drift. `bun test src` (955 tests), `bun run check`, `bun run lint` and
-`bun run build` all pass, the e2e suites pass against every stack whose backends are up
-(`e2e/harness.ts`'s `ROUTES` covers 22 paths), and the production server boots and serves.
+so the two cannot drift. `bun test src` (970 tests, 59 of them skipped), `bun run check`,
+`bun run lint` and `bun run build` all pass, the e2e suites pass against every stack whose
+backends are up (`e2e/harness.ts`'s `ROUTES` covers 22 paths), and the production server
+boots and serves.
 
 What exists:
 

@@ -5,8 +5,17 @@ import {
 	boundDomains,
 	fixtureOwnerOf,
 	ownsResource,
+	sameTagName,
 	seedOwnerOf
 } from './ownership';
+
+describe('sameTagName', () => {
+	test('ignores case and rejects a missing name', () => {
+		expect(sameTagName('Domain', 'domain')).toBe(true);
+		expect(sameTagName('ServiceName', 'domain')).toBe(false);
+		expect(sameTagName(undefined, 'domain')).toBe(false);
+	});
+});
 
 describe('ownsResource', () => {
 	test("key is case-insensitive, value is case-sensitive — ARM's own rule", () => {

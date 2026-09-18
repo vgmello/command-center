@@ -26,39 +26,51 @@ import { buildSeries } from './series';
  * and the node tile cannot disagree, because only one of them counts.
  */
 
-const NODE_COUNTS: NodeCounts = { healthy: 42, warning: 4, down: 2 };
-
 /** Nodes the estate is paying for, healthy or not. */
 const NODE_CAPACITY = 52;
 
-/** Region rows: `[id, name, lat, lon, nodeCount, score]`. Hoisted so an owner's node
- * count can be derived from the same seed `listRegions` maps into a region. */
-const REGION_ROWS: Array<[string, string, number, number, number, number]> = [
-	['eu-west-1', 'eu-west-1', 53.3, -6.3, 12, 96],
-	['eu-central-1', 'eu-central-1', 50.1, 8.7, 10, 94],
-	['us-east-1', 'us-east-1', 38.0, -78.5, 14, 92],
-	['us-west-2', 'us-west-2', 45.5, -121.0, 8, 90],
-	['ap-southeast-1', 'ap-southeast-1', 1.3, 103.8, 4, 62]
+/** Region rows: `[id, name, lat, lon, healthy, warning, down, score]`.
+ *
+ * The node split is stated per region and the estate is the sum, so the estate donut's
+ * two down nodes are findable on a domain's Infrastructure tab — deriving a region's split
+ * from its `score` put them nowhere. The score stays: it grades the region, not its nodes. */
+const REGION_ROWS: Array<[string, string, number, number, number, number, number, number]> = [
+	['eu-west-1', 'eu-west-1', 53.3, -6.3, 11, 1, 0, 96],
+	['eu-central-1', 'eu-central-1', 50.1, 8.7, 9, 1, 0, 94],
+	['us-east-1', 'us-east-1', 38.0, -78.5, 13, 0, 1, 92],
+	['us-west-2', 'us-west-2', 45.5, -121.0, 7, 1, 0, 90],
+	['ap-southeast-1', 'ap-southeast-1', 1.3, 103.8, 2, 1, 1, 62]
 ];
 
-export function readNodeCounts(owner?: string): NodeCounts {
-	if (owner === undefined) return NODE_COUNTS;
-	return listRegions(owner).reduce(
-		(acc, r) => {
-			const row = REGION_ROWS.find((one) => one[0] === r.id)!;
-			const healthy = Math.floor((row[4] * row[5]) / 100);
-			return {
-				healthy: acc.healthy + healthy,
-				warning: acc.warning + (row[4] - healthy),
-				down: acc.down
-			};
-		},
+function sumNodeCounts(rows: typeof REGION_ROWS): NodeCounts {
+	return rows.reduce(
+		(acc, [, , , , healthy, warning, down]) => ({
+			healthy: acc.healthy + healthy,
+			warning: acc.warning + warning,
+			down: acc.down + down
+		}),
 		{ healthy: 0, warning: 0, down: 0 }
 	);
 }
 
+/** Derived, not seeded: 42 / 4 / 2 is what the rows add up to. */
+const NODE_COUNTS: NodeCounts = sumNodeCounts(REGION_ROWS);
+
+function regionNodeCount(row: (typeof REGION_ROWS)[number]): number {
+	return row[4] + row[5] + row[6];
+}
+
+export function readNodeCounts(owner?: string): NodeCounts {
+	if (owner === undefined) return NODE_COUNTS;
+	return sumNodeCounts(REGION_ROWS.filter((row) => fixtureOwnerOf(row[0]) === owner));
+}
+
+function nodeTotal(counts: NodeCounts): number {
+	return counts.healthy + counts.warning + counts.down;
+}
+
 export function totalNodes(): number {
-	return NODE_COUNTS.healthy + NODE_COUNTS.warning + NODE_COUNTS.down;
+	return nodeTotal(NODE_COUNTS);
 }
 
 export function nodeCapacity(): number {
@@ -72,14 +84,17 @@ export function nodeCapacity(): number {
  * it. They travel as facts; the projection that turns them into pixels is the UI's.
  */
 export function listRegions(owner?: string): InfraRegion[] {
-	const all = REGION_ROWS.map(([id, name, latitude, longitude, nodeCount, score]) => ({
-		id,
-		name,
-		status: statusFromScore(score),
-		latitude,
-		longitude,
-		nodeCount
-	}));
+	const all = REGION_ROWS.map((row) => {
+		const [id, name, latitude, longitude, , , , score] = row;
+		return {
+			id,
+			name,
+			status: statusFromScore(score),
+			latitude,
+			longitude,
+			nodeCount: regionNodeCount(row)
+		};
+	});
 
 	return owner === undefined ? all : all.filter((r) => fixtureOwnerOf(r.id) === owner);
 }
@@ -173,6 +188,11 @@ function toSeries(id: string, label: string, points: ReturnType<typeof clockPoin
  * to its own peak would make 42% and 95% look identical.
  */
 export function readUtilization(now: Date, owner?: string, buckets = 18): ResourceReading[] {
+	// Utilisation is a reading off machines. An owner with no nodes has none to read, so
+	// the answer is an empty list — the same answer the Azure provider gives for zero owned
+	// VMs — rather than four series drawn for machines the same page counts as `0`.
+	if (owner !== undefined && nodeTotal(readNodeCounts(owner)) === 0) return [];
+
 	const seeds: Array<[string, string, number, number, number, number]> = [
 		['cpu', 'CPU', 42, 0.1, -6, 100],
 		['memory', 'Memory', 58, 0.05, -3, 100],
@@ -352,14 +372,7 @@ export function readCost(now: Date, owner?: string): CostBreakdown {
 
 	// An owner's slice of spend follows its slice of nodes — derived, so the owners'
 	// spend sums back to the estate's exactly.
-	const estateNodes = REGION_ROWS.reduce((sum, row) => sum + row[4], 0);
-	const share =
-		owner === undefined
-			? 1
-			: (readNodeCounts(owner).healthy +
-					readNodeCounts(owner).warning +
-					readNodeCounts(owner).down) /
-				estateNodes;
+	const share = owner === undefined ? 1 : nodeTotal(readNodeCounts(owner)) / totalNodes();
 
 	const categories = seeds.map(([id, label, dailyRate]) => {
 		const daily = buildSeries(`cost:${id}`, dailyRate, {

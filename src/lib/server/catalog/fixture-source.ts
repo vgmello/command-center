@@ -21,6 +21,7 @@ export class FixtureCatalogSource implements CatalogSource {
 	readonly id = 'fixture';
 
 	#domains(): CatalogDomain[] {
+		const bound = new Set(boundDomains('fixture'));
 		return listDomains().map((domain) => ({
 			id: domain.id,
 			slug: domain.slug,
@@ -33,7 +34,7 @@ export class FixtureCatalogSource implements CatalogSource {
 			// A cloud binding for every domain the ownership table assigns resources to, and
 			// none for the rest: "unbound" has to be the common case under fixtures or the
 			// stated-gap path is never exercised. The externalId is the tag VALUE.
-			bindings: boundDomains('fixture').includes(domain.slug)
+			bindings: bound.has(domain.slug)
 				? [{ kind: 'cloud', connectionId: '', externalId: domain.slug }]
 				: []
 		}));

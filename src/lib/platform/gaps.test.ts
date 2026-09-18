@@ -21,12 +21,19 @@ const gap = (reason: GapReason): Panel<unknown> => ({
 const ok: Panel<unknown> = { status: 'ok', data: 1, source };
 
 describe('gapSentence', () => {
-	test("the three existing reasons keep today's wording", () => {
-		for (const r of ['no-connection', 'no-capability', 'not-implemented'] as const) {
+	test("the two configuration reasons keep today's wording", () => {
+		for (const r of ['no-connection', 'no-capability'] as const) {
 			expect(gapSentence(r, 'cloud', 'regions')).toBe(
 				'No connected cloud source provides regions.'
 			);
 		}
+	});
+	test('an unbuilt narrowing is not "no connected source" — the estate answers the same read', () => {
+		const sentence = gapSentence('not-implemented', 'cloud', 'queues');
+		expect(sentence).not.toContain('No connected');
+		expect(sentence).toBe(
+			'Narrowing queues to one domain is not implemented for cloud sources yet.'
+		);
 	});
 	test('an unbound domain is not "no connected source" — the cloud is connected', () => {
 		expect(gapSentence('no-binding', 'cloud', 'regions')).toBe(

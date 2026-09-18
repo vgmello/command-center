@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test';
-import { azureProvider } from './index';
+import { describe, expect, setSystemTime, test } from 'bun:test';
+import * as v from 'valibot';
+import { azureProvider, azureSettings } from './index';
 import {
 	clusterIsReady,
 	costFrom,
@@ -12,7 +13,7 @@ import {
 } from './map';
 import { startCostMock } from './mock/cost';
 import type { SourceContext } from '../../provider';
-import { ownsResource } from '$lib/platform/ownership';
+import { OWNER_TAG_KEY, ownsResource } from '$lib/platform/ownership';
 
 /**
  * The provider, against the emulator where one is running.
@@ -296,6 +297,20 @@ describe('what it declares', () => {
 	});
 });
 
+describe('settings', () => {
+	test('the owner tag key defaults to the key the seed tags resources under', () => {
+		// The seed writes OWNER_TAG_KEY; a provider reading a different key by default would
+		// show every domain owning nothing, with nothing on the page admitting why.
+		const settings = v.parse(azureSettings, {
+			subscriptionId: 'sub',
+			tenantId: 'tenant',
+			clientId: 'client',
+			clientSecret: 'secret'
+		});
+		expect(settings.ownerTagKey).toBe(OWNER_TAG_KEY);
+	});
+});
+
 describe('owner filtering (pure)', () => {
 	const vm = (
 		name: string,
@@ -349,6 +364,68 @@ describe('no tag $filter is sent on ARM lists', () => {
 			expect(urls.length).toBeGreaterThan(0);
 			for (const u of urls) expect(new URL(u).searchParams.has('$filter')).toBe(false);
 		} finally {
+			server.stop(true);
+		}
+	});
+});
+
+describe('an owner read is a filter over the estate window, not a second fetch', () => {
+	test('an owner sees the estate refetch the moment the estate does', async () => {
+		const vm = (name: string, state: string, tags?: Record<string, string>) => ({
+			id: `/subscriptions/sub/resourceGroups/g/providers/Microsoft.Compute/virtualMachines/${name}`,
+			name,
+			location: 'eastus',
+			tags,
+			properties: { instanceView: { statuses: [{ code: `PowerState/${state}` }] } }
+		});
+		const mineIs = { state: 'running' };
+		let vmLists = 0;
+		const server = Bun.serve({
+			port: 0,
+			fetch: (req) => {
+				if (new URL(req.url).pathname.endsWith('/virtualMachines')) vmLists += 1;
+				return Response.json({
+					value: [
+						vm('mine', mineIs.state, { [OWNER_TAG_KEY]: 'payment-domain' }),
+						vm('theirs', 'running')
+					]
+				});
+			}
+		});
+		const t0 = new Date('2026-09-18T12:00:00Z').getTime();
+		const at = (seconds: number) => setSystemTime(new Date(t0 + seconds * 1000));
+		const owner = () => ({
+			...context(),
+			binding: { kind: 'cloud' as const, connectionId: 'az', externalId: 'payment-domain' }
+		});
+		try {
+			const client = azureProvider.connect({
+				baseUrl: `http://localhost:${server.port}`,
+				subscriptionId: 'sub',
+				tenantId: 't',
+				clientId: 'c',
+				clientSecret: 'local-dev-only'
+			});
+
+			at(0);
+			expect((await client.readNodeCounts!(context())).healthy).toBe(2);
+			at(29);
+			expect((await client.readNodeCounts!(owner())).healthy).toBe(1);
+			expect(vmLists).toBe(1); // the owner read filtered the estate window, no fetch
+
+			// The VM stops, and the estate's window expires and refetches.
+			mineIs.state = 'stopped';
+			at(31);
+			expect(await client.readNodeCounts!(context())).toEqual({ healthy: 1, warning: 0, down: 1 });
+			expect(vmLists).toBe(2);
+
+			// A per-owner memo stamped at second 29 would still be fresh here and would show
+			// the domain's machine running while the estate page shows it stopped.
+			at(32);
+			expect(await client.readNodeCounts!(owner())).toEqual({ healthy: 0, warning: 0, down: 1 });
+			expect(vmLists).toBe(2);
+		} finally {
+			setSystemTime();
 			server.stop(true);
 		}
 	});

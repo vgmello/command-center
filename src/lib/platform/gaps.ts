@@ -12,8 +12,9 @@ const KIND_LABEL: Record<SourceKind, string> = {
  *
  * Pure so `bun test` can assert it — the component that prints it cannot be rendered by the
  * test runner. "No connected source" is FALSE for an unbound domain (its cloud is connected
- * and answering) and for an ambiguous binding, which is why those two reasons have their own
- * sentences and the rest keep the wording every panel has printed until now.
+ * and answering), for an ambiguous binding, and for a narrowing nobody has built yet, which is
+ * why those three reasons have their own sentences and the rest keep the wording every panel
+ * has printed until now.
  */
 export function gapSentence(reason: GapReason, kind: SourceKind, noun: string): string {
 	switch (reason) {
@@ -23,6 +24,13 @@ export function gapSentence(reason: GapReason, kind: SourceKind, noun: string): 
 			return `Not bound to a ${KIND_LABEL[kind]} — no resources are tagged for this domain.`;
 		case 'ambiguous-connection':
 			return `Several ${KIND_LABEL[kind]} connections are configured; this domain's binding must name one.`;
+		case 'not-implemented':
+			// The one producer (`routers/infrastructure.ts` `scoped()`) refuses an owner-scoped
+			// read before consulting the catalog or any connection, so this fires whether or not a
+			// source is connected — the sentence claims only what is true in every configuration:
+			// the narrowing is unbuilt. Owner scoping is domain-only today (`ownerBinding` resolves
+			// through `catalog.findDomain`), which is what "one domain" rests on.
+			return `Narrowing ${noun} to one domain is not implemented for ${KIND_LABEL[kind]} sources yet.`;
 		default:
 			return `No connected ${KIND_LABEL[kind]} source provides ${noun}.`;
 	}

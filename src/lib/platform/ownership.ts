@@ -71,6 +71,11 @@ export const SEED_NAMES: Record<OwnershipRole, string[]> = {
 	'db-analytics': []
 };
 
+/** ARM compares tag NAMES case-insensitively; `ownsResource` and the Cost mock both read the rule here. */
+export function sameTagName(name: string | undefined, key: string): boolean {
+	return name !== undefined && name.toLowerCase() === key.toLowerCase();
+}
+
 /**
  * ARM's tag-matching rule: names are case-insensitive, values are not.
  * Both the provider filter and its test go through this, so they cannot disagree.
@@ -81,9 +86,8 @@ export function ownsResource(
 	value: string
 ): boolean {
 	if (!tags) return false;
-	const wanted = key.toLowerCase();
 	for (const [name, tagValue] of Object.entries(tags)) {
-		if (name.toLowerCase() === wanted) return tagValue === value;
+		if (sameTagName(name, key)) return tagValue === value;
 	}
 	return false;
 }

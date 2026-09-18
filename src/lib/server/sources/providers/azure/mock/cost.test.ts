@@ -185,6 +185,34 @@ describe('cost mock, tag-aware', () => {
 	test('an unknown tag value has no rows', async () => {
 		expect(await rowsOf(await post(withTag('tax-domain')))).toEqual([]);
 	});
+	const withClause = (clause: Record<string, unknown>) => ({
+		...base,
+		dataset: { ...base.dataset, filter: { tags: clause } }
+	});
+	test('a clause naming a tag nobody carries has no rows, which is what Cost Management does', async () => {
+		// An adapter that sent `name: 'ServiceName'` used to get the domain's rows anyway; the
+		// seam test in provider.test.ts could not tell it from the right key.
+		const r = await post(
+			withClause({ name: 'ServiceName', operator: 'In', values: ['payment-domain'] })
+		);
+		expect(r.status).toBe(200);
+		expect(await rowsOf(r)).toEqual([]);
+	});
+	test("the tag name is matched case-insensitively — ARM's rule, reused not restated", async () => {
+		const upper = await rowsOf(
+			await post(withClause({ name: 'Domain', operator: 'In', values: ['payment-domain'] }))
+		);
+		expect(upper).toEqual(await rowsOf(await post(withTag('payment-domain'))));
+		expect(total(upper)).toBeGreaterThan(0);
+	});
+	test('an unsupported operator is a 400 with an error code, as the real API answers', async () => {
+		const r = await post(
+			withClause({ name: 'domain', operator: 'NotIn', values: ['payment-domain'] })
+		);
+		expect(r.status).toBe(400);
+		const body = (await r.json()) as { error: { code: string } };
+		expect(body.error.code).toBe('BadRequest');
+	});
 	test('a body that is not JSON is a 400 with an error code, not a crash', async () => {
 		const r = await costMockHandler({ now })(
 			new Request(url, {
